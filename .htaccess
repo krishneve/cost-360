@@ -1,0 +1,22 @@
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# Administration route rewrites
+RewriteRule ^administration/users/?$ admin/users/index.php [L,QSA]
+RewriteRule ^administration/roles/?$ admin/roles/index.php [L,QSA]
+RewriteRule ^administration/menus/?$ admin/menus/index.php [L,QSA]
+RewriteRule ^administration/?$ admin/users/index.php [L,QSA]
+
+# Data Management route rewrites
+RewriteRule ^data/upload/?$ upload-centre.php [L,QSA]
+RewriteRule ^data/mapping/?$ mapping-centre.php [L,QSA]
+RewriteRule ^data/history/?$ import-history.php [L,QSA]
+RewriteRule ^data/audit/?$ audit-logs.php [L,QSA]
+RewriteRule ^data/masters/?$ master-groups.php [L,QSA]
+
+# Short aliases
+RewriteRule ^dashboard/?$ dashboard.php [L,QSA]
+RewriteRule ^users/?$ admin/users/index.php [L,QSA]
+RewriteRule ^roles/?$ admin/roles/index.php [L,QSA]
+RewriteRule ^menus/?$ admin/menus/index.php [L,QSA]
+</IfModule>

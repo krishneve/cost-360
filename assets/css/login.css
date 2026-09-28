@@ -1,0 +1,533 @@
+/* ==========================================================================
+   Cost360 - Enterprise Login UI (Desktop Protected & Reference Mobile UI)
+   Theme: Enterprise Cost Management & Manufacturing Analytics Platform
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Design Tokens & CSS Variables
+   -------------------------------------------------------------------------- */
+:root {
+  /* Palette */
+  --color-deep-navy: #033665;
+  --color-primary-blue: #0878D1;
+  --color-dark-blue: #063D70;
+  --color-bright-cyan: #00CFEF;
+  --color-soft-blue: #EAF5FC;
+  --color-page-bg: #F5FAFE;
+  --color-white: #FFFFFF;
+  --color-primary-text: #17324D;
+  --color-secondary-text: #6B7F91;
+
+  /* Utility Colors & Borders */
+  --color-border: #E1EAF0;
+  --color-border-hover: #B3C9DB;
+  --color-focus-glow: rgba(0, 207, 239, 0.22);
+  
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  
+  /* Elevations & Radii */
+  --shadow-card: 0 20px 40px -15px rgba(3, 54, 101, 0.08), 0 4px 12px rgba(0, 0, 0, 0.03);
+  --radius-card: 16px;
+  --radius-input: 8px;
+}
+
+/* --------------------------------------------------------------------------
+   Global Reset & Base Setup
+   -------------------------------------------------------------------------- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body {
+  width: 100%;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background-color: var(--color-page-bg);
+  color: var(--color-primary-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   1. DESKTOP APPROVED LAYOUT (> 768px Viewports) - 100% PROTECTED
+   -------------------------------------------------------------------------- */
+@media (min-width: 769px) {
+  .mobile-layout {
+    display: none !important;
+  }
+
+  .desktop-layout.app-container {
+    display: flex;
+    width: 100%;
+    min-height: 100vh;
+    position: relative;
+  }
+
+  /* LEFT PANEL: Rich Blue Enterprise Visual (50% Width) */
+  .brand-panel {
+    width: 50%;
+    min-height: 100vh;
+    background: linear-gradient(135deg, var(--color-deep-navy) 0%, var(--color-dark-blue) 45%, var(--color-primary-blue) 100%);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    color: var(--color-white);
+    z-index: 1;
+  }
+
+  #particles-canvas-desktop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .left-hero-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+    padding: 1rem;
+  }
+
+  .left-hero-img {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 12px 32px rgba(3, 54, 101, 0.45));
+    animation: heroEntrance 800ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes heroEntrance {
+    0% {
+      opacity: 0;
+      transform: scale(0.97) translateY(8px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* RIGHT PANEL: Minimalist Enterprise Login (50% Width) */
+  .auth-panel {
+    width: 50%;
+    min-height: 100vh;
+    background-color: var(--color-page-bg);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2.5rem;
+    position: relative;
+    border-left: 1px solid rgba(225, 234, 240, 0.8);
+  }
+
+  .right-bg-decoration {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .right-bg-decoration svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .auth-card-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 430px;
+    background-color: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    padding: 2.75rem 2.25rem;
+    box-shadow: var(--shadow-card);
+    position: relative;
+    animation: cardFadeUp 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  @keyframes cardFadeUp {
+    0% {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .card-header {
+    margin-bottom: 1.75rem;
+    text-align: left;
+  }
+
+  .card-title {
+    font-size: 1.85rem;
+    font-weight: 800;
+    color: var(--color-primary-text);
+    letter-spacing: -0.025em;
+    margin-bottom: 0.35rem;
+  }
+}
+
+/* Common Shared Form Element Styles */
+.feedback-alert {
+  display: none;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-input);
+  font-size: 0.85rem;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.feedback-alert.show {
+  display: flex;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.feedback-alert.info {
+  background-color: var(--color-soft-blue);
+  border: 1px solid rgba(8, 120, 209, 0.3);
+  color: var(--color-dark-blue);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-primary-text);
+  margin-bottom: 0.45rem;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon-prefix {
+  position: absolute;
+  left: 14px;
+  color: var(--color-primary-blue);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.form-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 44px 0 44px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: var(--color-primary-text);
+  background-color: var(--color-white);
+  outline: none;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.form-input:hover {
+  border-color: var(--color-border-hover);
+}
+
+.form-input:focus {
+  border-color: var(--color-bright-cyan);
+  box-shadow: 0 0 0 4px var(--color-focus-glow);
+}
+
+.toggle-password-btn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-secondary-text);
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-password-btn:hover {
+  color: var(--color-primary-blue);
+  background-color: var(--color-soft-blue);
+}
+
+.form-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.4rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--color-primary-text);
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+}
+
+.custom-checkbox {
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--color-border-hover);
+  border-radius: 4px;
+  accent-color: var(--color-primary-blue);
+  cursor: pointer;
+}
+
+.forgot-password-link {
+  color: var(--color-primary-blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.forgot-password-link:hover {
+  color: var(--color-deep-navy);
+  text-decoration: underline;
+}
+
+.btn-primary {
+  width: 100%;
+  height: 48px;
+  background-color: var(--color-primary-blue);
+  color: var(--color-white);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  border: none;
+  border-radius: var(--radius-input);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  transition: background-color 0.25s ease, box-shadow 0.25s ease;
+  box-shadow: 0 4px 14px rgba(8, 120, 209, 0.28);
+}
+
+.btn-primary:hover {
+  background-color: var(--color-deep-navy);
+  box-shadow: 0 6px 18px rgba(3, 54, 101, 0.35);
+}
+
+.btn-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: var(--color-white);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.or-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.35rem 0 1.1rem 0;
+  color: #94A3B8;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.or-divider::before,
+.or-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.or-divider span {
+  padding: 0 0.75rem;
+  color: var(--color-secondary-text);
+}
+
+.card-support-link {
+  text-align: center;
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-secondary-text);
+}
+
+.support-anchor {
+  color: var(--color-primary-blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.support-anchor:hover {
+  color: var(--color-deep-navy);
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------------------------
+   2. DEDICATED MOBILE LAYOUT MATCHING USER REFERENCE EXACTLY (<= 768px)
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  .desktop-layout {
+    display: none !important;
+  }
+
+  .mobile-layout {
+    display: flex !important;
+    flex-direction: column;
+    width: 100%;
+    min-height: 100vh;
+    background-color: #F5FAFE;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Soft Top Curved Header Backdrop */
+  .mobile-header-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 220px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .mobile-header-backdrop svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Centered Logo Header */
+  .mobile-logo-header {
+    position: relative;
+    z-index: 5;
+    text-align: center;
+    padding: 3rem 1.25rem 1.5rem 1.25rem;
+  }
+
+  .mobile-logo-image {
+    width: 100%;
+    max-width: 260px;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 14px rgba(3, 54, 101, 0.08));
+  }
+
+  /* Main Form Area */
+  .mobile-content-container {
+    position: relative;
+    z-index: 5;
+    width: 100%;
+    max-width: 430px;
+    margin: 0 auto;
+    padding: 0 1.25rem;
+    flex: 1;
+  }
+
+  .mobile-card-heading {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .mobile-title {
+    font-size: 1.85rem;
+    font-weight: 800;
+    color: var(--color-deep-navy);
+    letter-spacing: -0.025em;
+    margin-bottom: 0;
+  }
+
+  .form-input {
+    height: 46px; /* Touch target 46px */
+    font-size: 16px; /* Prevents auto-zoom on iOS */
+    background-color: var(--color-white);
+  }
+
+  .btn-primary {
+    height: 48px;
+  }
+
+  /* Mobile Footer */
+  .mobile-footer-area {
+    position: relative;
+    z-index: 5;
+    width: 100%;
+    max-width: 430px;
+    margin: 2rem auto 0 auto;
+    padding: 1.5rem 1.25rem 2.25rem 1.25rem;
+    text-align: center;
+  }
+
+  .mobile-footer-text {
+    font-size: 0.825rem;
+    font-weight: 600;
+    color: var(--color-secondary-text);
+  }
+}
+
+/* ACCESSIBILITY: PREFERS REDUCED MOTION */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

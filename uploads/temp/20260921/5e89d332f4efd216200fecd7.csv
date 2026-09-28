@@ -1,0 +1,9 @@
+cc_code,cc_name,cc_type,is_production,shift_capacity_hrs_month
+CC-10,Melting,Production,1,3600
+CC-20,Moulding,Production,1,3600
+CC-30,Fettling,Production,1,2400
+CC-40,Machining,Production,1,4800
+CC-50,Heat Treatment,Production,1,1800
+CC-60,Quality Lab,Service,0,720
+CC-70,Maintenance,Service,0,960
+CC-80,Utilities,Service,0,480

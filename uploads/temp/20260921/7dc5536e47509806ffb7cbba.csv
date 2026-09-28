@@ -1,0 +1,15 @@
+machine_code,machine_name,cc_code,std_machine_hr_rate,rated_hrs_day
+MC-01,Induction Furnace 3T A,CC-10,1850,20
+MC-02,Induction Furnace 3T B,CC-10,1850,20
+MC-03,Moulding Line HPML-1,CC-20,1420,16
+MC-04,Moulding Line HPML-2,CC-20,1420,16
+MC-05,Core Shooter CS-25,CC-20,680,12
+MC-06,Shot Blast SB-1,CC-30,520,16
+MC-07,Grinding Booth GB-1,CC-30,310,12
+MC-08,CNC VTL-01,CC-40,1180,20
+MC-09,CNC VTL-02,CC-40,1180,20
+MC-10,CNC HMC-03,CC-40,1620,20
+MC-11,CNC VMC-04,CC-40,1340,16
+MC-12,Drill Tap Centre DT-1,CC-40,760,12
+MC-13,Normalising Furnace NF-1,CC-50,980,18
+MC-14,Tempering Furnace TF-1,CC-50,840,18
