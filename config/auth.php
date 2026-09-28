@@ -1,7 +1,20 @@
 <?php
 /**
+<<<<<<< HEAD
  * Cost360 - Authentication & Role-Based Access Control (RBAC) Helper
  * Connects directly to Neon PostgreSQL auth schema tables.
+=======
+ * Cost360 - Authentication, RBAC & Organization Access Helper
+ *
+ * Handles:
+ * - Authentication
+ * - Current logged-in user
+ * - User role
+ * - Authorized menus
+ * - Permissions
+ * - Organization/company access
+ * - Active company session
+>>>>>>> origin/user-master
  */
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -10,6 +23,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/database.php';
 
+<<<<<<< HEAD
 if (!function_exists('isLoggedIn')) {
     function isLoggedIn() {
         return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
@@ -24,17 +38,62 @@ if (!function_exists('requireAuth')) {
             if (strpos($script, '/admin/') !== false || strpos($script, '/administration/') !== false) {
                 if (preg_match('#/(?:admin|administration)/[^/]+/#', $script) ||
                     preg_match('#/(?:admin|administration)/[^/]+/index\.php#', $script)) {
+=======
+
+/* ============================================================
+   AUTHENTICATION
+   ============================================================ */
+
+if (!function_exists('isLoggedIn')) {
+    function isLoggedIn()
+    {
+        return isset($_SESSION['user_id']) &&
+               !empty($_SESSION['user_id']);
+    }
+}
+
+
+if (!function_exists('requireAuth')) {
+    function requireAuth()
+    {
+        if (!isLoggedIn()) {
+
+            $script = $_SERVER['SCRIPT_NAME'] ?? '';
+
+            $loginUrl = 'login.php';
+
+            if (
+                strpos($script, '/admin/') !== false ||
+                strpos($script, '/administration/') !== false
+            ) {
+
+                if (
+                    preg_match(
+                        '#/(?:admin|administration)/[^/]+/#',
+                        $script
+                    ) ||
+                    preg_match(
+                        '#/(?:admin|administration)/[^/]+/index\.php#',
+                        $script
+                    )
+                ) {
+>>>>>>> origin/user-master
                     $loginUrl = '../../login.php';
                 } else {
                     $loginUrl = '../login.php';
                 }
             }
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/user-master
             header('Location: ' . $loginUrl);
             exit;
         }
     }
 }
 
+<<<<<<< HEAD
 if (!function_exists('hashPassword')) {
     function hashPassword($password) {
         return password_hash($password, PASSWORD_DEFAULT);
@@ -49,29 +108,151 @@ if (!function_exists('verifyPassword')) {
 
 if (!function_exists('getAuthUser')) {
     function getAuthUser() {
+=======
+
+/* ============================================================
+   ACTIVE COMPANY REQUIRED
+   ============================================================ */
+
+/* ============================================================
+   ACTIVE COMPANY REQUIRED
+   ============================================================ */
+
+if (!function_exists('requireActiveCompany')) {
+
+    function requireActiveCompany()
+    {
+        requireAuth();
+
+        /*
+         * Platform Admin does not need to select a company.
+         *
+         * Platform Admin works across the Cost360 platform
+         * and is responsible for administration and assigning
+         * organization access to users.
+         */
+
+        if (isPlatformAdmin()) {
+
+            return true;
+        }
+
+
+        /*
+         * Normal users must have an active company.
+         */
+
+        if (
+            !isset($_SESSION['active_company_id']) ||
+            empty($_SESSION['active_company_id'])
+        ) {
+
+            header(
+                'Location: company-selection.php'
+            );
+
+            exit;
+        }
+
+        return true;
+    }
+}
+
+
+/* ============================================================
+   PASSWORD FUNCTIONS
+   ============================================================ */
+
+if (!function_exists('hashPassword')) {
+
+    function hashPassword($password)
+    {
+        return password_hash(
+            $password,
+            PASSWORD_DEFAULT
+        );
+    }
+}
+
+
+if (!function_exists('verifyPassword')) {
+
+    function verifyPassword($password, $hash)
+    {
+        return password_verify(
+            $password,
+            $hash
+        );
+    }
+}
+
+
+/* ============================================================
+   CURRENT USER
+   ============================================================ */
+
+if (!function_exists('getAuthUser')) {
+
+    function getAuthUser()
+    {
+>>>>>>> origin/user-master
         if (!isLoggedIn()) {
             return null;
         }
 
         static $cachedUser = null;
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/user-master
         if ($cachedUser !== null) {
             return $cachedUser;
         }
 
+<<<<<<< HEAD
         if (isset($_SESSION['auth_cache']['user'])) {
             $cachedUser = $_SESSION['auth_cache']['user'];
+=======
+        if (
+            isset($_SESSION['auth_cache']['user']) &&
+            !empty($_SESSION['auth_cache']['user'])
+        ) {
+
+            $cachedUser =
+                $_SESSION['auth_cache']['user'];
+
+>>>>>>> origin/user-master
             return $cachedUser;
         }
 
         try {
+<<<<<<< HEAD
             $pdo = getDbConnection();
             $stmt = $pdo->prepare('
                 SELECT user_id, username, email, first_name, last_name,
                        phone as mobile_number, status, is_email_verified, last_login_at, created_at
+=======
+
+            $pdo = getDbConnection();
+
+            $stmt = $pdo->prepare('
+                SELECT
+                    user_id,
+                    username,
+                    email,
+                    first_name,
+                    last_name,
+                    phone AS mobile_number,
+                    status,
+                    is_email_verified,
+                    last_login_at,
+                    created_at
+>>>>>>> origin/user-master
                 FROM users
                 WHERE user_id = :user_id
                 LIMIT 1
             ');
+<<<<<<< HEAD
             $stmt->execute([':user_id' => $_SESSION['user_id']]);
             $cachedUser = $stmt->fetch();
             if ($cachedUser) {
@@ -87,15 +268,71 @@ if (!function_exists('getAuthUser')) {
                 'first_name' => $_SESSION['first_name'] ?? '',
                 'last_name'  => '',
                 'status'     => 'ACTIVE'
+=======
+
+            $stmt->execute([
+                ':user_id' => $_SESSION['user_id']
+            ]);
+
+            $cachedUser =
+                $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($cachedUser) {
+
+                $_SESSION['auth_cache']['user'] =
+                    $cachedUser;
+            }
+
+            return $cachedUser;
+
+        } catch (Exception $e) {
+
+            error_log(
+                'Error fetching auth user: ' .
+                $e->getMessage()
+            );
+
+            return [
+                'user_id' =>
+                    $_SESSION['user_id'] ?? null,
+
+                'email' =>
+                    $_SESSION['email'] ?? '',
+
+                'username' =>
+                    $_SESSION['username'] ?? '',
+
+                'first_name' =>
+                    $_SESSION['first_name'] ?? '',
+
+                'last_name' => '',
+
+                'status' => 'ACTIVE'
+>>>>>>> origin/user-master
             ];
         }
     }
 }
 
+<<<<<<< HEAD
 if (!function_exists('getCurrentUserRole')) {
     function getCurrentUserRole($userId = null) {
         if ($userId === null) {
             $userId = $_SESSION['user_id'] ?? null;
+=======
+
+/* ============================================================
+   CURRENT USER ROLE
+   ============================================================ */
+
+if (!function_exists('getCurrentUserRole')) {
+
+    function getCurrentUserRole($userId = null)
+    {
+        if ($userId === null) {
+            $userId =
+                $_SESSION['user_id'] ?? null;
+>>>>>>> origin/user-master
         }
 
         if (!$userId) {
@@ -103,11 +340,16 @@ if (!function_exists('getCurrentUserRole')) {
         }
 
         static $cachedRolesMap = [];
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/user-master
         if (isset($cachedRolesMap[$userId])) {
             return $cachedRolesMap[$userId];
         }
 
         try {
+<<<<<<< HEAD
             $pdo = getDbConnection();
             $stmt = $pdo->prepare('
                 SELECT r.role_id, r.role_code, r.role_name, r.description, r.status
@@ -123,11 +365,58 @@ if (!function_exists('getCurrentUserRole')) {
             return $cachedRole;
         } catch (Exception $e) {
             error_log("Error fetching user role: " . $e->getMessage());
+=======
+
+            $pdo = getDbConnection();
+
+            $stmt = $pdo->prepare('
+                SELECT
+                    r.role_id,
+                    r.role_code,
+                    r.role_name,
+                    r.description,
+                    r.status
+
+                FROM roles r
+
+                INNER JOIN user_roles ur
+                    ON r.role_id = ur.role_id
+
+                WHERE ur.user_id = :user_id
+                  AND r.status = \'Active\'
+                  AND ur.status = \'Active\'
+
+                ORDER BY r.role_id ASC
+
+                LIMIT 1
+            ');
+
+            $stmt->execute([
+                ':user_id' => $userId
+            ]);
+
+            $role =
+                $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $cachedRolesMap[$userId] =
+                $role ?: null;
+
+            return $role;
+
+        } catch (Exception $e) {
+
+            error_log(
+                'Error fetching user role: ' .
+                $e->getMessage()
+            );
+
+>>>>>>> origin/user-master
             return null;
         }
     }
 }
 
+<<<<<<< HEAD
 // if (!function_exists('getUserAuthorizedMenus')) {
 //     function getUserAuthorizedMenus($userId = null) {
 //         if ($userId === null) {
@@ -174,12 +463,431 @@ if (!function_exists('getCurrentUserRole')) {
 
 if (!function_exists('getUserAuthorizedMenus')) {
     function getUserAuthorizedMenus($userId = null)
+=======
+
+
+/* ============================================================
+   PLATFORM ADMIN CHECK
+   ============================================================ */
+
+if (!function_exists('isPlatformAdmin')) {
+
+    function isPlatformAdmin($userId = null)
+>>>>>>> origin/user-master
     {
         if ($userId === null) {
             $userId = $_SESSION['user_id'] ?? null;
         }
 
         if (!$userId) {
+<<<<<<< HEAD
+=======
+            return false;
+        }
+
+        $role = getCurrentUserRole($userId);
+
+        if (!$role) {
+            return false;
+        }
+
+        /*
+         * Platform administrator is identified by the role.
+         *
+         * Keep this role-based rather than checking an email
+         * such as admin@cost360.com.
+         */
+
+        $roleCode = strtoupper(
+            trim($role['role_code'] ?? '')
+        );
+
+        $roleName = strtoupper(
+            trim($role['role_name'] ?? '')
+        );
+
+        return in_array(
+            $roleCode,
+            [
+                'PLATFORM_ADMIN',
+                'SUPER_ADMIN',
+                'ADMIN'
+            ],
+            true
+        )
+        ||
+        in_array(
+            $roleName,
+            [
+                'PLATFORM ADMIN',
+                'SUPER ADMIN',
+                'ADMIN',
+                'SYSTEM ADMINISTRATOR'
+            ],
+            true
+        );
+    }
+}
+
+/* ============================================================
+   ORGANIZATION ACCESS
+   ============================================================ */
+
+/**
+ * Get all companies accessible by a user.
+ *
+ * Access can originate from:
+ *
+ * 1. Customer level
+ * 2. Company level
+ * 3. Division level
+ * 4. Plant level
+ * 5. Warehouse level
+ *
+ * Company is therefore resolved through the organization hierarchy.
+ */
+
+if (!function_exists('getUserAccessibleCompanies')) {
+
+    function getUserAccessibleCompanies($userId = null)
+    {
+        if ($userId === null) {
+            $userId =
+                $_SESSION['user_id'] ?? null;
+        }
+
+        if (!$userId) {
+            return [];
+        }
+
+        static $companyCache = [];
+
+        if (isset($companyCache[$userId])) {
+            return $companyCache[$userId];
+        }
+
+        try {
+
+            $pdo = getDbConnection();
+
+            /*
+             * The organization hierarchy is:
+             *
+             * customers
+             *    ↓
+             * companies
+             *    ↓
+             * divisions
+             *    ↓
+             * plants
+             *    ↓
+             * warehouses
+             *
+             * user_organization_access may be assigned at
+             * any of these levels.
+             */
+
+            $sql = '
+
+                SELECT DISTINCT
+
+                    c.company_id,
+                    c.company_code,
+                    c.company_name,
+                    c.customer_id,
+                    c.address,
+                    c.status
+
+                FROM companies c
+
+                INNER JOIN user_organization_access uoa
+
+                    ON
+                    (
+                        /* Customer-level access */
+                        (
+                            uoa.customer_id = c.customer_id
+                            AND uoa.company_id IS NULL
+                            AND uoa.division_id IS NULL
+                            AND uoa.plant_id IS NULL
+                            AND uoa.warehouse_id IS NULL
+                        )
+
+                        OR
+
+                        /* Company-level access */
+                        (
+                            uoa.company_id = c.company_id
+                        )
+
+                        OR
+
+                        /* Division-level access */
+                        (
+                            uoa.division_id IS NOT NULL
+
+                            AND EXISTS (
+                                SELECT 1
+                                FROM divisions d
+                                WHERE d.division_id =
+                                      uoa.division_id
+                                  AND d.company_id =
+                                      c.company_id
+                            )
+                        )
+
+                        OR
+
+                        /* Plant-level access */
+                        (
+                            uoa.plant_id IS NOT NULL
+
+                            AND EXISTS (
+                                SELECT 1
+
+                                FROM plants p
+
+                                INNER JOIN divisions d
+                                    ON d.division_id =
+                                       p.division_id
+
+                                WHERE p.plant_id =
+                                      uoa.plant_id
+
+                                  AND d.company_id =
+                                      c.company_id
+                            )
+                        )
+
+                        OR
+
+                        /* Warehouse-level access */
+                        (
+                            uoa.warehouse_id IS NOT NULL
+
+                            AND EXISTS (
+                                SELECT 1
+
+                                FROM warehouses w
+
+                                INNER JOIN plants p
+                                    ON p.plant_id =
+                                       w.plant_id
+
+                                INNER JOIN divisions d
+                                    ON d.division_id =
+                                       p.division_id
+
+                                WHERE w.warehouse_id =
+                                      uoa.warehouse_id
+
+                                  AND d.company_id =
+                                      c.company_id
+                            )
+                        )
+                    )
+
+                WHERE uoa.user_id = :user_id
+
+                  AND UPPER(uoa.status) = \'ACTIVE\'
+
+                  AND CURRENT_DATE >= uoa.valid_from
+
+                  AND (
+                      uoa.valid_to IS NULL
+                      OR CURRENT_DATE <= uoa.valid_to
+                  )
+
+                  AND UPPER(c.status) = \'ACTIVE\'
+
+                ORDER BY
+                    c.company_name ASC,
+                    c.company_id ASC
+            ';
+
+            $stmt = $pdo->prepare($sql);
+
+            $stmt->execute([
+                ':user_id' => $userId
+            ]);
+
+            $companies =
+                $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $companyCache[$userId] =
+                $companies ?: [];
+
+            return $companyCache[$userId];
+
+        } catch (Throwable $e) {
+
+            error_log(
+                'Error fetching accessible companies: ' .
+                $e->getMessage()
+            );
+
+            return [];
+        }
+    }
+}
+
+
+/**
+ * Check whether a user can access a particular company.
+ *
+ * IMPORTANT:
+ * Never trust company_id supplied by the browser.
+ */
+
+if (!function_exists('userCanAccessCompany')) {
+
+    function userCanAccessCompany(
+        $userId,
+        $companyId
+    ) {
+
+        if (!$userId || !$companyId) {
+            return false;
+        }
+
+        $companies =
+            getUserAccessibleCompanies($userId);
+
+        foreach ($companies as $company) {
+
+            if (
+                (string)$company['company_id'] ===
+                (string)$companyId
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+
+/* ============================================================
+   ACTIVE COMPANY
+   ============================================================ */
+
+if (!function_exists('setActiveCompany')) {
+
+    function setActiveCompany($companyId)
+    {
+        $userId =
+            $_SESSION['user_id'] ?? null;
+
+        if (!$userId || !$companyId) {
+            return false;
+        }
+
+        /*
+         * SECURITY CHECK
+         *
+         * Only allow companies assigned to the user.
+         */
+
+        if (
+            !userCanAccessCompany(
+                $userId,
+                $companyId
+            )
+        ) {
+
+            return false;
+        }
+
+        $companies =
+            getUserAccessibleCompanies($userId);
+
+        foreach ($companies as $company) {
+
+            if (
+                (string)$company['company_id'] ===
+                (string)$companyId
+            ) {
+
+                $_SESSION['active_company_id'] =
+                    $company['company_id'];
+
+                $_SESSION['active_company_code'] =
+                    $company['company_code'];
+
+                $_SESSION['active_company_name'] =
+                    $company['company_name'];
+
+                $_SESSION['active_customer_id'] =
+                    $company['customer_id'];
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+
+if (!function_exists('getActiveCompany')) {
+
+    function getActiveCompany()
+    {
+        if (
+            !isset(
+                $_SESSION['active_company_id']
+            )
+        ) {
+            return null;
+        }
+
+        return [
+            'company_id' =>
+                $_SESSION['active_company_id'],
+
+            'company_code' =>
+                $_SESSION['active_company_code'] ?? '',
+
+            'company_name' =>
+                $_SESSION['active_company_name'] ?? '',
+
+            'customer_id' =>
+                $_SESSION['active_customer_id'] ?? null
+        ];
+    }
+}
+
+
+if (!function_exists('clearActiveCompany')) {
+
+    function clearActiveCompany()
+    {
+        unset(
+            $_SESSION['active_company_id'],
+            $_SESSION['active_company_code'],
+            $_SESSION['active_company_name'],
+            $_SESSION['active_customer_id']
+        );
+    }
+}
+
+
+/* ============================================================
+   AUTHORIZED MENUS
+   ============================================================ */
+
+if (!function_exists('getUserAuthorizedMenus')) {
+
+    function getUserAuthorizedMenus($userId = null)
+    {
+        if ($userId === null) {
+            $userId =
+                $_SESSION['user_id'] ?? null;
+        }
+
+        if (!$userId) {
+>>>>>>> origin/user-master
             return [];
         }
 
@@ -193,6 +901,7 @@ if (!function_exists('getUserAuthorizedMenus')) {
 
             $pdo = getDbConnection();
 
+<<<<<<< HEAD
             /*
              * First get menus directly assigned to the user's
              * active roles.
@@ -209,6 +918,14 @@ if (!function_exists('getUserAuthorizedMenus')) {
                        ----------------------------------------- */
 
                     SELECT DISTINCT
+=======
+            $sql = "
+
+                WITH RECURSIVE authorized_menu_tree AS (
+
+                    SELECT DISTINCT
+
+>>>>>>> origin/user-master
                         m.menu_id,
                         m.parent_menu_id,
                         m.menu_code,
@@ -257,11 +974,16 @@ if (!function_exists('getUserAuthorizedMenus')) {
                     UNION
 
 
+<<<<<<< HEAD
                     /* -----------------------------------------
                        ADD PARENT MENUS
                        ----------------------------------------- */
 
                     SELECT
+=======
+                    SELECT
+
+>>>>>>> origin/user-master
                         parent.menu_id,
                         parent.parent_menu_id,
                         parent.menu_code,
@@ -322,14 +1044,25 @@ if (!function_exists('getUserAuthorizedMenus')) {
                     menu_id ASC
             ";
 
+<<<<<<< HEAD
             $stmt = $pdo->prepare($sql);
+=======
+            $stmt =
+                $pdo->prepare($sql);
+>>>>>>> origin/user-master
 
             $stmt->execute([
                 ':user_id' => $userId
             ]);
 
             $menus =
+<<<<<<< HEAD
                 $stmt->fetchAll(PDO::FETCH_ASSOC);
+=======
+                $stmt->fetchAll(
+                    PDO::FETCH_ASSOC
+                );
+>>>>>>> origin/user-master
 
             $cachedMenusMap[$userId] =
                 $menus ?: [];
@@ -348,16 +1081,34 @@ if (!function_exists('getUserAuthorizedMenus')) {
     }
 }
 
+<<<<<<< HEAD
 if (!function_exists('getUserAuthorizedPermissions')) {
     function getUserAuthorizedPermissions($userId = null) {
         if ($userId === null) {
             $userId = $_SESSION['user_id'] ?? null;
+=======
+
+/* ============================================================
+   PERMISSIONS
+   ============================================================ */
+
+if (!function_exists('getUserAuthorizedPermissions')) {
+
+    function getUserAuthorizedPermissions(
+        $userId = null
+    ) {
+
+        if ($userId === null) {
+            $userId =
+                $_SESSION['user_id'] ?? null;
+>>>>>>> origin/user-master
         }
 
         if (!$userId) {
             return [];
         }
 
+<<<<<<< HEAD
         static $cachedPermissions = null;
         if ($cachedPermissions !== null) {
             return $cachedPermissions;
@@ -392,11 +1143,143 @@ if (!function_exists('getUserAuthorizedPermissions')) {
             return $perms;
         } catch (Exception $e) {
             error_log("Error generating user permissions: " . $e->getMessage());
+=======
+        static $cachedPermissions = [];
+
+        if (isset($cachedPermissions[$userId])) {
+            return $cachedPermissions[$userId];
+        }
+
+        try {
+
+            $menus =
+                getUserAuthorizedMenus(
+                    $userId
+                );
+
+            $perms = [];
+
+            foreach ($menus as $m) {
+
+                $mCode =
+                    $m['menu_code'];
+
+                $mName =
+                    $m['menu_name'];
+
+                if ($m['can_view']) {
+                    $perms[] = [
+                        'permission_code' => 'VIEW',
+                        'permission_name' => 'View',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_create']) {
+                    $perms[] = [
+                        'permission_code' => 'CREATE',
+                        'permission_name' => 'Create',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_edit']) {
+                    $perms[] = [
+                        'permission_code' => 'EDIT',
+                        'permission_name' => 'Edit',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_delete']) {
+                    $perms[] = [
+                        'permission_code' => 'DELETE',
+                        'permission_name' => 'Delete',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_upload']) {
+                    $perms[] = [
+                        'permission_code' => 'UPLOAD',
+                        'permission_name' => 'Upload',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_download']) {
+                    $perms[] = [
+                        'permission_code' => 'DOWNLOAD',
+                        'permission_name' => 'Download',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_approve']) {
+                    $perms[] = [
+                        'permission_code' => 'APPROVE',
+                        'permission_name' => 'Approve',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_export']) {
+                    $perms[] = [
+                        'permission_code' => 'EXPORT',
+                        'permission_name' => 'Export',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_print']) {
+                    $perms[] = [
+                        'permission_code' => 'PRINT',
+                        'permission_name' => 'Print',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+
+                if ($m['can_configure']) {
+                    $perms[] = [
+                        'permission_code' => 'CONFIGURE',
+                        'permission_name' => 'Configure',
+                        'menu_code' => $mCode,
+                        'menu_name' => $mName
+                    ];
+                }
+            }
+
+            $cachedPermissions[$userId] =
+                $perms;
+
+            $_SESSION['auth_cache']['permissions'] =
+                $perms;
+
+            return $perms;
+
+        } catch (Exception $e) {
+
+            error_log(
+                'Error generating user permissions: ' .
+                $e->getMessage()
+            );
+
+>>>>>>> origin/user-master
             return [];
         }
     }
 }
 
+<<<<<<< HEAD
 if (!function_exists('userHasMenuAccess')) {
     function userHasMenuAccess($menuRouteOrCode, $userId = null) {
         $menus = getUserAuthorizedMenus($userId);
@@ -411,30 +1294,224 @@ if (!function_exists('userHasMenuAccess')) {
                 return true;
             }
         }
+=======
+
+/* ============================================================
+   MENU ACCESS
+   ============================================================ */
+
+if (!function_exists('userHasMenuAccess')) {
+
+    function userHasMenuAccess(
+        $menuRouteOrCode,
+        $userId = null
+    ) {
+
+        $menus =
+            getUserAuthorizedMenus(
+                $userId
+            );
+
+        $cleanTarget =
+            strtolower(
+                trim($menuRouteOrCode)
+            );
+
+        foreach ($menus as $m) {
+
+            $mCode =
+                strtolower(
+                    trim($m['menu_code'])
+                );
+
+            $mRoute =
+                strtolower(
+                    trim($m['route'])
+                );
+
+            if (
+                $mCode === $cleanTarget ||
+                $mRoute === $cleanTarget
+            ) {
+                return true;
+            }
+
+            if (
+                $mRoute !== '' &&
+                (
+                    str_contains(
+                        $mRoute,
+                        $cleanTarget
+                    ) ||
+                    str_contains(
+                        $cleanTarget,
+                        $mCode
+                    )
+                )
+            ) {
+                return true;
+            }
+        }
+
+>>>>>>> origin/user-master
         return false;
     }
 }
 
+<<<<<<< HEAD
 if (!function_exists('userHasPermission')) {
     function userHasPermission($permissionCode, $menuCode = null, $userId = null) {
         $permissions = getUserAuthorizedPermissions($userId);
         foreach ($permissions as $p) {
             if (strcasecmp($p['permission_code'], $permissionCode) === 0) {
                 if ($menuCode === null || strcasecmp($p['menu_code'], $menuCode) === 0) {
+=======
+
+if (!function_exists('userHasPermission')) {
+
+    function userHasPermission(
+        $permissionCode,
+        $menuCode = null,
+        $userId = null
+    ) {
+
+        $permissions =
+            getUserAuthorizedPermissions(
+                $userId
+            );
+
+        foreach ($permissions as $p) {
+
+            if (
+                strcasecmp(
+                    $p['permission_code'],
+                    $permissionCode
+                ) === 0
+            ) {
+
+                if (
+                    $menuCode === null ||
+                    strcasecmp(
+                        $p['menu_code'],
+                        $menuCode
+                    ) === 0
+                ) {
+>>>>>>> origin/user-master
                     return true;
                 }
             }
         }
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/user-master
         return false;
     }
 }
 
+<<<<<<< HEAD
 if (!function_exists('requirePermission')) {
     function requirePermission($permissionCode, $menuCode = null) {
         requireAuth();
         if (!userHasPermission($permissionCode, $menuCode)) {
             header('HTTP/1.1 403 Forbidden');
             echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Access Denied - Cost360</title><style>body{font-family:sans-serif;background:#0A0E17;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.card{background:#1E293B;padding:2rem;border-radius:12px;text-align:center;max-width:400px;}h1{color:#F87171;}a{color:#00CFEF;text-decoration:none;font-weight:600;}</style></head><body><div class="card"><h1>Access Denied</h1><p>You do not have permission (' . htmlspecialchars($permissionCode) . ') to access this resource.</p><p><a href="dashboard.php">Return to Dashboard</a></p></div></body></html>';
+=======
+
+/* ============================================================
+   PERMISSION REQUIREMENT
+   ============================================================ */
+
+if (!function_exists('requirePermission')) {
+
+    function requirePermission(
+        $permissionCode,
+        $menuCode = null
+    ) {
+
+        requireAuth();
+
+        if (
+            !userHasPermission(
+                $permissionCode,
+                $menuCode
+            )
+        ) {
+
+            header(
+                'HTTP/1.1 403 Forbidden'
+            );
+
+            echo '
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <title>Access Denied - Cost360</title>
+
+                <style>
+
+                    body {
+                        font-family: sans-serif;
+                        background: #0A0E17;
+                        color: #fff;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                    }
+
+                    .card {
+                        background: #1E293B;
+                        padding: 2rem;
+                        border-radius: 12px;
+                        text-align: center;
+                        max-width: 400px;
+                    }
+
+                    h1 {
+                        color: #F87171;
+                    }
+
+                    a {
+                        color: #00CFEF;
+                        text-decoration: none;
+                        font-weight: 600;
+                    }
+
+                </style>
+
+            </head>
+
+            <body>
+
+                <div class="card">
+
+                    <h1>Access Denied</h1>
+
+                    <p>
+                        You do not have permission
+                        ('
+                        . htmlspecialchars(
+                            $permissionCode
+                        )
+                        . ')
+                        to access this resource.
+                    </p>
+
+                    <p>
+                        <a href="dashboard.php">
+                            Return to Dashboard
+                        </a>
+                    </p>
+
+                </div>
+
+            </body>
+            </html>';
+
+>>>>>>> origin/user-master
             exit;
         }
     }
