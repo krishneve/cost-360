@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                        first_name, last_name, status,
                        is_email_verified, failed_login_attempts,
                        locked_until
-                FROM auth.users
+                FROM users
                 WHERE email = :email
                 LIMIT 1
             ');
@@ -76,19 +76,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $isPasswordValid = false;
 
                     // Verify using password_verify() or fallback upgrade for legacy plaintext records
-                    if (password_verify($password, $user['password_hash'])) {
+                    if (verifyPassword($password, $user['password_hash'])) {
                         $isPasswordValid = true;
                     } elseif ($password === $user['password_hash']) {
                         // Plaintext match -> upgrade to secure password_hash in auth.users
                         $isPasswordValid = true;
-                        $newSecureHash = password_hash($password, PASSWORD_DEFAULT);
-                        $upgradeStmt = $pdo->prepare('UPDATE auth.users SET password_hash = :hash WHERE user_id = :user_id');
+                        $newSecureHash = hashPassword($password);
+                        $upgradeStmt = $pdo->prepare('UPDATE users SET password_hash = :hash WHERE user_id = :user_id');
                         $upgradeStmt->execute([':hash' => $newSecureHash, ':user_id' => $user['user_id']]);
                     }
 
                     if ($isPasswordValid) {
                         $updateStmt = $pdo->prepare('
-                            UPDATE auth.users
+                            UPDATE users
                             SET failed_login_attempts = 0,
                                 locked_until = NULL,
                                 status = CASE WHEN status = \'LOCKED\' THEN \'ACTIVE\' ELSE status END,
@@ -117,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         if ($newFailedAttempts >= 5) {
                             $lockStmt = $pdo->prepare('
-                                UPDATE auth.users
+                                UPDATE users
                                 SET failed_login_attempts = :attempts,
                                     locked_until = CURRENT_TIMESTAMP + INTERVAL \'15 minutes\',
                                     status = \'LOCKED\',
@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ]);
                         } else {
                             $failStmt = $pdo->prepare('
-                                UPDATE auth.users
+                                UPDATE users
                                 SET failed_login_attempts = :attempts,
                                     updated_at = CURRENT_TIMESTAMP
                                 WHERE user_id = :user_id

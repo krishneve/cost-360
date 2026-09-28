@@ -19,9 +19,31 @@ if (!function_exists('isLoggedIn')) {
 if (!function_exists('requireAuth')) {
     function requireAuth() {
         if (!isLoggedIn()) {
-            header('Location: login.php');
+            $script = $_SERVER['SCRIPT_NAME'] ?? '';
+            $loginUrl = 'login.php';
+            if (strpos($script, '/admin/') !== false || strpos($script, '/administration/') !== false) {
+                if (preg_match('#/(?:admin|administration)/[^/]+/#', $script) ||
+                    preg_match('#/(?:admin|administration)/[^/]+/index\.php#', $script)) {
+                    $loginUrl = '../../login.php';
+                } else {
+                    $loginUrl = '../login.php';
+                }
+            }
+            header('Location: ' . $loginUrl);
             exit;
         }
+    }
+}
+
+if (!function_exists('hashPassword')) {
+    function hashPassword($password) {
+        return password_hash($password, PASSWORD_DEFAULT);
+    }
+}
+
+if (!function_exists('verifyPassword')) {
+    function verifyPassword($password, $hash) {
+        return password_verify($password, $hash);
     }
 }
 
@@ -36,17 +58,25 @@ if (!function_exists('getAuthUser')) {
             return $cachedUser;
         }
 
+        if (isset($_SESSION['auth_cache']['user'])) {
+            $cachedUser = $_SESSION['auth_cache']['user'];
+            return $cachedUser;
+        }
+
         try {
             $pdo = getDbConnection();
             $stmt = $pdo->prepare('
                 SELECT user_id, username, email, first_name, last_name,
-                       mobile_number, status, is_email_verified, last_login_at, created_at
-                FROM auth.users
+                       phone as mobile_number, status, is_email_verified, last_login_at, created_at
+                FROM users
                 WHERE user_id = :user_id
                 LIMIT 1
             ');
             $stmt->execute([':user_id' => $_SESSION['user_id']]);
             $cachedUser = $stmt->fetch();
+            if ($cachedUser) {
+                $_SESSION['auth_cache']['user'] = $cachedUser;
+            }
             return $cachedUser;
         } catch (Exception $e) {
             error_log("Error fetching auth user: " . $e->getMessage());
@@ -72,23 +102,24 @@ if (!function_exists('getCurrentUserRole')) {
             return null;
         }
 
-        static $cachedRole = null;
-        if ($cachedRole !== null) {
-            return $cachedRole;
+        static $cachedRolesMap = [];
+        if (isset($cachedRolesMap[$userId])) {
+            return $cachedRolesMap[$userId];
         }
 
         try {
             $pdo = getDbConnection();
             $stmt = $pdo->prepare('
-                SELECT r.role_id, r.role_code, r.role_name, r.description, r.is_system_role, r.is_active, ur.is_primary_role
-                FROM auth.roles r
-                INNER JOIN auth.user_role ur ON r.role_id = ur.role_id
-                WHERE ur.user_id = :user_id AND r.is_active = true
-                ORDER BY ur.is_primary_role DESC, r.role_id ASC
+                SELECT r.role_id, r.role_code, r.role_name, r.description, r.status
+                FROM roles r
+                INNER JOIN user_roles ur ON r.role_id = ur.role_id
+                WHERE ur.user_id = :user_id AND r.status = \'Active\' AND ur.status = \'Active\'
+                ORDER BY r.role_id ASC
                 LIMIT 1
             ');
             $stmt->execute([':user_id' => $userId]);
             $cachedRole = $stmt->fetch();
+            $cachedRolesMap[$userId] = $cachedRole ?: null;
             return $cachedRole;
         } catch (Exception $e) {
             error_log("Error fetching user role: " . $e->getMessage());
@@ -97,8 +128,53 @@ if (!function_exists('getCurrentUserRole')) {
     }
 }
 
+// if (!function_exists('getUserAuthorizedMenus')) {
+//     function getUserAuthorizedMenus($userId = null) {
+//         if ($userId === null) {
+//             $userId = $_SESSION['user_id'] ?? null;
+//         }
+
+//         if (!$userId) {
+//             return [];
+//         }
+
+//         static $cachedMenusMap = [];
+//         if (isset($cachedMenusMap[$userId])) {
+//             return $cachedMenusMap[$userId];
+//         }
+
+//         try {
+//             $pdo = getDbConnection();
+//             $stmt = $pdo->prepare('
+//                 SELECT DISTINCT m.menu_id, m.parent_menu_id, m.menu_code, m.menu_name,
+//                        m.menu_type, m.route, m.icon, m.display_order, m.status,
+//                        rm.can_view, rm.can_create, rm.can_edit, rm.can_delete, rm.can_upload,
+//                        rm.can_download, rm.can_approve, rm.can_export, rm.can_print, rm.can_configure
+//                 FROM menus m
+//                 INNER JOIN role_menu rm ON m.menu_id = rm.menu_id
+//                 INNER JOIN user_roles ur ON rm.role_id = ur.role_id
+//                 INNER JOIN roles r ON ur.role_id = r.role_id
+//                 WHERE ur.user_id = :user_id
+//                   AND m.status = \'Active\'
+//                   AND rm.is_active = true
+//                   AND r.status = \'Active\'
+//                   AND ur.status = \'Active\'
+//                 ORDER BY m.display_order ASC, m.menu_id ASC
+//             ');
+//             $stmt->execute([':user_id' => $userId]);
+//             $cachedMenus = $stmt->fetchAll();
+//             $cachedMenusMap[$userId] = $cachedMenus ?: [];
+//             return $cachedMenus;
+//         } catch (Exception $e) {
+//             error_log("Error fetching authorized menus: " . $e->getMessage());
+//             return [];
+//         }
+//     }
+// }
+
 if (!function_exists('getUserAuthorizedMenus')) {
-    function getUserAuthorizedMenus($userId = null) {
+    function getUserAuthorizedMenus($userId = null)
+    {
         if ($userId === null) {
             $userId = $_SESSION['user_id'] ?? null;
         }
@@ -107,26 +183,166 @@ if (!function_exists('getUserAuthorizedMenus')) {
             return [];
         }
 
+        static $cachedMenusMap = [];
+
+        if (isset($cachedMenusMap[$userId])) {
+            return $cachedMenusMap[$userId];
+        }
+
         try {
+
             $pdo = getDbConnection();
-            $stmt = $pdo->prepare('
-                SELECT DISTINCT m.menu_id, m.parent_menu_id, m.menu_code, m.menu_name,
-                       m.menu_type, m.route, m.icon, m.display_order, m.is_visible, m.is_active, m.description
-                FROM auth.menus m
-                INNER JOIN auth.role_menu rm ON m.menu_id = rm.menu_id
-                INNER JOIN auth.user_role ur ON rm.role_id = ur.role_id
-                INNER JOIN auth.roles r ON ur.role_id = r.role_id
-                WHERE ur.user_id = :user_id
-                  AND m.is_active = true
-                  AND m.is_visible = true
-                  AND rm.is_visible = true
-                  AND r.is_active = true
-                ORDER BY m.display_order ASC, m.menu_id ASC
-            ');
-            $stmt->execute([':user_id' => $userId]);
-            return $stmt->fetchAll();
-        } catch (Exception $e) {
-            error_log("Error fetching authorized menus: " . $e->getMessage());
+
+            /*
+             * First get menus directly assigned to the user's
+             * active roles.
+             *
+             * Then recursively add their parent menus so that
+             * the sidebar hierarchy remains intact.
+             */
+
+            $sql = "
+                WITH RECURSIVE authorized_menu_tree AS (
+
+                    /* -----------------------------------------
+                       MENUS DIRECTLY ASSIGNED TO USER'S ROLE
+                       ----------------------------------------- */
+
+                    SELECT DISTINCT
+                        m.menu_id,
+                        m.parent_menu_id,
+                        m.menu_code,
+                        m.menu_name,
+                        m.menu_type,
+                        m.route,
+                        m.icon,
+                        m.display_order,
+                        m.status,
+
+                        rm.can_view,
+                        rm.can_create,
+                        rm.can_edit,
+                        rm.can_delete,
+                        rm.can_upload,
+                        rm.can_download,
+                        rm.can_approve,
+                        rm.can_export,
+                        rm.can_print,
+                        rm.can_configure
+
+                    FROM menus m
+
+                    INNER JOIN role_menu rm
+                        ON rm.menu_id = m.menu_id
+
+                    INNER JOIN user_roles ur
+                        ON ur.role_id = rm.role_id
+
+                    INNER JOIN roles r
+                        ON r.role_id = ur.role_id
+
+                    WHERE ur.user_id = :user_id
+
+                      AND ur.status = 'Active'
+
+                      AND r.status = 'Active'
+
+                      AND m.status = 'Active'
+
+                      AND rm.is_active = TRUE
+
+                      AND rm.can_view = TRUE
+
+
+                    UNION
+
+
+                    /* -----------------------------------------
+                       ADD PARENT MENUS
+                       ----------------------------------------- */
+
+                    SELECT
+                        parent.menu_id,
+                        parent.parent_menu_id,
+                        parent.menu_code,
+                        parent.menu_name,
+                        parent.menu_type,
+                        parent.route,
+                        parent.icon,
+                        parent.display_order,
+                        parent.status,
+
+                        FALSE AS can_view,
+                        FALSE AS can_create,
+                        FALSE AS can_edit,
+                        FALSE AS can_delete,
+                        FALSE AS can_upload,
+                        FALSE AS can_download,
+                        FALSE AS can_approve,
+                        FALSE AS can_export,
+                        FALSE AS can_print,
+                        FALSE AS can_configure
+
+                    FROM menus parent
+
+                    INNER JOIN authorized_menu_tree child
+                        ON child.parent_menu_id =
+                           parent.menu_id
+
+                    WHERE parent.status = 'Active'
+                )
+
+                SELECT DISTINCT
+
+                    menu_id,
+                    parent_menu_id,
+                    menu_code,
+                    menu_name,
+                    menu_type,
+                    route,
+                    icon,
+                    display_order,
+                    status,
+
+                    can_view,
+                    can_create,
+                    can_edit,
+                    can_delete,
+                    can_upload,
+                    can_download,
+                    can_approve,
+                    can_export,
+                    can_print,
+                    can_configure
+
+                FROM authorized_menu_tree
+
+                ORDER BY
+                    display_order ASC,
+                    menu_id ASC
+            ";
+
+            $stmt = $pdo->prepare($sql);
+
+            $stmt->execute([
+                ':user_id' => $userId
+            ]);
+
+            $menus =
+                $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $cachedMenusMap[$userId] =
+                $menus ?: [];
+
+            return $cachedMenusMap[$userId];
+
+        } catch (Throwable $e) {
+
+            error_log(
+                'Error fetching authorized menus: ' .
+                $e->getMessage()
+            );
+
             return [];
         }
     }
@@ -142,26 +358,40 @@ if (!function_exists('getUserAuthorizedPermissions')) {
             return [];
         }
 
+        static $cachedPermissions = null;
+        if ($cachedPermissions !== null) {
+            return $cachedPermissions;
+        }
+
+        if (isset($_SESSION['auth_cache']['permissions'])) {
+            $cachedPermissions = $_SESSION['auth_cache']['permissions'];
+            // Force cache refresh if the old structure is cached
+            if (!empty($cachedPermissions) && isset($cachedPermissions[0]['menu_name'])) {
+                return $cachedPermissions;
+            }
+        }
+
         try {
-            $pdo = getDbConnection();
-            $stmt = $pdo->prepare('
-                SELECT DISTINCT rmp.role_id, rmp.menu_id, rmp.permission_id,
-                       m.menu_code, m.menu_name, p.permission_code, p.permission_name, p.description
-                FROM auth.role_menu_permission rmp
-                INNER JOIN auth.user_role ur ON rmp.role_id = ur.role_id
-                INNER JOIN auth.roles r ON ur.role_id = r.role_id
-                INNER JOIN auth.menus m ON rmp.menu_id = m.menu_id
-                INNER JOIN auth.permissions p ON rmp.permission_id = p.permission_id
-                WHERE ur.user_id = :user_id
-                  AND r.is_active = true
-                  AND m.is_active = true
-                  AND p.is_active = true
-                ORDER BY m.menu_name ASC, rmp.permission_id ASC
-            ');
-            $stmt->execute([':user_id' => $userId]);
-            return $stmt->fetchAll();
+            $menus = getUserAuthorizedMenus($userId);
+            $perms = [];
+            foreach ($menus as $m) {
+                $mCode = $m['menu_code'];
+                $mName = $m['menu_name'];
+                if ($m['can_view']) $perms[] = ['permission_code' => 'VIEW', 'permission_name' => 'View', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_create']) $perms[] = ['permission_code' => 'CREATE', 'permission_name' => 'Create', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_edit']) $perms[] = ['permission_code' => 'EDIT', 'permission_name' => 'Edit', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_delete']) $perms[] = ['permission_code' => 'DELETE', 'permission_name' => 'Delete', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_upload']) $perms[] = ['permission_code' => 'UPLOAD', 'permission_name' => 'Upload', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_download']) $perms[] = ['permission_code' => 'DOWNLOAD', 'permission_name' => 'Download', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_approve']) $perms[] = ['permission_code' => 'APPROVE', 'permission_name' => 'Approve', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_export']) $perms[] = ['permission_code' => 'EXPORT', 'permission_name' => 'Export', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_print']) $perms[] = ['permission_code' => 'PRINT', 'permission_name' => 'Print', 'menu_code' => $mCode, 'menu_name' => $mName];
+                if ($m['can_configure']) $perms[] = ['permission_code' => 'CONFIGURE', 'permission_name' => 'Configure', 'menu_code' => $mCode, 'menu_name' => $mName];
+            }
+            $_SESSION['auth_cache']['permissions'] = $perms;
+            return $perms;
         } catch (Exception $e) {
-            error_log("Error fetching user permissions: " . $e->getMessage());
+            error_log("Error generating user permissions: " . $e->getMessage());
             return [];
         }
     }
@@ -170,8 +400,14 @@ if (!function_exists('getUserAuthorizedPermissions')) {
 if (!function_exists('userHasMenuAccess')) {
     function userHasMenuAccess($menuRouteOrCode, $userId = null) {
         $menus = getUserAuthorizedMenus($userId);
+        $cleanTarget = strtolower(trim($menuRouteOrCode));
         foreach ($menus as $m) {
-            if (strcasecmp($m['menu_code'], $menuRouteOrCode) === 0 || strcasecmp($m['route'], $menuRouteOrCode) === 0) {
+            $mCode = strtolower(trim($m['menu_code']));
+            $mRoute = strtolower(trim($m['route']));
+            if ($mCode === $cleanTarget || $mRoute === $cleanTarget) {
+                return true;
+            }
+            if ($mRoute !== '' && (str_contains($mRoute, $cleanTarget) || str_contains($cleanTarget, $mCode))) {
                 return true;
             }
         }

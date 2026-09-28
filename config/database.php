@@ -57,23 +57,16 @@ if (!function_exists('getDbConnection')) {
         $password = getenv('PGPASSWORD') ?: '';
         $sslmode = getenv('PGSSLMODE') ?: 'require';
 
-        // Pre-check socket connection to fail fast if network/firewall is unreachable
-        $socket = @fsockopen($host, (int)$port, $errno, $errstr, 2);
-        if (!$socket) {
-            throw new Exception("Unable to reach database host ($host:$port). Network connection timed out or port 5432 is blocked.");
-        }
-        fclose($socket);
+        // Extract clean endpoint ID and direct host from domain
+        $rawEndpoint = explode('.', $host)[0];
+        $cleanEndpointId = preg_replace('/-pooler$/', '', $rawEndpoint);
+        $directHost = str_replace('-pooler.', '.', $host);
 
-        // Extract endpoint ID from domain host (e.g. ep-super-rain-a5zoqjy7 or ep-super-rain-a5zoqjy7-pooler)
-        $endpointId = explode('.', $host)[0];
-        $cleanEndpointId = preg_replace('/-pooler$/', '', $endpointId);
-
-        // Neon SNI options list to support all PHP libpq drivers
+        // Neon SNI options list with direct endpoint fallback
         $dsnOptions = [
-            "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=3;options='endpoint={$endpointId}'",
-            "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=3;options='endpoint={$cleanEndpointId}'",
-            "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=3;options=endpoint%3D{$endpointId}",
-            "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=3"
+            "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=10;options='endpoint={$cleanEndpointId}'",
+            "pgsql:host={$directHost};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=10",
+            "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=10"
         ];
 
         $lastException = null;
