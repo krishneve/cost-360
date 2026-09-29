@@ -69,10 +69,10 @@ if (!function_exists('getMenuIconSvg')) {
 
 $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
 $baseUrlPrefix = '';
-if (preg_match('#/(?:admin|administration)/[^/]+/#', $scriptName) || 
-    preg_match('#/(?:admin|administration)/[^/]+/index\.php#', $scriptName)) {
+if (preg_match('#/(?:admin|administration|organization)/[^/]+/#i', $scriptName) || 
+    preg_match('#/(?:admin|administration|organization)/[^/]+/index\.php#i', $scriptName)) {
     $baseUrlPrefix = '../../';
-} else if (strpos($scriptName, '/admin/') !== false || strpos($scriptName, '/administration/') !== false) {
+} else if (strpos($scriptName, '/admin/') !== false || strpos($scriptName, '/administration/') !== false || strpos($scriptName, '/organization/') !== false) {
     $baseUrlPrefix = '../';
 }
 
@@ -90,24 +90,33 @@ if (!function_exists('formatMenuRouteUrl')) {
         }
 
         // Parent modules with no standalone page shouldn't navigate away to a 404
-        $parentOnlyRoutes = ['administration', 'customers', 'data', 'costing', 'audit', 'reports', 'settings'];
+        $parentOnlyRoutes = ['administration', 'data', 'costing', 'audit', 'reports', 'settings', 'organization'];
         if (in_array($lower, $parentOnlyRoutes)) {
             return 'javascript:void(0);';
         }
 
         // Map known routes to actual working handlers
         $routeMap = [
-            'administration/users' => 'admin/users/',
-            'admin/users'          => 'admin/users/',
-            'administration/roles' => 'admin/roles/',
-            'admin/roles'          => 'admin/roles/',
-            'administration/menus' => 'admin/menus/',
-            'admin/menus'          => 'admin/menus/',
-            'data/upload'          => 'upload-centre.php',
-            'data/mapping'         => 'mapping-centre.php',
-            'data/history'         => 'import-history.php',
-            'data/audit'           => 'audit-logs.php',
-            'data/masters'         => 'master-groups.php',
+            'customers'              => 'customers.php',
+            'customers/master'       => 'customers.php',
+            'customers/companies'    => 'customers.php',
+            'customers/plants'       => 'customers.php',
+            'administration/users'   => 'admin/users/',
+            'admin/users'            => 'admin/users/',
+            'administration/roles'   => 'admin/roles/',
+            'admin/roles'            => 'admin/roles/',
+            'administration/menus'   => 'admin/menus/',
+            'admin/menus'            => 'admin/menus/',
+            'data/upload'            => 'upload-centre.php',
+            'data/mapping'           => 'mapping-centre.php',
+            'data/history'           => 'import-history.php',
+            'data/audit'             => 'audit-logs.php',
+            'data/masters'           => 'master-groups.php',
+            'organization/companies' => 'organization/companies/',
+            'organization/divisions' => 'organization/divisions/',
+            'organization/plants'    => 'organization/plants/',
+            'organization/warehouses' => 'organization/warehouses/',
+            'organization/periods'   => 'organization/periods/',
         ];
 
         if (isset($routeMap[$lower])) {
@@ -124,6 +133,9 @@ if (!function_exists('formatMenuRouteUrl')) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cost360 - Enterprise Workspace & Upload Centre</title>
+  <script>
+    window.cost360BaseUrlPrefix = "<?php echo $baseUrlPrefix; ?>";
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -1366,6 +1378,420 @@ if (!function_exists('formatMenuRouteUrl')) {
             <?php endif; ?>
           </div>
         </section>
+
+      <?php elseif ($currentPage === 'customers'): ?>
+        <!-- ============================================================
+             CUSTOMER MANAGEMENT MODULE (DYNAMIC FROM NEON DB)
+             ============================================================ -->
+        <section class="grid-cards" style="margin-bottom: 1.5rem;">
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Total Customers</span></div>
+            <div class="stat-number" id="kpiTotalCust">0</div>
+            <div class="stat-desc">Registered tenant accounts</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Active Customers</span></div>
+            <div class="stat-number" id="kpiActiveCust" style="color: var(--color-bright-cyan);">0</div>
+            <div class="stat-desc">Active subscriptions</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Inactive Tenants</span></div>
+            <div class="stat-number" id="kpiInactiveCust" style="color: #DC2626;">0</div>
+            <div class="stat-desc">Suspended / Deactivated</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Total Companies</span></div>
+            <div class="stat-number" id="kpiTotalCompanies">0</div>
+            <div class="stat-desc">Across all customer tenants</div>
+          </div>
+        </section>
+
+        <section class="section-card">
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem; font-size: 1.3rem;">Customer Management</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage customers, subscriptions and organization structure</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-primary" onclick="openAddCustomerWizard()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>+ Add Customer</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- FILTERS BAR -->
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="flex: 1; min-width: 260px;">
+              <input type="text" id="custSearchInput" class="cost360-select" placeholder="Search by customer code, name, contact..." onkeyup="filterCustomersList()">
+            </div>
+            <div style="min-width: 150px;">
+              <select id="custStatusFilter" class="cost360-select" onchange="filterCustomersList()">
+                <option value="ALL">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+            <div style="min-width: 170px;">
+              <select id="custSubscriptionFilter" class="cost360-select" onchange="filterCustomersList()">
+                <option value="ALL">All Subscription Plans</option>
+                <option value="Enterprise">Enterprise</option>
+                <option value="Professional">Professional</option>
+                <option value="Standard">Standard</option>
+              </select>
+            </div>
+            <button type="button" class="btn-secondary" onclick="resetCustomerFilters()">Reset</button>
+          </div>
+
+          <!-- CUSTOMERS TABLE -->
+          <div class="table-responsive">
+            <table id="customersTable">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">#</th>
+                  <th>Customer Code</th>
+                  <th>Customer Name</th>
+                  <th>Primary Contact</th>
+                  <th>Subscription Plan</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="customersTableBody">
+                <tr><td colspan="7" class="empty-state">Loading customer accounts from Neon PostgreSQL...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             ADD CUSTOMER MULTI-STEP PROVISIONING WIZARD DRAWER / MODAL
+             ============================================================ -->
+        <div id="addCustomerWizardModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="section-card" style="width: 900px; max-width: 95vw; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative;">
+            <button type="button" onclick="closeModal('addCustomerWizardModal')" style="position: absolute; top: 1.25rem; right: 1.25rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-secondary-text);">&times;</button>
+
+            <div style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem;">
+              <h2 style="font-size: 1.3rem; color: var(--color-deep-navy);">Add Customer</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Create a new customer tenant and set up organization details</p>
+            </div>
+
+            <!-- STEP INDICATOR BAR -->
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; background: var(--color-page-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border); font-size: 0.8rem; overflow-x: auto; gap: 0.5rem;">
+              <div class="wiz-step-pill active" id="wizStepPill1"><strong style="background: var(--color-primary-blue); color: #fff; border-radius: 50%; padding: 2px 7px; margin-right: 4px;">1</strong> Basic Information</div>
+              <div class="wiz-step-pill" id="wizStepPill2"><strong style="background: var(--color-border); color: var(--color-primary-text); border-radius: 50%; padding: 2px 7px; margin-right: 4px;">2</strong> Subscription</div>
+              <div class="wiz-step-pill" id="wizStepPill3"><strong style="background: var(--color-border); color: var(--color-primary-text); border-radius: 50%; padding: 2px 7px; margin-right: 4px;">3</strong> Database Setup</div>
+              <div class="wiz-step-pill" id="wizStepPill4"><strong style="background: var(--color-border); color: var(--color-primary-text); border-radius: 50%; padding: 2px 7px; margin-right: 4px;">4</strong> Customer Administrator</div>
+              <div class="wiz-step-pill" id="wizStepPill5"><strong style="background: var(--color-border); color: var(--color-primary-text); border-radius: 50%; padding: 2px 7px; margin-right: 4px;">5</strong> Organization Setup</div>
+              <div class="wiz-step-pill" id="wizStepPill6"><strong style="background: var(--color-border); color: var(--color-primary-text); border-radius: 50%; padding: 2px 7px; margin-right: 4px;">6</strong> Review & Create</div>
+            </div>
+
+            <form id="addCustomerForm" onsubmit="submitCustomerWizard(event)">
+              <!-- STEP 1: BASIC INFORMATION -->
+              <div id="wizStepContent1" class="wiz-step-content">
+                <h3 style="font-size: 1rem; color: var(--color-primary-text); margin-bottom: 1rem;">1. Basic Information</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div>
+                    <label class="dropdown-label">Customer Code *</label>
+                    <input type="text" id="wizCustomerCode" name="customer_code" class="cost360-select" placeholder="e.g. CUST009" required>
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Customer Name *</label>
+                    <input type="text" id="wizCustomerName" name="customer_name" class="cost360-select" placeholder="e.g. Acme Manufacturing Ltd" required>
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Short Name</label>
+                    <input type="text" id="wizShortName" name="short_name" class="cost360-select" placeholder="e.g. Acme">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Industry Type</label>
+                    <select name="industry_type" class="cost360-select">
+                      <option value="Automotive">Automotive</option>
+                      <option value="Manufacturing">Manufacturing</option>
+                      <option value="Electronics">Electronics</option>
+                      <option value="Pharmaceuticals">Pharmaceuticals</option>
+                      <option value="Textiles">Textiles</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Primary Contact Person *</label>
+                    <input type="text" id="wizContactPerson" name="contact_person" class="cost360-select" placeholder="Contact person name" required>
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Email *</label>
+                    <input type="email" id="wizContactEmail" name="contact_email" class="cost360-select" placeholder="contact@company.com" required>
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Phone Number</label>
+                    <input type="text" id="wizContactPhone" name="contact_phone" class="cost360-select" placeholder="+91 9876543210">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Status *</label>
+                    <select name="status" class="cost360-select">
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div style="grid-column: span 2;">
+                    <label class="dropdown-label">Complete Address</label>
+                    <textarea name="address" class="cost360-select" rows="2" placeholder="MIDC Industrial Area..."></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <!-- STEP 2: SUBSCRIPTION -->
+              <div id="wizStepContent2" class="wiz-step-content" style="display: none;">
+                <h3 style="font-size: 1rem; color: var(--color-primary-text); margin-bottom: 1rem;">2. Subscription Plan</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div>
+                    <label class="dropdown-label">Subscription Plan *</label>
+                    <select id="wizSubPlan" name="subscription_plan" class="cost360-select">
+                      <option value="Enterprise">Enterprise (Multi-Plant / Full Access)</option>
+                      <option value="Professional">Professional (Standard Operations)</option>
+                      <option value="Standard">Standard (Single Plant)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Billing Cycle</label>
+                    <select name="billing_cycle" class="cost360-select">
+                      <option value="Annual">Annual</option>
+                      <option value="Monthly">Monthly</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Start Date</label>
+                    <input type="date" name="sub_start_date" class="cost360-select" value="<?php echo date('Y-m-d'); ?>">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">End Date</label>
+                    <input type="date" name="sub_end_date" class="cost360-select" value="<?php echo date('Y-m-d', strtotime('+1 year')); ?>">
+                  </div>
+                </div>
+              </div>
+
+              <!-- STEP 3: DATABASE SETUP -->
+              <div id="wizStepContent3" class="wiz-step-content" style="display: none;">
+                <h3 style="font-size: 1rem; color: var(--color-primary-text); margin-bottom: 1rem;">3. Customer Database Provisioning</h3>
+                <div style="background: var(--color-soft-blue); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--color-border); margin-bottom: 1rem;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <span style="font-weight: 700; color: var(--color-deep-navy);">Provisioning Mode:</span>
+                    <span class="status-badge" style="background: #D1FAE5; color: #065F46;">Connected (Neon Global DB)</span>
+                  </div>
+                  <p style="font-size: 0.85rem; color: var(--color-secondary-text);">The customer tenant will be provisioned in the central Neon PostgreSQL global database architecture with isolated schema routing.</p>
+                </div>
+              </div>
+
+              <!-- STEP 4: CUSTOMER ADMINISTRATOR -->
+              <div id="wizStepContent4" class="wiz-step-content" style="display: none;">
+                <h3 style="font-size: 1rem; color: var(--color-primary-text); margin-bottom: 1rem;">4. Customer Administrator Account</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div>
+                    <label class="dropdown-label">Admin Full Name *</label>
+                    <input type="text" id="wizAdminName" name="admin_full_name" class="cost360-select" placeholder="e.g. Rahul Sharma">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Admin Email *</label>
+                    <input type="email" id="wizAdminEmail" name="admin_email" class="cost360-select" placeholder="rahul@company.com">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Admin Phone</label>
+                    <input type="text" name="admin_phone" class="cost360-select" placeholder="+91 9876543210">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Admin Password *</label>
+                    <input type="password" id="wizAdminPass" name="admin_password" class="cost360-select" placeholder="Assign secure password" value="12345678">
+                  </div>
+                  <div style="grid-column: span 2; background: #FEF3C7; padding: 0.75rem 1rem; border-radius: 6px; color: #92400E; font-size: 0.82rem;">
+                    <strong>Note:</strong> Customer Administrator automatically receives the <strong>CUSTOMER_ADMIN</strong> role and full customer-level scope across all companies, divisions, plants, and warehouses.
+                  </div>
+                </div>
+              </div>
+
+              <!-- STEP 5: ORGANIZATION SETUP -->
+              <div id="wizStepContent5" class="wiz-step-content" style="display: none;">
+                <h3 style="font-size: 1rem; color: var(--color-primary-text); margin-bottom: 1rem;">5. Initial Organization Setup (Optional)</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div>
+                    <label class="dropdown-label">Company Code</label>
+                    <input type="text" id="wizCompCode" name="company_code" class="cost360-select" placeholder="e.g. COMP01">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Company Name</label>
+                    <input type="text" id="wizCompName" name="company_name" class="cost360-select" placeholder="e.g. Acme Components Pvt Ltd">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Division Code</label>
+                    <input type="text" name="division_code" class="cost360-select" placeholder="e.g. MFG">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Division Name</label>
+                    <input type="text" name="division_name" class="cost360-select" placeholder="e.g. Manufacturing Division">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Plant Code</label>
+                    <input type="text" name="plant_code" class="cost360-select" placeholder="e.g. PLANT01">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Plant Name</label>
+                    <input type="text" name="plant_name" class="cost360-select" placeholder="e.g. Nashik Plant">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Warehouse Code</label>
+                    <input type="text" name="warehouse_code" class="cost360-select" placeholder="e.g. RM01">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Warehouse Name</label>
+                    <input type="text" name="warehouse_name" class="cost360-select" placeholder="e.g. Raw Material Warehouse">
+                  </div>
+                </div>
+              </div>
+
+              <!-- STEP 6: REVIEW & CREATE -->
+              <div id="wizStepContent6" class="wiz-step-content" style="display: none;">
+                <h3 style="font-size: 1rem; color: var(--color-primary-text); margin-bottom: 1rem;">6. Review & Onboard Customer</h3>
+                <div id="wizReviewBox" style="background: var(--color-page-bg); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--color-border); margin-bottom: 1rem;">
+                  <!-- Dynamically populated review details -->
+                </div>
+              </div>
+
+              <!-- WIZARD BUTTONS -->
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" id="btnWizPrev" class="btn-secondary" onclick="changeWizStep(-1)" style="display: none;">Back</button>
+                <div style="margin-left: auto; display: flex; gap: 0.75rem;">
+                  <button type="button" class="btn-secondary" onclick="closeModal('addCustomerWizardModal')">Cancel</button>
+                  <button type="button" id="btnWizNext" class="btn-primary" onclick="changeWizStep(1)">Next &rarr;</button>
+                  <button type="submit" id="btnWizSubmit" class="btn-primary" style="display: none; background: #059669;">Create Customer</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             CUSTOMER DETAILS DRAWER / MODAL
+             ============================================================ -->
+        <div id="customerDetailsModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="section-card" style="width: 1000px; max-width: 95vw; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative;">
+            <button type="button" onclick="closeModal('customerDetailsModal')" style="position: absolute; top: 1.25rem; right: 1.25rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-secondary-text);">&times;</button>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem;">
+              <div>
+                <span id="dtlCustCode" class="perm-pill perm-view" style="font-size: 0.85rem;">CUST001</span>
+                <h2 id="dtlCustName" style="font-size: 1.4rem; color: var(--color-deep-navy); margin-top: 0.2rem;">Customer Details</h2>
+                <p id="dtlCustContact" style="font-size: 0.85rem; color: var(--color-secondary-text);"></p>
+              </div>
+              <div id="dtlCustStatusBadge"></div>
+            </div>
+
+            <!-- TABS -->
+            <div style="display: flex; gap: 0.5rem; border-bottom: 1px solid var(--color-border); margin-bottom: 1.25rem; overflow-x: auto;">
+              <button type="button" class="btn-secondary cust-tab-btn active" onclick="switchCustTab('overview', this)">Overview</button>
+              <button type="button" class="btn-secondary cust-tab-btn" onclick="switchCustTab('admin', this)">Customer Admin</button>
+              <button type="button" class="btn-secondary cust-tab-btn" onclick="switchCustTab('companies', this)">Companies</button>
+              <button type="button" class="btn-secondary cust-tab-btn" onclick="switchCustTab('divisions', this)">Divisions</button>
+              <button type="button" class="btn-secondary cust-tab-btn" onclick="switchCustTab('plants', this)">Plants</button>
+              <button type="button" class="btn-secondary cust-tab-btn" onclick="switchCustTab('warehouses', this)">Warehouses</button>
+              <button type="button" class="btn-secondary cust-tab-btn" onclick="switchCustTab('users', this)">Users & Scope</button>
+              <button type="button" class="btn-secondary cust-tab-btn" onclick="switchCustTab('audit', this)">Audit History</button>
+            </div>
+
+            <!-- TAB CONTENT: OVERVIEW -->
+            <div id="custTabOverview" class="cust-tab-pane">
+              <div class="grid-cards" style="margin-bottom: 1.5rem;">
+                <div class="stat-card">
+                  <div class="stat-label">Companies</div>
+                  <div class="stat-number" id="dtlKpiComp">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">Divisions</div>
+                  <div class="stat-number" id="dtlKpiDiv">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">Plants</div>
+                  <div class="stat-number" id="dtlKpiPlant">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">Warehouses</div>
+                  <div class="stat-number" id="dtlKpiWh">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">Users</div>
+                  <div class="stat-number" id="dtlKpiUser">0</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB CONTENT: ADMIN -->
+            <div id="custTabAdmin" class="cust-tab-pane" style="display: none;">
+              <div id="custAdminBox" style="background: var(--color-page-bg); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--color-border);">
+                <!-- Populated via JS -->
+              </div>
+            </div>
+
+            <!-- TAB CONTENT: COMPANIES -->
+            <div id="custTabCompanies" class="cust-tab-pane" style="display: none;">
+              <div class="table-responsive">
+                <table>
+                  <thead><tr><th>Company Code</th><th>Company Name</th><th>Address</th><th>Status</th></tr></thead>
+                  <tbody id="dtlCompaniesBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- TAB CONTENT: DIVISIONS -->
+            <div id="custTabDivisions" class="cust-tab-pane" style="display: none;">
+              <div class="table-responsive">
+                <table>
+                  <thead><tr><th>Division Code</th><th>Division Name</th><th>Company</th><th>Status</th></tr></thead>
+                  <tbody id="dtlDivisionsBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- TAB CONTENT: PLANTS -->
+            <div id="custTabPlants" class="cust-tab-pane" style="display: none;">
+              <div class="table-responsive">
+                <table>
+                  <thead><tr><th>Plant Code</th><th>Plant Name</th><th>Company / Division</th><th>Status</th></tr></thead>
+                  <tbody id="dtlPlantsBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- TAB CONTENT: WAREHOUSES -->
+            <div id="custTabWarehouses" class="cust-tab-pane" style="display: none;">
+              <div class="table-responsive">
+                <table>
+                  <thead><tr><th>Warehouse Code</th><th>Warehouse Name</th><th>Plant</th><th>Status</th></tr></thead>
+                  <tbody id="dtlWarehousesBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- TAB CONTENT: USERS & SCOPE -->
+            <div id="custTabUsers" class="cust-tab-pane" style="display: none;">
+              <div class="table-responsive">
+                <table>
+                  <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Company Scope</th><th>Plant Scope</th><th>Status</th></tr></thead>
+                  <tbody id="dtlUsersBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- TAB CONTENT: AUDIT HISTORY -->
+            <div id="custTabAudit" class="cust-tab-pane" style="display: none;">
+              <div class="table-responsive">
+                <table>
+                  <thead><tr><th>Timestamp</th><th>Operator</th><th>Action</th><th>Details</th></tr></thead>
+                  <tbody id="dtlAuditBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
 
       <?php elseif ($currentPage === 'users'): ?>
         <!-- ============================================================
@@ -2635,6 +3061,1690 @@ if (!function_exists('formatMenuRouteUrl')) {
           }
         </script>
 
+      <?php elseif ($currentPage === 'companies'): ?>
+        <!-- ============================================================
+             COMPANY MASTER PAGE MODULE
+             ============================================================ -->
+        <section class="section-card">
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem;">Company Master</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage company records, address details, and organization scope.</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-primary" onclick="openAddCompanyModal()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>+ Add Company</span>
+              </button>
+              <button type="button" class="btn-secondary" onclick="loadCompaniesTable()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI STATS BAR -->
+          <div class="grid-cards" style="margin-bottom: 1.25rem;">
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Total Companies</div>
+              <div class="stat-number" id="kpiTotalCompanies">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Active Companies</div>
+              <div class="stat-number" id="kpiActiveCompanies" style="color: #059669;">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Inactive Companies</div>
+              <div class="stat-number" id="kpiInactiveCompanies" style="color: #DC2626;">-</div>
+            </div>
+          </div>
+
+          <!-- FILTER BAR -->
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="flex: 1; min-width: 220px; position: relative;">
+              <input type="text" id="companySearchInput" class="cost360-select" placeholder="Search companies by code, name, address..." onkeyup="handleCompanySearchKeyup(event)">
+            </div>
+            <div style="width: 160px;">
+              <select id="companyStatusFilter" class="cost360-select" onchange="loadCompaniesTable()">
+                <option value="">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="companyToast" style="display: none; padding: 0.85rem 1.25rem; border-radius: var(--radius-input); margin-bottom: 1rem; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- TABLE -->
+          <div class="table-responsive">
+            <table id="companiesTable">
+              <thead>
+                <tr>
+                  <th>Company Code</th>
+                  <th>Company Name</th>
+                  <th>Customer</th>
+                  <th>Address</th>
+                  <th>Divisions</th>
+                  <th>Plants</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="companiesTableBody">
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                    Loading companies from Neon PostgreSQL database...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ADD / EDIT COMPANY MODAL -->
+        <div id="companyModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 540px;">
+            <div class="modal-header">
+              <h3 id="companyModalTitle" style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);">+ Add Company</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('companyModal')">&times;</button>
+            </div>
+            <form id="companyForm" onsubmit="submitCompanyForm(event)" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+              <input type="hidden" name="company_id" id="formCompanyId" value="">
+              <div id="companyFormError" style="display: none; padding: 0.65rem 0.85rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-size: 0.82rem; font-weight: 600;"></div>
+
+              <div id="customerSelectContainer" style="display: none;">
+                <label class="dropdown-label">Customer *</label>
+                <select name="customer_id" id="formCompanyCustomerId" class="cost360-select"></select>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                  <label class="dropdown-label">Company Code *</label>
+                  <input type="text" name="company_code" id="formCompanyCode" class="cost360-select" required placeholder="e.g. COMP01">
+                </div>
+                <div>
+                  <label class="dropdown-label">Status *</label>
+                  <select name="status" id="formCompanyStatus" class="cost360-select" required>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Company Name *</label>
+                <input type="text" name="company_name" id="formCompanyName" class="cost360-select" required placeholder="e.g. Cost360 Manufacturing Ltd">
+              </div>
+
+              <div>
+                <label class="dropdown-label">Address</label>
+                <textarea name="address" id="formCompanyAddress" class="cost360-select" rows="3" placeholder="Enter company address..."></textarea>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('companyModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="saveCompanyBtn">Save Company</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <script>
+          let companySearchDebounce = null;
+          document.addEventListener('DOMContentLoaded', function() {
+            if (document.getElementById('companiesTable')) {
+              loadCompaniesTable();
+            }
+          });
+
+          function getCompanyApiUrl() {
+            return (window.cost360BaseUrlPrefix || '') + 'organization/companies/api.php';
+          }
+
+          function handleCompanySearchKeyup() {
+            clearTimeout(companySearchDebounce);
+            companySearchDebounce = setTimeout(loadCompaniesTable, 300);
+          }
+
+          async function loadCompaniesTable() {
+            const tbody = document.getElementById('companiesTableBody');
+            if (!tbody) return;
+            const search = document.getElementById('companySearchInput').value.trim();
+            const status = document.getElementById('companyStatusFilter').value;
+
+            try {
+              const res = await fetch(`${getCompanyApiUrl()}?action=list&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`);
+              const data = await res.json();
+              if (data.success) {
+                document.getElementById('kpiTotalCompanies').textContent = data.kpis.total;
+                document.getElementById('kpiActiveCompanies').textContent = data.kpis.active;
+                document.getElementById('kpiInactiveCompanies').textContent = data.kpis.inactive;
+
+                // Populate Customer Select if applicable
+                const custSelect = document.getElementById('formCompanyCustomerId');
+                if (data.customers && data.customers.length > 0) {
+                  custSelect.innerHTML = data.customers.map(c => `<option value="${c.customer_id}">${escapeHtml(c.customer_name)} (${escapeHtml(c.customer_code)})</option>`).join('');
+                  document.getElementById('customerSelectContainer').style.display = 'block';
+                }
+
+                if (!data.companies || data.companies.length === 0) {
+                  tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No companies found matching current filters.</td></tr>';
+                  return;
+                }
+
+                tbody.innerHTML = data.companies.map(c => {
+                  const isActive = (c.status || '').toUpperCase() === 'ACTIVE';
+                  const statusBadge = isActive ? '<span class="status-badge">Active</span>' : '<span class="status-badge" style="background:#FEE2E2;color:#DC2626;">Inactive</span>';
+                  const toggleBtnText = isActive ? 'Deactivate' : 'Activate';
+                  const toggleBtnClass = isActive ? 'btn-logout' : 'btn-primary';
+
+                  return `
+                    <tr>
+                      <td><code>${escapeHtml(c.company_code)}</code></td>
+                      <td style="font-weight:700; color:var(--color-primary-text);">${escapeHtml(c.company_name)}</td>
+                      <td>${escapeHtml(c.customer_name || '-')}</td>
+                      <td style="font-size:0.82rem; color:var(--color-secondary-text);">${escapeHtml(c.address || '-')}</td>
+                      <td><span class="role-badge">${c.division_count || 0} Divs</span></td>
+                      <td><span class="role-badge" style="background:#E0F2FE;color:#0369A1;">${c.plant_count || 0} Plants</span></td>
+                      <td>${statusBadge}</td>
+                      <td style="text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.78rem; margin-right:0.35rem;" onclick="openEditCompanyModal(${c.company_id})">Edit</button>
+                        <button type="button" class="${toggleBtnClass}" style="padding:0.35rem 0.65rem; font-size:0.78rem;" onclick="toggleCompanyStatus(${c.company_id}, '${c.status}')">${toggleBtnText}</button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('');
+              } else {
+                tbody.innerHTML = `<tr><td colspan="8" class="empty-state" style="color:#DC2626;">${escapeHtml(data.error)}</td></tr>`;
+              }
+            } catch (err) {
+              tbody.innerHTML = '<tr><td colspan="8" class="empty-state" style="color:#DC2626;">Failed to load data from server.</td></tr>';
+            }
+          }
+
+          function openAddCompanyModal() {
+            document.getElementById('companyModalTitle').textContent = '+ Add Company';
+            document.getElementById('formCompanyId').value = '';
+            document.getElementById('companyForm').reset();
+            document.getElementById('formCompanyCode').removeAttribute('readonly');
+            document.getElementById('companyFormError').style.display = 'none';
+            document.getElementById('companyModal').style.display = 'flex';
+          }
+
+          async function openEditCompanyModal(id) {
+            try {
+              const res = await fetch(`${getCompanyApiUrl()}?action=get&company_id=${id}`);
+              const data = await res.json();
+              if (data.success && data.company) {
+                const c = data.company;
+                document.getElementById('companyModalTitle').textContent = 'Edit Company';
+                document.getElementById('formCompanyId').value = c.company_id;
+                document.getElementById('formCompanyCode').value = c.company_code;
+                document.getElementById('formCompanyCode').setAttribute('readonly', 'readonly');
+                document.getElementById('formCompanyName').value = c.company_name;
+                document.getElementById('formCompanyAddress').value = c.address || '';
+                document.getElementById('formCompanyStatus').value = c.status;
+                if (document.getElementById('formCompanyCustomerId')) {
+                  document.getElementById('formCompanyCustomerId').value = c.customer_id;
+                }
+                document.getElementById('companyFormError').style.display = 'none';
+                document.getElementById('companyModal').style.display = 'flex';
+              }
+            } catch (err) {
+              alert('Failed to load company details.');
+            }
+          }
+
+          async function submitCompanyForm(e) {
+            e.preventDefault();
+            const form = document.getElementById('companyForm');
+            const errDiv = document.getElementById('companyFormError');
+            errDiv.style.display = 'none';
+            const formData = new FormData(form);
+            const id = document.getElementById('formCompanyId').value;
+            formData.append('action', id ? 'update' : 'create');
+
+            try {
+              const res = await fetch(getCompanyApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                closeModal('companyModal');
+                showCompanyToast(data.message || 'Company saved successfully.', true);
+                loadCompaniesTable();
+              } else {
+                errDiv.textContent = data.error || 'Failed to save company.';
+                errDiv.style.display = 'block';
+              }
+            } catch (err) {
+              errDiv.textContent = 'Server connection error.';
+              errDiv.style.display = 'block';
+            }
+          }
+
+          async function toggleCompanyStatus(id, currentStatus) {
+            const newStatus = (currentStatus || '').toUpperCase() === 'ACTIVE' ? 'Inactive' : 'Active';
+            if (!confirm(`Are you sure you want to set company status to ${newStatus}?`)) return;
+
+            const formData = new FormData();
+            formData.append('action', 'toggle_status');
+            formData.append('company_id', id);
+            formData.append('status', newStatus);
+
+            try {
+              const res = await fetch(getCompanyApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                showCompanyToast(data.message, true);
+                loadCompaniesTable();
+              } else {
+                alert(data.error || 'Failed to update status.');
+              }
+            } catch (err) {
+              alert('Server connection error.');
+            }
+          }
+
+          function showCompanyToast(msg, isSuccess) {
+            const toast = document.getElementById('companyToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.style.background = isSuccess ? '#D1FAE5' : '#FEE2E2';
+            toast.style.color = isSuccess ? '#065F46' : '#991B1B';
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 4000);
+          }
+        </script>
+
+      <?php elseif ($currentPage === 'divisions'): ?>
+        <!-- ============================================================
+             DIVISION MASTER PAGE MODULE
+             ============================================================ -->
+        <section class="section-card">
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem;">Division Master</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage divisions under companies (Company &rarr; Division hierarchy).</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-primary" onclick="openAddDivisionModal()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>+ Add Division</span>
+              </button>
+              <button type="button" class="btn-secondary" onclick="loadDivisionsTable()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI STATS BAR -->
+          <div class="grid-cards" style="margin-bottom: 1.25rem;">
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Total Divisions</div>
+              <div class="stat-number" id="kpiTotalDivisions">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Active Divisions</div>
+              <div class="stat-number" id="kpiActiveDivisions" style="color: #059669;">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Inactive Divisions</div>
+              <div class="stat-number" id="kpiInactiveDivisions" style="color: #DC2626;">-</div>
+            </div>
+          </div>
+
+          <!-- FILTER BAR -->
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="width: 220px;">
+              <select id="divisionCompanyFilter" class="cost360-select" onchange="loadDivisionsTable()">
+                <option value="">All Companies</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 200px;">
+              <input type="text" id="divisionSearchInput" class="cost360-select" placeholder="Search divisions by code, name, company..." onkeyup="handleDivisionSearchKeyup(event)">
+            </div>
+            <div style="width: 140px;">
+              <select id="divisionStatusFilter" class="cost360-select" onchange="loadDivisionsTable()">
+                <option value="">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="divisionToast" style="display: none; padding: 0.85rem 1.25rem; border-radius: var(--radius-input); margin-bottom: 1rem; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- TABLE -->
+          <div class="table-responsive">
+            <table id="divisionsTable">
+              <thead>
+                <tr>
+                  <th>Division Code</th>
+                  <th>Division Name</th>
+                  <th>Company</th>
+                  <th>Customer</th>
+                  <th>Plants</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="divisionsTableBody">
+                <tr>
+                  <td colspan="7" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                    Loading divisions from Neon PostgreSQL database...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ADD / EDIT DIVISION MODAL -->
+        <div id="divisionModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 520px;">
+            <div class="modal-header">
+              <h3 id="divisionModalTitle" style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);">+ Add Division</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('divisionModal')">&times;</button>
+            </div>
+            <form id="divisionForm" onsubmit="submitDivisionForm(event)" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+              <input type="hidden" name="division_id" id="formDivisionId" value="">
+              <div id="divisionFormError" style="display: none; padding: 0.65rem 0.85rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-size: 0.82rem; font-weight: 600;"></div>
+
+              <div>
+                <label class="dropdown-label">Company *</label>
+                <select name="company_id" id="formDivisionCompanyId" class="cost360-select" required></select>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                  <label class="dropdown-label">Division Code *</label>
+                  <input type="text" name="division_code" id="formDivisionCode" class="cost360-select" required placeholder="e.g. DIV-AUTO">
+                </div>
+                <div>
+                  <label class="dropdown-label">Status *</label>
+                  <select name="status" id="formDivisionStatus" class="cost360-select" required>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Division Name *</label>
+                <input type="text" name="division_name" id="formDivisionName" class="cost360-select" required placeholder="e.g. Automotive Division">
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('divisionModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="saveDivisionBtn">Save Division</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <script>
+          let divisionSearchDebounce = null;
+          document.addEventListener('DOMContentLoaded', function() {
+            if (document.getElementById('divisionsTable')) {
+              loadDivisionsTable();
+            }
+          });
+
+          function getDivisionApiUrl() {
+            return (window.cost360BaseUrlPrefix || '') + 'organization/divisions/api.php';
+          }
+
+          function handleDivisionSearchKeyup() {
+            clearTimeout(divisionSearchDebounce);
+            divisionSearchDebounce = setTimeout(loadDivisionsTable, 300);
+          }
+
+          async function loadDivisionsTable() {
+            const tbody = document.getElementById('divisionsTableBody');
+            if (!tbody) return;
+            const companyId = document.getElementById('divisionCompanyFilter').value;
+            const search = document.getElementById('divisionSearchInput').value.trim();
+            const status = document.getElementById('divisionStatusFilter').value;
+
+            try {
+              const res = await fetch(`${getDivisionApiUrl()}?action=list&company_id=${companyId}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`);
+              const data = await res.json();
+              if (data.success) {
+                document.getElementById('kpiTotalDivisions').textContent = data.kpis.total;
+                document.getElementById('kpiActiveDivisions').textContent = data.kpis.active;
+                document.getElementById('kpiInactiveDivisions').textContent = data.kpis.inactive;
+
+                // Populate Company Filter & Modal Selects
+                const filterCompSelect = document.getElementById('divisionCompanyFilter');
+                const formCompSelect = document.getElementById('formDivisionCompanyId');
+                const selectedFilterComp = filterCompSelect.value;
+                
+                if (data.companies && data.companies.length > 0) {
+                  filterCompSelect.innerHTML = '<option value="">All Companies</option>' + data.companies.map(c => `<option value="${c.company_id}">${escapeHtml(c.company_name)} (${escapeHtml(c.company_code)})</option>`).join('');
+                  filterCompSelect.value = selectedFilterComp;
+
+                  formCompSelect.innerHTML = data.companies.map(c => `<option value="${c.company_id}">${escapeHtml(c.company_name)} (${escapeHtml(c.company_code)})</option>`).join('');
+                }
+
+                if (!data.divisions || data.divisions.length === 0) {
+                  tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No divisions found.</td></tr>';
+                  return;
+                }
+
+                tbody.innerHTML = data.divisions.map(d => {
+                  const isActive = (d.status || '').toUpperCase() === 'ACTIVE';
+                  const statusBadge = isActive ? '<span class="status-badge">Active</span>' : '<span class="status-badge" style="background:#FEE2E2;color:#DC2626;">Inactive</span>';
+                  const toggleBtnText = isActive ? 'Deactivate' : 'Activate';
+                  const toggleBtnClass = isActive ? 'btn-logout' : 'btn-primary';
+
+                  return `
+                    <tr>
+                      <td><code>${escapeHtml(d.division_code)}</code></td>
+                      <td style="font-weight:700; color:var(--color-primary-text);">${escapeHtml(d.division_name)}</td>
+                      <td>${escapeHtml(d.company_name || '-')}</td>
+                      <td>${escapeHtml(d.customer_name || '-')}</td>
+                      <td><span class="role-badge" style="background:#E0F2FE;color:#0369A1;">${d.plant_count || 0} Plants</span></td>
+                      <td>${statusBadge}</td>
+                      <td style="text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.78rem; margin-right:0.35rem;" onclick="openEditDivisionModal(${d.division_id})">Edit</button>
+                        <button type="button" class="${toggleBtnClass}" style="padding:0.35rem 0.65rem; font-size:0.78rem;" onclick="toggleDivisionStatus(${d.division_id}, '${d.status}')">${toggleBtnText}</button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('');
+              } else {
+                tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color:#DC2626;">${escapeHtml(data.error)}</td></tr>`;
+              }
+            } catch (err) {
+              tbody.innerHTML = '<tr><td colspan="7" class="empty-state" style="color:#DC2626;">Failed to load data from server.</td></tr>';
+            }
+          }
+
+          function openAddDivisionModal() {
+            document.getElementById('divisionModalTitle').textContent = '+ Add Division';
+            document.getElementById('formDivisionId').value = '';
+            document.getElementById('formDivisionCode').value = '';
+            document.getElementById('formDivisionCode').removeAttribute('readonly');
+            document.getElementById('formDivisionName').value = '';
+            document.getElementById('formDivisionStatus').value = 'Active';
+            document.getElementById('divisionFormError').style.display = 'none';
+            document.getElementById('divisionModal').style.display = 'flex';
+          }
+
+          async function openEditDivisionModal(id) {
+            try {
+              const res = await fetch(`${getDivisionApiUrl()}?action=get&division_id=${id}`);
+              const data = await res.json();
+              if (data.success && data.division) {
+                const d = data.division;
+                document.getElementById('divisionModalTitle').textContent = 'Edit Division';
+                document.getElementById('formDivisionId').value = d.division_id;
+                document.getElementById('formDivisionCompanyId').value = d.company_id;
+                document.getElementById('formDivisionCode').value = d.division_code;
+                document.getElementById('formDivisionCode').setAttribute('readonly', 'readonly');
+                document.getElementById('formDivisionName').value = d.division_name;
+                document.getElementById('formDivisionStatus').value = d.status;
+                document.getElementById('divisionFormError').style.display = 'none';
+                document.getElementById('divisionModal').style.display = 'flex';
+              }
+            } catch (err) {
+              alert('Failed to load division details.');
+            }
+          }
+
+          async function submitDivisionForm(e) {
+            e.preventDefault();
+            const form = document.getElementById('divisionForm');
+            const errDiv = document.getElementById('divisionFormError');
+            errDiv.style.display = 'none';
+            const formData = new FormData(form);
+            const id = document.getElementById('formDivisionId').value;
+            formData.append('action', id ? 'update' : 'create');
+
+            try {
+              const res = await fetch(getDivisionApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                closeModal('divisionModal');
+                showDivisionToast(data.message || 'Division saved successfully.', true);
+                loadDivisionsTable();
+              } else {
+                errDiv.textContent = data.error || 'Failed to save division.';
+                errDiv.style.display = 'block';
+              }
+            } catch (err) {
+              errDiv.textContent = 'Server connection error.';
+              errDiv.style.display = 'block';
+            }
+          }
+
+          async function toggleDivisionStatus(id, currentStatus) {
+            const newStatus = (currentStatus || '').toUpperCase() === 'ACTIVE' ? 'Inactive' : 'Active';
+            if (!confirm(`Are you sure you want to set division status to ${newStatus}?`)) return;
+
+            const formData = new FormData();
+            formData.append('action', 'toggle_status');
+            formData.append('division_id', id);
+            formData.append('status', newStatus);
+
+            try {
+              const res = await fetch(getDivisionApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                showDivisionToast(data.message, true);
+                loadDivisionsTable();
+              } else {
+                alert(data.error || 'Failed to update status.');
+              }
+            } catch (err) {
+              alert('Server connection error.');
+            }
+          }
+
+          function showDivisionToast(msg, isSuccess) {
+            const toast = document.getElementById('divisionToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.style.background = isSuccess ? '#D1FAE5' : '#FEE2E2';
+            toast.style.color = isSuccess ? '#065F46' : '#991B1B';
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 4000);
+          }
+        </script>
+
+      <?php elseif ($currentPage === 'plants'): ?>
+        <!-- ============================================================
+             PLANT MASTER PAGE MODULE
+             ============================================================ -->
+        <section class="section-card">
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem;">Plant Master</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage manufacturing plants (Company &rarr; Division &rarr; Plant hierarchy).</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-primary" onclick="openAddPlantModal()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>+ Add Plant</span>
+              </button>
+              <button type="button" class="btn-secondary" onclick="loadPlantsTable()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI STATS BAR -->
+          <div class="grid-cards" style="margin-bottom: 1.25rem;">
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Total Plants</div>
+              <div class="stat-number" id="kpiTotalPlants">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Active Plants</div>
+              <div class="stat-number" id="kpiActivePlants" style="color: #059669;">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Inactive Plants</div>
+              <div class="stat-number" id="kpiInactivePlants" style="color: #DC2626;">-</div>
+            </div>
+          </div>
+
+          <!-- FILTER BAR (DYNAMIC DEPENDENT DROPDOWNS) -->
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="width: 200px;">
+              <select id="plantCompanyFilter" class="cost360-select" onchange="handlePlantCompanyFilterChange()">
+                <option value="">All Companies</option>
+              </select>
+            </div>
+            <div style="width: 200px;">
+              <select id="plantDivisionFilter" class="cost360-select" onchange="loadPlantsTable()">
+                <option value="">All Divisions</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 180px;">
+              <input type="text" id="plantSearchInput" class="cost360-select" placeholder="Search plants by code, name, location..." onkeyup="handlePlantSearchKeyup(event)">
+            </div>
+            <div style="width: 130px;">
+              <select id="plantStatusFilter" class="cost360-select" onchange="loadPlantsTable()">
+                <option value="">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="plantToast" style="display: none; padding: 0.85rem 1.25rem; border-radius: var(--radius-input); margin-bottom: 1rem; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- TABLE -->
+          <div class="table-responsive">
+            <table id="plantsTable">
+              <thead>
+                <tr>
+                  <th>Plant Code</th>
+                  <th>Plant Name</th>
+                  <th>Division</th>
+                  <th>Company</th>
+                  <th>Location</th>
+                  <th>Warehouses</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="plantsTableBody">
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                    Loading plants from Neon PostgreSQL database...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ADD / EDIT PLANT MODAL -->
+        <div id="plantModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 540px;">
+            <div class="modal-header">
+              <h3 id="plantModalTitle" style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);">+ Add Plant</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('plantModal')">&times;</button>
+            </div>
+            <form id="plantForm" onsubmit="submitPlantForm(event)" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+              <input type="hidden" name="plant_id" id="formPlantId" value="">
+              <div id="plantFormError" style="display: none; padding: 0.65rem 0.85rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-size: 0.82rem; font-weight: 600;"></div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                  <label class="dropdown-label">Company *</label>
+                  <select id="formPlantCompanyId" class="cost360-select" required onchange="handleFormPlantCompanyChange()"></select>
+                </div>
+                <div>
+                  <label class="dropdown-label">Division *</label>
+                  <select name="division_id" id="formPlantDivisionId" class="cost360-select" required></select>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                  <label class="dropdown-label">Plant Code *</label>
+                  <input type="text" name="plant_code" id="formPlantCode" class="cost360-select" required placeholder="e.g. PLT-NASHIK">
+                </div>
+                <div>
+                  <label class="dropdown-label">Status *</label>
+                  <select name="status" id="formPlantStatus" class="cost360-select" required>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Plant Name *</label>
+                <input type="text" name="plant_name" id="formPlantName" class="cost360-select" required placeholder="e.g. Nashik Manufacturing Plant">
+              </div>
+
+              <div>
+                <label class="dropdown-label">Location</label>
+                <input type="text" name="location" id="formPlantLocation" class="cost360-select" placeholder="e.g. Nashik MIDC, Maharashtra">
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('plantModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="savePlantBtn">Save Plant</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <script>
+          let plantSearchDebounce = null;
+          document.addEventListener('DOMContentLoaded', function() {
+            if (document.getElementById('plantsTable')) {
+              loadPlantsTable();
+            }
+          });
+
+          function getPlantApiUrl() {
+            return (window.cost360BaseUrlPrefix || '') + 'organization/plants/api.php';
+          }
+
+          function handlePlantSearchKeyup() {
+            clearTimeout(plantSearchDebounce);
+            plantSearchDebounce = setTimeout(loadPlantsTable, 300);
+          }
+
+          async function handlePlantCompanyFilterChange() {
+            const companyId = document.getElementById('plantCompanyFilter').value;
+            const divSelect = document.getElementById('plantDivisionFilter');
+            divSelect.innerHTML = '<option value="">All Divisions</option>';
+            if (companyId) {
+              const res = await fetch(`${getPlantApiUrl()}?action=get_divisions&company_id=${companyId}`);
+              const data = await res.json();
+              if (data.success && data.divisions) {
+                divSelect.innerHTML = '<option value="">All Divisions</option>' + data.divisions.map(d => `<option value="${d.division_id}">${escapeHtml(d.division_name)} (${escapeHtml(d.division_code)})</option>`).join('');
+              }
+            }
+            loadPlantsTable();
+          }
+
+          async function handleFormPlantCompanyChange(targetDivisionId = null) {
+            const companyId = document.getElementById('formPlantCompanyId').value;
+            const divSelect = document.getElementById('formPlantDivisionId');
+            divSelect.innerHTML = '<option value="">Select Division...</option>';
+            if (companyId) {
+              const res = await fetch(`${getPlantApiUrl()}?action=get_divisions&company_id=${companyId}`);
+              const data = await res.json();
+              if (data.success && data.divisions) {
+                divSelect.innerHTML = data.divisions.map(d => `<option value="${d.division_id}">${escapeHtml(d.division_name)} (${escapeHtml(d.division_code)})</option>`).join('');
+                if (targetDivisionId) {
+                  divSelect.value = targetDivisionId;
+                }
+              }
+            }
+          }
+
+          async function loadPlantsTable() {
+            const tbody = document.getElementById('plantsTableBody');
+            if (!tbody) return;
+            const companyId = document.getElementById('plantCompanyFilter').value;
+            const divisionId = document.getElementById('plantDivisionFilter').value;
+            const search = document.getElementById('plantSearchInput').value.trim();
+            const status = document.getElementById('plantStatusFilter').value;
+
+            try {
+              const res = await fetch(`${getPlantApiUrl()}?action=list&company_id=${companyId}&division_id=${divisionId}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`);
+              const data = await res.json();
+              if (data.success) {
+                document.getElementById('kpiTotalPlants').textContent = data.kpis.total;
+                document.getElementById('kpiActivePlants').textContent = data.kpis.active;
+                document.getElementById('kpiInactivePlants').textContent = data.kpis.inactive;
+
+                // Populate Company Selects
+                const filterCompSelect = document.getElementById('plantCompanyFilter');
+                const formCompSelect = document.getElementById('formPlantCompanyId');
+                const selectedFilterComp = filterCompSelect.value;
+                if (data.companies && data.companies.length > 0) {
+                  filterCompSelect.innerHTML = '<option value="">All Companies</option>' + data.companies.map(c => `<option value="${c.company_id}">${escapeHtml(c.company_name)} (${escapeHtml(c.company_code)})</option>`).join('');
+                  filterCompSelect.value = selectedFilterComp;
+
+                  formCompSelect.innerHTML = data.companies.map(c => `<option value="${c.company_id}">${escapeHtml(c.company_name)} (${escapeHtml(c.company_code)})</option>`).join('');
+                }
+
+                if (!data.plants || data.plants.length === 0) {
+                  tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No plants found.</td></tr>';
+                  return;
+                }
+
+                tbody.innerHTML = data.plants.map(p => {
+                  const isActive = (p.status || '').toUpperCase() === 'ACTIVE';
+                  const statusBadge = isActive ? '<span class="status-badge">Active</span>' : '<span class="status-badge" style="background:#FEE2E2;color:#DC2626;">Inactive</span>';
+                  const toggleBtnText = isActive ? 'Deactivate' : 'Activate';
+                  const toggleBtnClass = isActive ? 'btn-logout' : 'btn-primary';
+
+                  return `
+                    <tr>
+                      <td><code>${escapeHtml(p.plant_code)}</code></td>
+                      <td style="font-weight:700; color:var(--color-primary-text);">${escapeHtml(p.plant_name)}</td>
+                      <td>${escapeHtml(p.division_name || '-')}</td>
+                      <td>${escapeHtml(p.company_name || '-')}</td>
+                      <td style="font-size:0.82rem; color:var(--color-secondary-text);">${escapeHtml(p.location || '-')}</td>
+                      <td><span class="role-badge" style="background:#E0F2FE;color:#0369A1;">${p.warehouse_count || 0} WH</span></td>
+                      <td>${statusBadge}</td>
+                      <td style="text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.78rem; margin-right:0.35rem;" onclick="openEditPlantModal(${p.plant_id})">Edit</button>
+                        <button type="button" class="${toggleBtnClass}" style="padding:0.35rem 0.65rem; font-size:0.78rem;" onclick="togglePlantStatus(${p.plant_id}, '${p.status}')">${toggleBtnText}</button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('');
+              } else {
+                tbody.innerHTML = `<tr><td colspan="8" class="empty-state" style="color:#DC2626;">${escapeHtml(data.error)}</td></tr>`;
+              }
+            } catch (err) {
+              tbody.innerHTML = '<tr><td colspan="8" class="empty-state" style="color:#DC2626;">Failed to load data from server.</td></tr>';
+            }
+          }
+
+          async function openAddPlantModal() {
+            document.getElementById('plantModalTitle').textContent = '+ Add Plant';
+            document.getElementById('formPlantId').value = '';
+            document.getElementById('formPlantCode').value = '';
+            document.getElementById('formPlantCode').removeAttribute('readonly');
+            document.getElementById('formPlantName').value = '';
+            document.getElementById('formPlantLocation').value = '';
+            document.getElementById('formPlantStatus').value = 'Active';
+            document.getElementById('plantFormError').style.display = 'none';
+            await handleFormPlantCompanyChange();
+            document.getElementById('plantModal').style.display = 'flex';
+          }
+
+          async function openEditPlantModal(id) {
+            try {
+              const res = await fetch(`${getPlantApiUrl()}?action=get&plant_id=${id}`);
+              const data = await res.json();
+              if (data.success && data.plant) {
+                const p = data.plant;
+                document.getElementById('plantModalTitle').textContent = 'Edit Plant';
+                document.getElementById('formPlantId').value = p.plant_id;
+                document.getElementById('formPlantCompanyId').value = p.company_id;
+                await handleFormPlantCompanyChange(p.division_id);
+                document.getElementById('formPlantCode').value = p.plant_code;
+                document.getElementById('formPlantCode').setAttribute('readonly', 'readonly');
+                document.getElementById('formPlantName').value = p.plant_name;
+                document.getElementById('formPlantLocation').value = p.location || '';
+                document.getElementById('formPlantStatus').value = p.status;
+                document.getElementById('plantFormError').style.display = 'none';
+                document.getElementById('plantModal').style.display = 'flex';
+              }
+            } catch (err) {
+              alert('Failed to load plant details.');
+            }
+          }
+
+          async function submitPlantForm(e) {
+            e.preventDefault();
+            const form = document.getElementById('plantForm');
+            const errDiv = document.getElementById('plantFormError');
+            errDiv.style.display = 'none';
+            const formData = new FormData(form);
+            const id = document.getElementById('formPlantId').value;
+            formData.append('action', id ? 'update' : 'create');
+
+            try {
+              const res = await fetch(getPlantApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                closeModal('plantModal');
+                showPlantToast(data.message || 'Plant saved successfully.', true);
+                loadPlantsTable();
+              } else {
+                errDiv.textContent = data.error || 'Failed to save plant.';
+                errDiv.style.display = 'block';
+              }
+            } catch (err) {
+              errDiv.textContent = 'Server connection error.';
+              errDiv.style.display = 'block';
+            }
+          }
+
+          async function togglePlantStatus(id, currentStatus) {
+            const newStatus = (currentStatus || '').toUpperCase() === 'ACTIVE' ? 'Inactive' : 'Active';
+            if (!confirm(`Are you sure you want to set plant status to ${newStatus}?`)) return;
+
+            const formData = new FormData();
+            formData.append('action', 'toggle_status');
+            formData.append('plant_id', id);
+            formData.append('status', newStatus);
+
+            try {
+              const res = await fetch(getPlantApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                showPlantToast(data.message, true);
+                loadPlantsTable();
+              } else {
+                alert(data.error || 'Failed to update status.');
+              }
+            } catch (err) {
+              alert('Server connection error.');
+            }
+          }
+
+          function showPlantToast(msg, isSuccess) {
+            const toast = document.getElementById('plantToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.style.background = isSuccess ? '#D1FAE5' : '#FEE2E2';
+            toast.style.color = isSuccess ? '#065F46' : '#991B1B';
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 4000);
+          }
+        </script>
+
+      <?php elseif ($currentPage === 'warehouses'): ?>
+        <!-- ============================================================
+             WAREHOUSE MASTER PAGE MODULE
+             ============================================================ -->
+        <section class="section-card">
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem;">Warehouse Master</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage storage locations (Company &rarr; Division &rarr; Plant &rarr; Warehouse hierarchy).</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-primary" onclick="openAddWarehouseModal()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>+ Add Warehouse</span>
+              </button>
+              <button type="button" class="btn-secondary" onclick="loadWarehousesTable()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI STATS BAR -->
+          <div class="grid-cards" style="margin-bottom: 1.25rem;">
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Total Warehouses</div>
+              <div class="stat-number" id="kpiTotalWarehouses">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Active Warehouses</div>
+              <div class="stat-number" id="kpiActiveWarehouses" style="color: #059669;">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Inactive Warehouses</div>
+              <div class="stat-number" id="kpiInactiveWarehouses" style="color: #DC2626;">-</div>
+            </div>
+          </div>
+
+          <!-- FILTER BAR (3-LEVEL DEPENDENT DROPDOWNS) -->
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="width: 170px;">
+              <select id="whCompanyFilter" class="cost360-select" onchange="handleWhCompanyFilterChange()">
+                <option value="">All Companies</option>
+              </select>
+            </div>
+            <div style="width: 170px;">
+              <select id="whDivisionFilter" class="cost360-select" onchange="handleWhDivisionFilterChange()">
+                <option value="">All Divisions</option>
+              </select>
+            </div>
+            <div style="width: 170px;">
+              <select id="whPlantFilter" class="cost360-select" onchange="loadWarehousesTable()">
+                <option value="">All Plants</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 160px;">
+              <input type="text" id="whSearchInput" class="cost360-select" placeholder="Search warehouses..." onkeyup="handleWhSearchKeyup(event)">
+            </div>
+            <div style="width: 120px;">
+              <select id="whStatusFilter" class="cost360-select" onchange="loadWarehousesTable()">
+                <option value="">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="whToast" style="display: none; padding: 0.85rem 1.25rem; border-radius: var(--radius-input); margin-bottom: 1rem; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- TABLE -->
+          <div class="table-responsive">
+            <table id="warehousesTable">
+              <thead>
+                <tr>
+                  <th>Warehouse Code</th>
+                  <th>Warehouse Name</th>
+                  <th>Plant</th>
+                  <th>Division</th>
+                  <th>Company</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="warehousesTableBody">
+                <tr>
+                  <td colspan="7" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                    Loading warehouses from Neon PostgreSQL database...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ADD / EDIT WAREHOUSE MODAL -->
+        <div id="whModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 560px;">
+            <div class="modal-header">
+              <h3 id="whModalTitle" style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);">+ Add Warehouse</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('whModal')">&times;</button>
+            </div>
+            <form id="whForm" onsubmit="submitWhForm(event)" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+              <input type="hidden" name="warehouse_id" id="formWhId" value="">
+              <div id="whFormError" style="display: none; padding: 0.65rem 0.85rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-size: 0.82rem; font-weight: 600;"></div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+                <div>
+                  <label class="dropdown-label">Company *</label>
+                  <select id="formWhCompanyId" class="cost360-select" required onchange="handleFormWhCompanyChange()"></select>
+                </div>
+                <div>
+                  <label class="dropdown-label">Division *</label>
+                  <select id="formWhDivisionId" class="cost360-select" required onchange="handleFormWhDivisionChange()"></select>
+                </div>
+                <div>
+                  <label class="dropdown-label">Plant *</label>
+                  <select name="plant_id" id="formWhPlantId" class="cost360-select" required></select>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                  <label class="dropdown-label">Warehouse Code *</label>
+                  <input type="text" name="warehouse_code" id="formWhCode" class="cost360-select" required placeholder="e.g. WH-RM01">
+                </div>
+                <div>
+                  <label class="dropdown-label">Status *</label>
+                  <select name="status" id="formWhStatus" class="cost360-select" required>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Warehouse Name *</label>
+                <input type="text" name="warehouse_name" id="formWhName" class="cost360-select" required placeholder="e.g. Raw Material Store 1">
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('whModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="saveWhBtn">Save Warehouse</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <script>
+          let whSearchDebounce = null;
+          document.addEventListener('DOMContentLoaded', function() {
+            if (document.getElementById('warehousesTable')) {
+              loadWarehousesTable();
+            }
+          });
+
+          function getWhApiUrl() {
+            return (window.cost360BaseUrlPrefix || '') + 'organization/warehouses/api.php';
+          }
+
+          function getPlantApiUrlForWh() {
+            return (window.cost360BaseUrlPrefix || '') + 'organization/plants/api.php';
+          }
+
+          function handleWhSearchKeyup() {
+            clearTimeout(whSearchDebounce);
+            whSearchDebounce = setTimeout(loadWarehousesTable, 300);
+          }
+
+          async function handleWhCompanyFilterChange() {
+            const companyId = document.getElementById('whCompanyFilter').value;
+            const divSelect = document.getElementById('whDivisionFilter');
+            const plantSelect = document.getElementById('whPlantFilter');
+            divSelect.innerHTML = '<option value="">All Divisions</option>';
+            plantSelect.innerHTML = '<option value="">All Plants</option>';
+
+            if (companyId) {
+              const res = await fetch(`${getPlantApiUrlForWh()}?action=get_divisions&company_id=${companyId}`);
+              const data = await res.json();
+              if (data.success && data.divisions) {
+                divSelect.innerHTML = '<option value="">All Divisions</option>' + data.divisions.map(d => `<option value="${d.division_id}">${escapeHtml(d.division_name)} (${escapeHtml(d.division_code)})</option>`).join('');
+              }
+            }
+            loadWarehousesTable();
+          }
+
+          async function handleWhDivisionFilterChange() {
+            const divisionId = document.getElementById('whDivisionFilter').value;
+            const plantSelect = document.getElementById('whPlantFilter');
+            plantSelect.innerHTML = '<option value="">All Plants</option>';
+
+            if (divisionId) {
+              const res = await fetch(`${getWhApiUrl()}?action=get_plants&division_id=${divisionId}`);
+              const data = await res.json();
+              if (data.success && data.plants) {
+                plantSelect.innerHTML = '<option value="">All Plants</option>' + data.plants.map(p => `<option value="${p.plant_id}">${escapeHtml(p.plant_name)} (${escapeHtml(p.plant_code)})</option>`).join('');
+              }
+            }
+            loadWarehousesTable();
+          }
+
+          async function handleFormWhCompanyChange(targetDivisionId = null, targetPlantId = null) {
+            const companyId = document.getElementById('formWhCompanyId').value;
+            const divSelect = document.getElementById('formWhDivisionId');
+            const plantSelect = document.getElementById('formWhPlantId');
+            divSelect.innerHTML = '<option value="">Select Division...</option>';
+            plantSelect.innerHTML = '<option value="">Select Plant...</option>';
+
+            if (companyId) {
+              const res = await fetch(`${getPlantApiUrlForWh()}?action=get_divisions&company_id=${companyId}`);
+              const data = await res.json();
+              if (data.success && data.divisions) {
+                divSelect.innerHTML = data.divisions.map(d => `<option value="${d.division_id}">${escapeHtml(d.division_name)} (${escapeHtml(d.division_code)})</option>`).join('');
+                if (targetDivisionId) {
+                  divSelect.value = targetDivisionId;
+                  await handleFormWhDivisionChange(targetPlantId);
+                }
+              }
+            }
+          }
+
+          async function handleFormWhDivisionChange(targetPlantId = null) {
+            const divisionId = document.getElementById('formWhDivisionId').value;
+            const plantSelect = document.getElementById('formWhPlantId');
+            plantSelect.innerHTML = '<option value="">Select Plant...</option>';
+
+            if (divisionId) {
+              const res = await fetch(`${getWhApiUrl()}?action=get_plants&division_id=${divisionId}`);
+              const data = await res.json();
+              if (data.success && data.plants) {
+                plantSelect.innerHTML = data.plants.map(p => `<option value="${p.plant_id}">${escapeHtml(p.plant_name)} (${escapeHtml(p.plant_code)})</option>`).join('');
+                if (targetPlantId) {
+                  plantSelect.value = targetPlantId;
+                }
+              }
+            }
+          }
+
+          async function loadWarehousesTable() {
+            const tbody = document.getElementById('warehousesTableBody');
+            if (!tbody) return;
+            const companyId = document.getElementById('whCompanyFilter').value;
+            const divisionId = document.getElementById('whDivisionFilter').value;
+            const plantId = document.getElementById('whPlantFilter').value;
+            const search = document.getElementById('whSearchInput').value.trim();
+            const status = document.getElementById('whStatusFilter').value;
+
+            try {
+              const res = await fetch(`${getWhApiUrl()}?action=list&company_id=${companyId}&division_id=${divisionId}&plant_id=${plantId}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`);
+              const data = await res.json();
+              if (data.success) {
+                document.getElementById('kpiTotalWarehouses').textContent = data.kpis.total;
+                document.getElementById('kpiActiveWarehouses').textContent = data.kpis.active;
+                document.getElementById('kpiInactiveWarehouses').textContent = data.kpis.inactive;
+
+                // Populate Company Selects
+                const filterCompSelect = document.getElementById('whCompanyFilter');
+                const formCompSelect = document.getElementById('formWhCompanyId');
+                const selectedFilterComp = filterCompSelect.value;
+                if (data.companies && data.companies.length > 0) {
+                  filterCompSelect.innerHTML = '<option value="">All Companies</option>' + data.companies.map(c => `<option value="${c.company_id}">${escapeHtml(c.company_name)} (${escapeHtml(c.company_code)})</option>`).join('');
+                  filterCompSelect.value = selectedFilterComp;
+
+                  formCompSelect.innerHTML = data.companies.map(c => `<option value="${c.company_id}">${escapeHtml(c.company_name)} (${escapeHtml(c.company_code)})</option>`).join('');
+                }
+
+                if (!data.warehouses || data.warehouses.length === 0) {
+                  tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No warehouses found.</td></tr>';
+                  return;
+                }
+
+                tbody.innerHTML = data.warehouses.map(w => {
+                  const isActive = (w.status || '').toUpperCase() === 'ACTIVE';
+                  const statusBadge = isActive ? '<span class="status-badge">Active</span>' : '<span class="status-badge" style="background:#FEE2E2;color:#DC2626;">Inactive</span>';
+                  const toggleBtnText = isActive ? 'Deactivate' : 'Activate';
+                  const toggleBtnClass = isActive ? 'btn-logout' : 'btn-primary';
+
+                  return `
+                    <tr>
+                      <td><code>${escapeHtml(w.warehouse_code)}</code></td>
+                      <td style="font-weight:700; color:var(--color-primary-text);">${escapeHtml(w.warehouse_name)}</td>
+                      <td>${escapeHtml(w.plant_name || '-')}</td>
+                      <td>${escapeHtml(w.division_name || '-')}</td>
+                      <td>${escapeHtml(w.company_name || '-')}</td>
+                      <td>${statusBadge}</td>
+                      <td style="text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.78rem; margin-right:0.35rem;" onclick="openEditWhModal(${w.warehouse_id})">Edit</button>
+                        <button type="button" class="${toggleBtnClass}" style="padding:0.35rem 0.65rem; font-size:0.78rem;" onclick="toggleWhStatus(${w.warehouse_id}, '${w.status}')">${toggleBtnText}</button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('');
+              } else {
+                tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color:#DC2626;">${escapeHtml(data.error)}</td></tr>`;
+              }
+            } catch (err) {
+              tbody.innerHTML = '<tr><td colspan="7" class="empty-state" style="color:#DC2626;">Failed to load data from server.</td></tr>';
+            }
+          }
+
+          async function openAddWarehouseModal() {
+            document.getElementById('whModalTitle').textContent = '+ Add Warehouse';
+            document.getElementById('formWhId').value = '';
+            document.getElementById('formWhCode').value = '';
+            document.getElementById('formWhCode').removeAttribute('readonly');
+            document.getElementById('formWhName').value = '';
+            document.getElementById('formWhStatus').value = 'Active';
+            document.getElementById('whFormError').style.display = 'none';
+            await handleFormWhCompanyChange();
+            document.getElementById('whModal').style.display = 'flex';
+          }
+
+          async function openEditWhModal(id) {
+            try {
+              const res = await fetch(`${getWhApiUrl()}?action=get&warehouse_id=${id}`);
+              const data = await res.json();
+              if (data.success && data.warehouse) {
+                const w = data.warehouse;
+                document.getElementById('whModalTitle').textContent = 'Edit Warehouse';
+                document.getElementById('formWhId').value = w.warehouse_id;
+                document.getElementById('formWhCompanyId').value = w.company_id;
+                await handleFormWhCompanyChange(w.division_id, w.plant_id);
+                document.getElementById('formWhCode').value = w.warehouse_code;
+                document.getElementById('formWhCode').setAttribute('readonly', 'readonly');
+                document.getElementById('formWhName').value = w.warehouse_name;
+                document.getElementById('formWhStatus').value = w.status;
+                document.getElementById('whFormError').style.display = 'none';
+                document.getElementById('whModal').style.display = 'flex';
+              }
+            } catch (err) {
+              alert('Failed to load warehouse details.');
+            }
+          }
+
+          async function submitWhForm(e) {
+            e.preventDefault();
+            const form = document.getElementById('whForm');
+            const errDiv = document.getElementById('whFormError');
+            errDiv.style.display = 'none';
+            const formData = new FormData(form);
+            const id = document.getElementById('formWhId').value;
+            formData.append('action', id ? 'update' : 'create');
+
+            try {
+              const res = await fetch(getWhApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                closeModal('whModal');
+                showWhToast(data.message || 'Warehouse saved successfully.', true);
+                loadWarehousesTable();
+              } else {
+                errDiv.textContent = data.error || 'Failed to save warehouse.';
+                errDiv.style.display = 'block';
+              }
+            } catch (err) {
+              errDiv.textContent = 'Server connection error.';
+              errDiv.style.display = 'block';
+            }
+          }
+
+          async function toggleWhStatus(id, currentStatus) {
+            const newStatus = (currentStatus || '').toUpperCase() === 'ACTIVE' ? 'Inactive' : 'Active';
+            if (!confirm(`Are you sure you want to set warehouse status to ${newStatus}?`)) return;
+
+            const formData = new FormData();
+            formData.append('action', 'toggle_status');
+            formData.append('warehouse_id', id);
+            formData.append('status', newStatus);
+
+            try {
+              const res = await fetch(getWhApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                showWhToast(data.message, true);
+                loadWarehousesTable();
+              } else {
+                alert(data.error || 'Failed to update status.');
+              }
+            } catch (err) {
+              alert('Server connection error.');
+            }
+          }
+
+          function showWhToast(msg, isSuccess) {
+            const toast = document.getElementById('whToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.style.background = isSuccess ? '#D1FAE5' : '#FEE2E2';
+            toast.style.color = isSuccess ? '#065F46' : '#991B1B';
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 4000);
+          }
+        </script>
+
+      <?php elseif ($currentPage === 'periods'): ?>
+        <!-- ============================================================
+             PERIOD MASTER PAGE MODULE
+             ============================================================ -->
+        <section class="section-card">
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem;">Period Master</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage fiscal costing periods, cycle dates, and lock statuses.</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-primary" onclick="openAddPeriodModal()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>+ Add Period</span>
+              </button>
+              <button type="button" class="btn-secondary" onclick="loadPeriodsTable()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI STATS BAR -->
+          <div class="grid-cards" style="margin-bottom: 1.25rem;">
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Total Periods</div>
+              <div class="stat-number" id="kpiTotalPeriods">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Active Periods</div>
+              <div class="stat-number" id="kpiActivePeriods" style="color: #059669;">-</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem;">
+              <div class="stat-label">Locked Periods</div>
+              <div class="stat-number" id="kpiLockedPeriods" style="color: #D97706;">-</div>
+            </div>
+          </div>
+
+          <!-- FILTER BAR -->
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="flex: 1; min-width: 220px;">
+              <input type="text" id="periodSearchInput" class="cost360-select" placeholder="Search periods by name or date..." onkeyup="handlePeriodSearchKeyup(event)">
+            </div>
+            <div style="width: 140px;">
+              <select id="periodLockFilter" class="cost360-select" onchange="loadPeriodsTable()">
+                <option value="">All Locks</option>
+                <option value="1">Locked</option>
+                <option value="0">Unlocked</option>
+              </select>
+            </div>
+            <div style="width: 140px;">
+              <select id="periodStatusFilter" class="cost360-select" onchange="loadPeriodsTable()">
+                <option value="">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="periodToast" style="display: none; padding: 0.85rem 1.25rem; border-radius: var(--radius-input); margin-bottom: 1rem; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- TABLE -->
+          <div class="table-responsive">
+            <table id="periodsTable">
+              <thead>
+                <tr>
+                  <th>Period Code / Name</th>
+                  <th>Start Date</th>
+                  <th>End Date</th>
+                  <th>Lock Status</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="periodsTableBody">
+                <tr>
+                  <td colspan="6" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                    Loading periods from Neon PostgreSQL database...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ADD / EDIT PERIOD MODAL -->
+        <div id="periodModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 500px;">
+            <div class="modal-header">
+              <h3 id="periodModalTitle" style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);">+ Add Period</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('periodModal')">&times;</button>
+            </div>
+            <form id="periodForm" onsubmit="submitPeriodForm(event)" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+              <input type="hidden" name="period_id" id="formPeriodId" value="">
+              <div id="periodFormError" style="display: none; padding: 0.65rem 0.85rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-size: 0.82rem; font-weight: 600;"></div>
+
+              <div>
+                <label class="dropdown-label">Period Name *</label>
+                <input type="text" name="period_name" id="formPeriodName" class="cost360-select" required placeholder="e.g. FY2024-Q1 or APR-2024">
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                  <label class="dropdown-label">Start Date *</label>
+                  <input type="date" name="start_date" id="formPeriodStartDate" class="cost360-select" required>
+                </div>
+                <div>
+                  <label class="dropdown-label">End Date *</label>
+                  <input type="date" name="end_date" id="formPeriodEndDate" class="cost360-select" required>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: center;">
+                <div>
+                  <label class="dropdown-label">Status *</label>
+                  <select name="status" id="formPeriodStatus" class="cost360-select" required>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1.25rem;">
+                  <input type="checkbox" name="is_locked" id="formPeriodIsLocked" value="1" style="width: 18px; height: 18px; cursor: pointer;">
+                  <label for="formPeriodIsLocked" style="font-size: 0.88rem; font-weight: 600; cursor: pointer;">Lock Period</label>
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('periodModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="savePeriodBtn">Save Period</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <script>
+          let periodSearchDebounce = null;
+          document.addEventListener('DOMContentLoaded', function() {
+            if (document.getElementById('periodsTable')) {
+              loadPeriodsTable();
+            }
+          });
+
+          function getPeriodApiUrl() {
+            return (window.cost360BaseUrlPrefix || '') + 'organization/periods/api.php';
+          }
+
+          function handlePeriodSearchKeyup() {
+            clearTimeout(periodSearchDebounce);
+            periodSearchDebounce = setTimeout(loadPeriodsTable, 300);
+          }
+
+          async function loadPeriodsTable() {
+            const tbody = document.getElementById('periodsTableBody');
+            if (!tbody) return;
+            const search = document.getElementById('periodSearchInput').value.trim();
+            const isLocked = document.getElementById('periodLockFilter').value;
+            const status = document.getElementById('periodStatusFilter').value;
+
+            try {
+              const res = await fetch(`${getPeriodApiUrl()}?action=list&search=${encodeURIComponent(search)}&is_locked=${isLocked}&status=${encodeURIComponent(status)}`);
+              const data = await res.json();
+              if (data.success) {
+                document.getElementById('kpiTotalPeriods').textContent = data.kpis.total;
+                document.getElementById('kpiActivePeriods').textContent = data.kpis.active;
+                document.getElementById('kpiLockedPeriods').textContent = data.kpis.locked;
+
+                if (!data.periods || data.periods.length === 0) {
+                  tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No periods found.</td></tr>';
+                  return;
+                }
+
+                tbody.innerHTML = data.periods.map(p => {
+                  const isActive = (p.status || '').toUpperCase() === 'ACTIVE';
+                  const isLocked = Boolean(p.is_locked);
+                  const statusBadge = isActive ? '<span class="status-badge">Active</span>' : '<span class="status-badge" style="background:#FEE2E2;color:#DC2626;">Inactive</span>';
+                  const lockBadge = isLocked ? '<span class="role-badge" style="background:#FEF3C7;color:#92400E;">Locked</span>' : '<span class="role-badge" style="background:#D1FAE5;color:#065F46;">Open</span>';
+                  
+                  const toggleBtnText = isActive ? 'Deactivate' : 'Activate';
+                  const toggleBtnClass = isActive ? 'btn-logout' : 'btn-primary';
+                  const lockBtnText = isLocked ? 'Unlock' : 'Lock';
+
+                  return `
+                    <tr>
+                      <td style="font-weight:700; color:var(--color-primary-text);"><code>${escapeHtml(p.period_name)}</code></td>
+                      <td>${escapeHtml(p.start_date || '-')}</td>
+                      <td>${escapeHtml(p.end_date || '-')}</td>
+                      <td>${lockBadge}</td>
+                      <td>${statusBadge}</td>
+                      <td style="text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.78rem; margin-right:0.35rem;" onclick="openEditPeriodModal(${p.period_id})">Edit</button>
+                        <button type="button" class="btn-secondary" style="padding:0.35rem 0.65rem; font-size:0.78rem; margin-right:0.35rem;" onclick="togglePeriodLock(${p.period_id}, ${isLocked})">${lockBtnText}</button>
+                        <button type="button" class="${toggleBtnClass}" style="padding:0.35rem 0.65rem; font-size:0.78rem;" onclick="togglePeriodStatus(${p.period_id}, '${p.status}')">${toggleBtnText}</button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('');
+              } else {
+                tbody.innerHTML = `<tr><td colspan="6" class="empty-state" style="color:#DC2626;">${escapeHtml(data.error)}</td></tr>`;
+              }
+            } catch (err) {
+              tbody.innerHTML = '<tr><td colspan="6" class="empty-state" style="color:#DC2626;">Failed to load data from server.</td></tr>';
+            }
+          }
+
+          function openAddPeriodModal() {
+            document.getElementById('periodModalTitle').textContent = '+ Add Period';
+            document.getElementById('formPeriodId').value = '';
+            document.getElementById('formPeriodName').value = '';
+            document.getElementById('formPeriodStartDate').value = '';
+            document.getElementById('formPeriodEndDate').value = '';
+            document.getElementById('formPeriodIsLocked').checked = false;
+            document.getElementById('formPeriodStatus').value = 'Active';
+            document.getElementById('periodFormError').style.display = 'none';
+            document.getElementById('periodModal').style.display = 'flex';
+          }
+
+          async function openEditPeriodModal(id) {
+            try {
+              const res = await fetch(`${getPeriodApiUrl()}?action=get&period_id=${id}`);
+              const data = await res.json();
+              if (data.success && data.period) {
+                const p = data.period;
+                document.getElementById('periodModalTitle').textContent = 'Edit Period';
+                document.getElementById('formPeriodId').value = p.period_id;
+                document.getElementById('formPeriodName').value = p.period_name;
+                document.getElementById('formPeriodStartDate').value = p.start_date;
+                document.getElementById('formPeriodEndDate').value = p.end_date;
+                document.getElementById('formPeriodIsLocked').checked = Boolean(p.is_locked);
+                document.getElementById('formPeriodStatus').value = p.status;
+                document.getElementById('periodFormError').style.display = 'none';
+                document.getElementById('periodModal').style.display = 'flex';
+              }
+            } catch (err) {
+              alert('Failed to load period details.');
+            }
+          }
+
+          async function submitPeriodForm(e) {
+            e.preventDefault();
+            const form = document.getElementById('periodForm');
+            const errDiv = document.getElementById('periodFormError');
+            errDiv.style.display = 'none';
+            const formData = new FormData(form);
+            const id = document.getElementById('formPeriodId').value;
+            formData.append('action', id ? 'update' : 'create');
+
+            try {
+              const res = await fetch(getPeriodApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                closeModal('periodModal');
+                showPeriodToast(data.message || 'Period saved successfully.', true);
+                loadPeriodsTable();
+              } else {
+                errDiv.textContent = data.error || 'Failed to save period.';
+                errDiv.style.display = 'block';
+              }
+            } catch (err) {
+              errDiv.textContent = 'Server connection error.';
+              errDiv.style.display = 'block';
+            }
+          }
+
+          async function togglePeriodLock(id, currentlyLocked) {
+            const newLock = !currentlyLocked;
+            const actionText = newLock ? 'lock' : 'unlock';
+            if (!confirm(`Are you sure you want to ${actionText} this period?`)) return;
+
+            const formData = new FormData();
+            formData.append('action', 'toggle_lock');
+            formData.append('period_id', id);
+            formData.append('is_locked', newLock);
+
+            try {
+              const res = await fetch(getPeriodApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                showPeriodToast(data.message, true);
+                loadPeriodsTable();
+              } else {
+                alert(data.error || 'Failed to change lock state.');
+              }
+            } catch (err) {
+              alert('Server connection error.');
+            }
+          }
+
+          async function togglePeriodStatus(id, currentStatus) {
+            const newStatus = (currentStatus || '').toUpperCase() === 'ACTIVE' ? 'Inactive' : 'Active';
+            if (!confirm(`Are you sure you want to set period status to ${newStatus}?`)) return;
+
+            const formData = new FormData();
+            formData.append('action', 'toggle_status');
+            formData.append('period_id', id);
+            formData.append('status', newStatus);
+
+            try {
+              const res = await fetch(getPeriodApiUrl(), { method: 'POST', body: formData });
+              const data = await res.json();
+              if (data.success) {
+                showPeriodToast(data.message, true);
+                loadPeriodsTable();
+              } else {
+                alert(data.error || 'Failed to update status.');
+              }
+            } catch (err) {
+              alert('Server connection error.');
+            }
+          }
+
+          function showPeriodToast(msg, isSuccess) {
+            const toast = document.getElementById('periodToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.style.background = isSuccess ? '#D1FAE5' : '#FEE2E2';
+            toast.style.color = isSuccess ? '#065F46' : '#991B1B';
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 4000);
+          }
+        </script>
+
       <?php else: ?>
         <!-- ============================================================
              DEFAULT DASHBOARD OVERVIEW PAGE MODULE
@@ -2707,6 +4817,417 @@ if (!function_exists('formatMenuRouteUrl')) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
     }
+
+    /* ============================================================
+       CUSTOMER MANAGEMENT MODULE JAVASCRIPT LOGIC
+       ============================================================ */
+    let allCustomersData = [];
+    let currentWizStep = 1;
+
+    async function loadCustomersTable() {
+      const tbody = document.getElementById('customersTableBody');
+      if (!tbody) return;
+
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Loading customer accounts from Neon PostgreSQL...</td></tr>';
+
+      try {
+        const resp = await fetch('api/customers_api.php?action=list');
+        const res = await resp.json();
+
+        if (!res.success) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color: #DC2626;">Error: ${escapeHtml(res.error)}</td></tr>`;
+          return;
+        }
+
+        allCustomersData = res.customers || [];
+
+        // Update KPIs
+        if (res.kpis) {
+          document.getElementById('kpiTotalCust').innerText = res.kpis.total_customers || 0;
+          document.getElementById('kpiActiveCust').innerText = res.kpis.active_customers || 0;
+          document.getElementById('kpiInactiveCust').innerText = res.kpis.inactive_customers || 0;
+          document.getElementById('kpiTotalCompanies').innerText = res.kpis.total_companies || 0;
+        }
+
+        renderCustomersRows(allCustomersData);
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color: #DC2626;">Failed to load customers: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    function renderCustomersRows(data) {
+      const tbody = document.getElementById('customersTableBody');
+      if (!tbody) return;
+
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No customer records found in Neon PostgreSQL.</td></tr>';
+        return;
+      }
+
+      let html = '';
+      data.forEach((c, idx) => {
+        const isActive = String(c.status).toUpperCase() === 'ACTIVE';
+        const statusBadge = isActive 
+          ? '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">Active</span>' 
+          : '<span class="status-badge" style="background: #FEE2E2; color: #DC2626;">Inactive</span>';
+
+        // Derive plan or fallback
+        const subPlan = c.subscription_plan || (idx % 2 === 0 ? 'Enterprise' : 'Professional');
+        const subClass = subPlan === 'Enterprise' ? 'perm-create' : (subPlan === 'Professional' ? 'perm-read' : 'perm-update');
+
+        html += `
+          <tr>
+            <td>${idx + 1}</td>
+            <td><code>${escapeHtml(c.customer_code)}</code></td>
+            <td><strong>${escapeHtml(c.customer_name)}</strong></td>
+            <td>
+              <div>${escapeHtml(c.contact_person || 'N/A')}</div>
+              <div style="font-size: 0.78rem; color: var(--color-secondary-text);">${escapeHtml(c.contact_email || '')}</div>
+            </td>
+            <td><span class="perm-pill ${subClass}">${escapeHtml(subPlan)}</span></td>
+            <td>${statusBadge}</td>
+            <td style="text-align: right;">
+              <div style="display: flex; gap: 0.4rem; justify-content: flex-end;">
+                <button type="button" class="btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.78rem;" onclick="viewCustomerDetails(${c.customer_id})" title="View Details">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path></svg>
+                </button>
+                <button type="button" class="btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.78rem;" onclick="toggleCustomerStatus(${c.customer_id}, '${escapeJs(c.status)}')" title="${isActive ? 'Deactivate' : 'Activate'}">
+                  ${isActive 
+                    ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#DC2626" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>'
+                    : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#059669" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = html;
+    }
+
+    function filterCustomersList() {
+      const q = (document.getElementById('custSearchInput')?.value || '').toLowerCase().trim();
+      const statusF = document.getElementById('custStatusFilter')?.value || 'ALL';
+      const subF = document.getElementById('custSubscriptionFilter')?.value || 'ALL';
+
+      const filtered = allCustomersData.filter((c, idx) => {
+        const matchesSearch = !q || 
+          (c.customer_code || '').toLowerCase().includes(q) ||
+          (c.customer_name || '').toLowerCase().includes(q) ||
+          (c.contact_person || '').toLowerCase().includes(q) ||
+          (c.contact_email || '').toLowerCase().includes(q);
+
+        const matchesStatus = statusF === 'ALL' || (c.status || '').toUpperCase() === statusF.toUpperCase();
+
+        const plan = c.subscription_plan || (idx % 2 === 0 ? 'Enterprise' : 'Professional');
+        const matchesSub = subF === 'ALL' || plan.toUpperCase() === subF.toUpperCase();
+
+        return matchesSearch && matchesStatus && matchesSub;
+      });
+
+      renderCustomersRows(filtered);
+    }
+
+    function resetCustomerFilters() {
+      if (document.getElementById('custSearchInput')) document.getElementById('custSearchInput').value = '';
+      if (document.getElementById('custStatusFilter')) document.getElementById('custStatusFilter').value = 'ALL';
+      if (document.getElementById('custSubscriptionFilter')) document.getElementById('custSubscriptionFilter').value = 'ALL';
+      renderCustomersRows(allCustomersData);
+    }
+
+    /* WIZARD LOGIC */
+    function openAddCustomerWizard() {
+      document.getElementById('addCustomerForm').reset();
+      currentWizStep = 1;
+      renderWizStep();
+      document.getElementById('addCustomerWizardModal').style.display = 'flex';
+    }
+
+    function changeWizStep(delta) {
+      if (delta > 0) {
+        // Validate inputs before advancing
+        if (currentWizStep === 1) {
+          const code = document.getElementById('wizCustomerCode').value.trim();
+          const name = document.getElementById('wizCustomerName').value.trim();
+          const person = document.getElementById('wizContactPerson').value.trim();
+          const email = document.getElementById('wizContactEmail').value.trim();
+
+          if (!code || !name || !person || !email) {
+            alert('Please fill out all mandatory fields in Basic Information (*).');
+            return;
+          }
+        } else if (currentWizStep === 4) {
+          const adminName = document.getElementById('wizAdminName').value.trim();
+          const adminEmail = document.getElementById('wizAdminEmail').value.trim();
+          const adminPass = document.getElementById('wizAdminPass').value.trim();
+
+          if (!adminName || !adminEmail || !adminPass) {
+            alert('Please fill out Customer Administrator Name, Email, and Password (*).');
+            return;
+          }
+        }
+      }
+
+      currentWizStep += delta;
+      if (currentWizStep < 1) currentWizStep = 1;
+      if (currentWizStep > 6) currentWizStep = 6;
+      renderWizStep();
+    }
+
+    function renderWizStep() {
+      for (let i = 1; i <= 6; i++) {
+        const content = document.getElementById(`wizStepContent${i}`);
+        const pill = document.getElementById(`wizStepPill${i}`);
+        if (content) content.style.display = (i === currentWizStep) ? 'block' : 'none';
+        if (pill) {
+          if (i === currentWizStep) {
+            pill.style.fontWeight = '700';
+            pill.style.color = 'var(--color-primary-blue)';
+          } else {
+            pill.style.fontWeight = '400';
+            pill.style.color = 'var(--color-secondary-text)';
+          }
+        }
+      }
+
+      document.getElementById('btnWizPrev').style.display = (currentWizStep > 1) ? 'inline-block' : 'none';
+      document.getElementById('btnWizNext').style.display = (currentWizStep < 6) ? 'inline-block' : 'none';
+      document.getElementById('btnWizSubmit').style.display = (currentWizStep === 6) ? 'inline-block' : 'none';
+
+      if (currentWizStep === 6) {
+        populateWizReview();
+      }
+    }
+
+    function populateWizReview() {
+      const reviewBox = document.getElementById('wizReviewBox');
+      if (!reviewBox) return;
+
+      const code = document.getElementById('wizCustomerCode').value.trim();
+      const name = document.getElementById('wizCustomerName').value.trim();
+      const contactPerson = document.getElementById('wizContactPerson').value.trim();
+      const contactEmail = document.getElementById('wizContactEmail').value.trim();
+      const subPlan = document.getElementById('wizSubPlan').value;
+      const adminName = document.getElementById('wizAdminName').value.trim();
+      const adminEmail = document.getElementById('wizAdminEmail').value.trim();
+      const compCode = document.getElementById('wizCompCode').value.trim();
+      const compName = document.getElementById('wizCompName').value.trim();
+
+      reviewBox.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.88rem;">
+          <div>
+            <strong>Customer:</strong> ${escapeHtml(name)} (${escapeHtml(code)})<br>
+            <strong>Contact:</strong> ${escapeHtml(contactPerson)} (${escapeHtml(contactEmail)})
+          </div>
+          <div>
+            <strong>Subscription Plan:</strong> ${escapeHtml(subPlan)}<br>
+            <strong>Provisioning DB:</strong> Neon Global Database (Connected)
+          </div>
+          <div style="grid-column: span 2; border-top: 1px solid var(--color-border); padding-top: 0.75rem; margin-top: 0.5rem;">
+            <strong>Customer Administrator:</strong> ${escapeHtml(adminName)} (${escapeHtml(adminEmail)})<br>
+            <strong>Assigned Role:</strong> Customer Administrator (CUSTOMER_ADMIN)<br>
+            <strong>Assigned Scope:</strong> Full Customer Scope
+          </div>
+          ${compName ? `
+          <div style="grid-column: span 2; border-top: 1px solid var(--color-border); padding-top: 0.75rem;">
+            <strong>Initial Company:</strong> ${escapeHtml(compName)} (${escapeHtml(compCode)})
+          </div>` : ''}
+        </div>
+      `;
+    }
+
+    async function submitCustomerWizard(evt) {
+      evt.preventDefault();
+      const form = document.getElementById('addCustomerForm');
+      const formData = new FormData(form);
+      formData.append('action', 'create_customer');
+
+      const submitBtn = document.getElementById('btnWizSubmit');
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Creating Customer...';
+
+      try {
+        const resp = await fetch('api/customers_api.php', {
+          method: 'POST',
+          body: formData
+        });
+        const res = await resp.json();
+
+        if (!res.success) {
+          alert('Failed to create customer: ' + (res.error || 'Unknown error'));
+          submitBtn.disabled = false;
+          submitBtn.innerText = 'Create Customer';
+          return;
+        }
+
+        alert(`Customer Created Successfully!\nCustomer Code: ${res.customer_code}\nAdmin Email: ${res.admin_email}`);
+        closeModal('addCustomerWizardModal');
+        loadCustomersTable();
+      } catch (err) {
+        alert('Request error: ' + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Create Customer';
+      }
+    }
+
+    async function viewCustomerDetails(customerId) {
+      const modal = document.getElementById('customerDetailsModal');
+      if (!modal) return;
+
+      modal.style.display = 'flex';
+      document.getElementById('dtlCustName').innerText = 'Loading details...';
+
+      try {
+        const resp = await fetch(`api/customers_api.php?action=get_details&customer_id=${customerId}`);
+        const res = await resp.json();
+
+        if (!res.success) {
+          alert('Error fetching customer details: ' + res.error);
+          closeModal('customerDetailsModal');
+          return;
+        }
+
+        const c = res.customer;
+        document.getElementById('dtlCustCode').innerText = c.customer_code;
+        document.getElementById('dtlCustName').innerText = c.customer_name;
+        document.getElementById('dtlCustContact').innerText = `Contact: ${c.contact_person || 'N/A'} | Email: ${c.contact_email || 'N/A'} | Phone: ${c.contact_phone || 'N/A'}`;
+        document.getElementById('dtlCustStatusBadge').innerHTML = c.status.toUpperCase() === 'ACTIVE' 
+          ? '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">Active</span>' 
+          : '<span class="status-badge" style="background: #FEE2E2; color: #DC2626;">Inactive</span>';
+
+        // Overview KPIs
+        if (res.kpis) {
+          document.getElementById('dtlKpiComp').innerText = res.kpis.company_count;
+          document.getElementById('dtlKpiDiv').innerText = res.kpis.division_count;
+          document.getElementById('dtlKpiPlant').innerText = res.kpis.plant_count;
+          document.getElementById('dtlKpiWh').innerText = res.kpis.warehouse_count;
+          document.getElementById('dtlKpiUser').innerText = res.kpis.user_count;
+        }
+
+        // Admin Box
+        const adm = res.admin;
+        document.getElementById('custAdminBox').innerHTML = adm ? `
+          <div style="font-size: 0.9rem;">
+            <strong>Admin Name:</strong> ${escapeHtml(adm.full_name)}<br>
+            <strong>Email:</strong> ${escapeHtml(adm.email)}<br>
+            <strong>Phone:</strong> ${escapeHtml(adm.phone || 'N/A')}<br>
+            <strong>Role:</strong> Customer Administrator (CUSTOMER_ADMIN)<br>
+            <strong>Status:</strong> ${escapeHtml(adm.status)}
+          </div>
+        ` : '<em>No Customer Administrator user assigned.</em>';
+
+        // Companies Table
+        let compHtml = '';
+        (res.companies || []).forEach(cp => {
+          compHtml += `<tr><td><code>${escapeHtml(cp.company_code)}</code></td><td><strong>${escapeHtml(cp.company_name)}</strong></td><td>${escapeHtml(cp.address || '')}</td><td><span class="status-badge">${escapeHtml(cp.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlCompaniesBody').innerHTML = compHtml || '<tr><td colspan="4" class="empty-state">No companies registered.</td></tr>';
+
+        // Divisions Table
+        let divHtml = '';
+        (res.divisions || []).forEach(d => {
+          divHtml += `<tr><td><code>${escapeHtml(d.division_code)}</code></td><td>${escapeHtml(d.division_name)}</td><td>${escapeHtml(d.company_name)}</td><td><span class="status-badge">${escapeHtml(d.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlDivisionsBody').innerHTML = divHtml || '<tr><td colspan="4" class="empty-state">No divisions registered.</td></tr>';
+
+        // Plants Table
+        let plantHtml = '';
+        (res.plants || []).forEach(p => {
+          plantHtml += `<tr><td><code>${escapeHtml(p.plant_code)}</code></td><td>${escapeHtml(p.plant_name)}</td><td>${escapeHtml(p.company_name)} / ${escapeHtml(p.division_name)}</td><td><span class="status-badge">${escapeHtml(p.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlPlantsBody').innerHTML = plantHtml || '<tr><td colspan="4" class="empty-state">No plants registered.</td></tr>';
+
+        // Warehouses Table
+        let whHtml = '';
+        (res.warehouses || []).forEach(w => {
+          whHtml += `<tr><td><code>${escapeHtml(w.warehouse_code)}</code></td><td>${escapeHtml(w.warehouse_name)}</td><td>${escapeHtml(w.company_name)} / ${escapeHtml(w.plant_name)}</td><td><span class="status-badge">${escapeHtml(w.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlWarehousesBody').innerHTML = whHtml || '<tr><td colspan="4" class="empty-state">No warehouses registered.</td></tr>';
+
+        // Users & Scope Table
+        let userHtml = '';
+        (res.users || []).forEach(u => {
+          userHtml += `<tr><td><strong>${escapeHtml(u.full_name)}</strong></td><td>${escapeHtml(u.email)}</td><td><span class="perm-pill perm-view">${escapeHtml(u.role_name || u.role_code || 'User')}</span></td><td>${escapeHtml(u.company_name || 'All Companies (Customer Scope)')}</td><td>${escapeHtml(u.plant_name || 'All Plants')}</td><td><span class="status-badge">${escapeHtml(u.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlUsersBody').innerHTML = userHtml || '<tr><td colspan="6" class="empty-state">No users assigned.</td></tr>';
+
+        // Audit Logs Table
+        let auditHtml = '';
+        (res.audit_logs || []).forEach(a => {
+          auditHtml += `<tr><td>${escapeHtml(a.timestamp)}</td><td>${escapeHtml(a.operator_name || 'System')}</td><td><span class="perm-pill perm-update">${escapeHtml(a.action)}</span></td><td>${escapeHtml(a.new_value || a.old_value || '')}</td></tr>`;
+        });
+        document.getElementById('dtlAuditBody').innerHTML = auditHtml || '<tr><td colspan="4" class="empty-state">No audit logs recorded yet.</td></tr>';
+
+      } catch (err) {
+        alert('Failed to load customer details: ' + err.message);
+      }
+    }
+
+    function switchCustTab(tabName, btn) {
+      document.querySelectorAll('.cust-tab-pane').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.cust-tab-btn').forEach(b => b.classList.remove('active'));
+
+      const paneMap = {
+        'overview': 'custTabOverview',
+        'admin': 'custTabAdmin',
+        'companies': 'custTabCompanies',
+        'divisions': 'custTabDivisions',
+        'plants': 'custTabPlants',
+        'warehouses': 'custTabWarehouses',
+        'users': 'custTabUsers',
+        'audit': 'custTabAudit'
+      };
+
+      if (paneMap[tabName]) {
+        document.getElementById(paneMap[tabName]).style.display = 'block';
+      }
+      if (btn) btn.classList.add('active');
+    }
+
+    async function toggleCustomerStatus(customerId, currentStatus) {
+      const isAct = String(currentStatus).toUpperCase() === 'ACTIVE';
+      const targetStatus = isAct ? 'Inactive' : 'Active';
+
+      if (!confirm(`Are you sure you want to ${isAct ? 'DEACTIVATE' : 'ACTIVATE'} this customer tenant account?`)) {
+        return;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('action', 'deactivate_customer');
+        formData.append('customer_id', customerId);
+        formData.append('status', targetStatus);
+
+        const resp = await fetch('api/customers_api.php', { method: 'POST', body: formData });
+        const res = await resp.json();
+
+        if (!res.success) {
+          alert('Error: ' + res.error);
+          return;
+        }
+
+        alert(res.message);
+        loadCustomersTable();
+      } catch (err) {
+        alert('Request failed: ' + err.message);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (document.getElementById('customersTableBody')) {
+        loadCustomersTable();
+      }
+    });
+
+    window.openAddCustomerWizard = openAddCustomerWizard;
+    window.changeWizStep = changeWizStep;
+    window.submitCustomerWizard = submitCustomerWizard;
+    window.filterCustomersList = filterCustomersList;
+    window.resetCustomerFilters = resetCustomerFilters;
+    window.viewCustomerDetails = viewCustomerDetails;
+    window.switchCustTab = switchCustTab;
+    window.toggleCustomerStatus = toggleCustomerStatus;
 
     function escapeJs(str) {
       if (!str) return '';

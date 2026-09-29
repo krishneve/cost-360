@@ -64,16 +64,17 @@ if (!function_exists('requireAuth')) {
 
             if (
                 strpos($script, '/admin/') !== false ||
-                strpos($script, '/administration/') !== false
+                strpos($script, '/administration/') !== false ||
+                strpos($script, '/organization/') !== false
             ) {
 
                 if (
                     preg_match(
-                        '#/(?:admin|administration)/[^/]+/#',
+                        '#/(?:admin|administration|organization)/[^/]+/#i',
                         $script
                     ) ||
                     preg_match(
-                        '#/(?:admin|administration)/[^/]+/index\.php#',
+                        '#/(?:admin|administration|organization)/[^/]+/index\.php#i',
                         $script
                     )
                 ) {
@@ -971,7 +972,7 @@ if (!function_exists('getUserAuthorizedMenus')) {
                       AND rm.can_view = TRUE
 
 
-                    UNION
+                    UNION ALL
 
 
 <<<<<<< HEAD
@@ -1014,7 +1015,7 @@ if (!function_exists('getUserAuthorizedMenus')) {
                     WHERE parent.status = 'Active'
                 )
 
-                SELECT DISTINCT
+                SELECT
 
                     menu_id,
                     parent_menu_id,
@@ -1026,18 +1027,29 @@ if (!function_exists('getUserAuthorizedMenus')) {
                     display_order,
                     status,
 
-                    can_view,
-                    can_create,
-                    can_edit,
-                    can_delete,
-                    can_upload,
-                    can_download,
-                    can_approve,
-                    can_export,
-                    can_print,
-                    can_configure
+                    BOOL_OR(can_view) AS can_view,
+                    BOOL_OR(can_create) AS can_create,
+                    BOOL_OR(can_edit) AS can_edit,
+                    BOOL_OR(can_delete) AS can_delete,
+                    BOOL_OR(can_upload) AS can_upload,
+                    BOOL_OR(can_download) AS can_download,
+                    BOOL_OR(can_approve) AS can_approve,
+                    BOOL_OR(can_export) AS can_export,
+                    BOOL_OR(can_print) AS can_print,
+                    BOOL_OR(can_configure) AS can_configure
 
                 FROM authorized_menu_tree
+
+                GROUP BY
+                    menu_id,
+                    parent_menu_id,
+                    menu_code,
+                    menu_name,
+                    menu_type,
+                    route,
+                    icon,
+                    display_order,
+                    status
 
                 ORDER BY
                     display_order ASC,
