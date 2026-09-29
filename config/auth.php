@@ -1,9 +1,5 @@
 <?php
 /**
-<<<<<<< HEAD
- * Cost360 - Authentication & Role-Based Access Control (RBAC) Helper
- * Connects directly to Neon PostgreSQL auth schema tables.
-=======
  * Cost360 - Authentication, RBAC & Organization Access Helper
  *
  * Handles:
@@ -14,7 +10,6 @@
  * - Permissions
  * - Organization/company access
  * - Active company session
->>>>>>> origin/user-master
  */
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -23,22 +18,6 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/database.php';
 
-<<<<<<< HEAD
-if (!function_exists('isLoggedIn')) {
-    function isLoggedIn() {
-        return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
-    }
-}
-
-if (!function_exists('requireAuth')) {
-    function requireAuth() {
-        if (!isLoggedIn()) {
-            $script = $_SERVER['SCRIPT_NAME'] ?? '';
-            $loginUrl = 'login.php';
-            if (strpos($script, '/admin/') !== false || strpos($script, '/administration/') !== false) {
-                if (preg_match('#/(?:admin|administration)/[^/]+/#', $script) ||
-                    preg_match('#/(?:admin|administration)/[^/]+/index\.php#', $script)) {
-=======
 
 /* ============================================================
    AUTHENTICATION
@@ -78,38 +57,18 @@ if (!function_exists('requireAuth')) {
                         $script
                     )
                 ) {
->>>>>>> origin/user-master
                     $loginUrl = '../../login.php';
                 } else {
                     $loginUrl = '../login.php';
                 }
             }
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/user-master
             header('Location: ' . $loginUrl);
             exit;
         }
     }
 }
 
-<<<<<<< HEAD
-if (!function_exists('hashPassword')) {
-    function hashPassword($password) {
-        return password_hash($password, PASSWORD_DEFAULT);
-    }
-}
-
-if (!function_exists('verifyPassword')) {
-    function verifyPassword($password, $hash) {
-        return password_verify($password, $hash);
-    }
-}
-
-if (!function_exists('getAuthUser')) {
-    function getAuthUser() {
-=======
 
 /* ============================================================
    ACTIVE COMPANY REQUIRED
@@ -196,24 +155,16 @@ if (!function_exists('getAuthUser')) {
 
     function getAuthUser()
     {
->>>>>>> origin/user-master
         if (!isLoggedIn()) {
             return null;
         }
 
         static $cachedUser = null;
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/user-master
         if ($cachedUser !== null) {
             return $cachedUser;
         }
 
-<<<<<<< HEAD
-        if (isset($_SESSION['auth_cache']['user'])) {
-            $cachedUser = $_SESSION['auth_cache']['user'];
-=======
         if (
             isset($_SESSION['auth_cache']['user']) &&
             !empty($_SESSION['auth_cache']['user'])
@@ -222,17 +173,10 @@ if (!function_exists('getAuthUser')) {
             $cachedUser =
                 $_SESSION['auth_cache']['user'];
 
->>>>>>> origin/user-master
             return $cachedUser;
         }
 
         try {
-<<<<<<< HEAD
-            $pdo = getDbConnection();
-            $stmt = $pdo->prepare('
-                SELECT user_id, username, email, first_name, last_name,
-                       phone as mobile_number, status, is_email_verified, last_login_at, created_at
-=======
 
             $pdo = getDbConnection();
 
@@ -248,28 +192,10 @@ if (!function_exists('getAuthUser')) {
                     is_email_verified,
                     last_login_at,
                     created_at
->>>>>>> origin/user-master
                 FROM users
                 WHERE user_id = :user_id
                 LIMIT 1
             ');
-<<<<<<< HEAD
-            $stmt->execute([':user_id' => $_SESSION['user_id']]);
-            $cachedUser = $stmt->fetch();
-            if ($cachedUser) {
-                $_SESSION['auth_cache']['user'] = $cachedUser;
-            }
-            return $cachedUser;
-        } catch (Exception $e) {
-            error_log("Error fetching auth user: " . $e->getMessage());
-            return [
-                'user_id'    => $_SESSION['user_id'] ?? null,
-                'email'      => $_SESSION['email'] ?? '',
-                'username'   => $_SESSION['username'] ?? '',
-                'first_name' => $_SESSION['first_name'] ?? '',
-                'last_name'  => '',
-                'status'     => 'ACTIVE'
-=======
 
             $stmt->execute([
                 ':user_id' => $_SESSION['user_id']
@@ -309,18 +235,11 @@ if (!function_exists('getAuthUser')) {
                 'last_name' => '',
 
                 'status' => 'ACTIVE'
->>>>>>> origin/user-master
             ];
         }
     }
 }
 
-<<<<<<< HEAD
-if (!function_exists('getCurrentUserRole')) {
-    function getCurrentUserRole($userId = null) {
-        if ($userId === null) {
-            $userId = $_SESSION['user_id'] ?? null;
-=======
 
 /* ============================================================
    CURRENT USER ROLE
@@ -333,7 +252,6 @@ if (!function_exists('getCurrentUserRole')) {
         if ($userId === null) {
             $userId =
                 $_SESSION['user_id'] ?? null;
->>>>>>> origin/user-master
         }
 
         if (!$userId) {
@@ -341,32 +259,12 @@ if (!function_exists('getCurrentUserRole')) {
         }
 
         static $cachedRolesMap = [];
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/user-master
         if (isset($cachedRolesMap[$userId])) {
             return $cachedRolesMap[$userId];
         }
 
         try {
-<<<<<<< HEAD
-            $pdo = getDbConnection();
-            $stmt = $pdo->prepare('
-                SELECT r.role_id, r.role_code, r.role_name, r.description, r.status
-                FROM roles r
-                INNER JOIN user_roles ur ON r.role_id = ur.role_id
-                WHERE ur.user_id = :user_id AND r.status = \'Active\' AND ur.status = \'Active\'
-                ORDER BY r.role_id ASC
-                LIMIT 1
-            ');
-            $stmt->execute([':user_id' => $userId]);
-            $cachedRole = $stmt->fetch();
-            $cachedRolesMap[$userId] = $cachedRole ?: null;
-            return $cachedRole;
-        } catch (Exception $e) {
-            error_log("Error fetching user role: " . $e->getMessage());
-=======
 
             $pdo = getDbConnection();
 
@@ -411,60 +309,11 @@ if (!function_exists('getCurrentUserRole')) {
                 $e->getMessage()
             );
 
->>>>>>> origin/user-master
             return null;
         }
     }
 }
 
-<<<<<<< HEAD
-// if (!function_exists('getUserAuthorizedMenus')) {
-//     function getUserAuthorizedMenus($userId = null) {
-//         if ($userId === null) {
-//             $userId = $_SESSION['user_id'] ?? null;
-//         }
-
-//         if (!$userId) {
-//             return [];
-//         }
-
-//         static $cachedMenusMap = [];
-//         if (isset($cachedMenusMap[$userId])) {
-//             return $cachedMenusMap[$userId];
-//         }
-
-//         try {
-//             $pdo = getDbConnection();
-//             $stmt = $pdo->prepare('
-//                 SELECT DISTINCT m.menu_id, m.parent_menu_id, m.menu_code, m.menu_name,
-//                        m.menu_type, m.route, m.icon, m.display_order, m.status,
-//                        rm.can_view, rm.can_create, rm.can_edit, rm.can_delete, rm.can_upload,
-//                        rm.can_download, rm.can_approve, rm.can_export, rm.can_print, rm.can_configure
-//                 FROM menus m
-//                 INNER JOIN role_menu rm ON m.menu_id = rm.menu_id
-//                 INNER JOIN user_roles ur ON rm.role_id = ur.role_id
-//                 INNER JOIN roles r ON ur.role_id = r.role_id
-//                 WHERE ur.user_id = :user_id
-//                   AND m.status = \'Active\'
-//                   AND rm.is_active = true
-//                   AND r.status = \'Active\'
-//                   AND ur.status = \'Active\'
-//                 ORDER BY m.display_order ASC, m.menu_id ASC
-//             ');
-//             $stmt->execute([':user_id' => $userId]);
-//             $cachedMenus = $stmt->fetchAll();
-//             $cachedMenusMap[$userId] = $cachedMenus ?: [];
-//             return $cachedMenus;
-//         } catch (Exception $e) {
-//             error_log("Error fetching authorized menus: " . $e->getMessage());
-//             return [];
-//         }
-//     }
-// }
-
-if (!function_exists('getUserAuthorizedMenus')) {
-    function getUserAuthorizedMenus($userId = null)
-=======
 
 
 /* ============================================================
@@ -474,15 +323,12 @@ if (!function_exists('getUserAuthorizedMenus')) {
 if (!function_exists('isPlatformAdmin')) {
 
     function isPlatformAdmin($userId = null)
->>>>>>> origin/user-master
     {
         if ($userId === null) {
             $userId = $_SESSION['user_id'] ?? null;
         }
 
         if (!$userId) {
-<<<<<<< HEAD
-=======
             return false;
         }
 
@@ -888,7 +734,6 @@ if (!function_exists('getUserAuthorizedMenus')) {
         }
 
         if (!$userId) {
->>>>>>> origin/user-master
             return [];
         }
 
@@ -902,31 +747,12 @@ if (!function_exists('getUserAuthorizedMenus')) {
 
             $pdo = getDbConnection();
 
-<<<<<<< HEAD
-            /*
-             * First get menus directly assigned to the user's
-             * active roles.
-             *
-             * Then recursively add their parent menus so that
-             * the sidebar hierarchy remains intact.
-             */
-
-            $sql = "
-                WITH RECURSIVE authorized_menu_tree AS (
-
-                    /* -----------------------------------------
-                       MENUS DIRECTLY ASSIGNED TO USER'S ROLE
-                       ----------------------------------------- */
-
-                    SELECT DISTINCT
-=======
             $sql = "
 
                 WITH RECURSIVE authorized_menu_tree AS (
 
                     SELECT DISTINCT
 
->>>>>>> origin/user-master
                         m.menu_id,
                         m.parent_menu_id,
                         m.menu_code,
@@ -975,16 +801,8 @@ if (!function_exists('getUserAuthorizedMenus')) {
                     UNION ALL
 
 
-<<<<<<< HEAD
-                    /* -----------------------------------------
-                       ADD PARENT MENUS
-                       ----------------------------------------- */
-
-                    SELECT
-=======
                     SELECT
 
->>>>>>> origin/user-master
                         parent.menu_id,
                         parent.parent_menu_id,
                         parent.menu_code,
@@ -1056,25 +874,17 @@ if (!function_exists('getUserAuthorizedMenus')) {
                     menu_id ASC
             ";
 
-<<<<<<< HEAD
-            $stmt = $pdo->prepare($sql);
-=======
             $stmt =
                 $pdo->prepare($sql);
->>>>>>> origin/user-master
 
             $stmt->execute([
                 ':user_id' => $userId
             ]);
 
             $menus =
-<<<<<<< HEAD
-                $stmt->fetchAll(PDO::FETCH_ASSOC);
-=======
                 $stmt->fetchAll(
                     PDO::FETCH_ASSOC
                 );
->>>>>>> origin/user-master
 
             $cachedMenusMap[$userId] =
                 $menus ?: [];
@@ -1093,12 +903,6 @@ if (!function_exists('getUserAuthorizedMenus')) {
     }
 }
 
-<<<<<<< HEAD
-if (!function_exists('getUserAuthorizedPermissions')) {
-    function getUserAuthorizedPermissions($userId = null) {
-        if ($userId === null) {
-            $userId = $_SESSION['user_id'] ?? null;
-=======
 
 /* ============================================================
    PERMISSIONS
@@ -1113,49 +917,12 @@ if (!function_exists('getUserAuthorizedPermissions')) {
         if ($userId === null) {
             $userId =
                 $_SESSION['user_id'] ?? null;
->>>>>>> origin/user-master
         }
 
         if (!$userId) {
             return [];
         }
 
-<<<<<<< HEAD
-        static $cachedPermissions = null;
-        if ($cachedPermissions !== null) {
-            return $cachedPermissions;
-        }
-
-        if (isset($_SESSION['auth_cache']['permissions'])) {
-            $cachedPermissions = $_SESSION['auth_cache']['permissions'];
-            // Force cache refresh if the old structure is cached
-            if (!empty($cachedPermissions) && isset($cachedPermissions[0]['menu_name'])) {
-                return $cachedPermissions;
-            }
-        }
-
-        try {
-            $menus = getUserAuthorizedMenus($userId);
-            $perms = [];
-            foreach ($menus as $m) {
-                $mCode = $m['menu_code'];
-                $mName = $m['menu_name'];
-                if ($m['can_view']) $perms[] = ['permission_code' => 'VIEW', 'permission_name' => 'View', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_create']) $perms[] = ['permission_code' => 'CREATE', 'permission_name' => 'Create', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_edit']) $perms[] = ['permission_code' => 'EDIT', 'permission_name' => 'Edit', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_delete']) $perms[] = ['permission_code' => 'DELETE', 'permission_name' => 'Delete', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_upload']) $perms[] = ['permission_code' => 'UPLOAD', 'permission_name' => 'Upload', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_download']) $perms[] = ['permission_code' => 'DOWNLOAD', 'permission_name' => 'Download', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_approve']) $perms[] = ['permission_code' => 'APPROVE', 'permission_name' => 'Approve', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_export']) $perms[] = ['permission_code' => 'EXPORT', 'permission_name' => 'Export', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_print']) $perms[] = ['permission_code' => 'PRINT', 'permission_name' => 'Print', 'menu_code' => $mCode, 'menu_name' => $mName];
-                if ($m['can_configure']) $perms[] = ['permission_code' => 'CONFIGURE', 'permission_name' => 'Configure', 'menu_code' => $mCode, 'menu_name' => $mName];
-            }
-            $_SESSION['auth_cache']['permissions'] = $perms;
-            return $perms;
-        } catch (Exception $e) {
-            error_log("Error generating user permissions: " . $e->getMessage());
-=======
         static $cachedPermissions = [];
 
         if (isset($cachedPermissions[$userId])) {
@@ -1285,28 +1052,11 @@ if (!function_exists('getUserAuthorizedPermissions')) {
                 $e->getMessage()
             );
 
->>>>>>> origin/user-master
             return [];
         }
     }
 }
 
-<<<<<<< HEAD
-if (!function_exists('userHasMenuAccess')) {
-    function userHasMenuAccess($menuRouteOrCode, $userId = null) {
-        $menus = getUserAuthorizedMenus($userId);
-        $cleanTarget = strtolower(trim($menuRouteOrCode));
-        foreach ($menus as $m) {
-            $mCode = strtolower(trim($m['menu_code']));
-            $mRoute = strtolower(trim($m['route']));
-            if ($mCode === $cleanTarget || $mRoute === $cleanTarget) {
-                return true;
-            }
-            if ($mRoute !== '' && (str_contains($mRoute, $cleanTarget) || str_contains($cleanTarget, $mCode))) {
-                return true;
-            }
-        }
-=======
 
 /* ============================================================
    MENU ACCESS
@@ -1365,19 +1115,10 @@ if (!function_exists('userHasMenuAccess')) {
             }
         }
 
->>>>>>> origin/user-master
         return false;
     }
 }
 
-<<<<<<< HEAD
-if (!function_exists('userHasPermission')) {
-    function userHasPermission($permissionCode, $menuCode = null, $userId = null) {
-        $permissions = getUserAuthorizedPermissions($userId);
-        foreach ($permissions as $p) {
-            if (strcasecmp($p['permission_code'], $permissionCode) === 0) {
-                if ($menuCode === null || strcasecmp($p['menu_code'], $menuCode) === 0) {
-=======
 
 if (!function_exists('userHasPermission')) {
 
@@ -1408,27 +1149,15 @@ if (!function_exists('userHasPermission')) {
                         $menuCode
                     ) === 0
                 ) {
->>>>>>> origin/user-master
                     return true;
                 }
             }
         }
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/user-master
         return false;
     }
 }
 
-<<<<<<< HEAD
-if (!function_exists('requirePermission')) {
-    function requirePermission($permissionCode, $menuCode = null) {
-        requireAuth();
-        if (!userHasPermission($permissionCode, $menuCode)) {
-            header('HTTP/1.1 403 Forbidden');
-            echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Access Denied - Cost360</title><style>body{font-family:sans-serif;background:#0A0E17;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}.card{background:#1E293B;padding:2rem;border-radius:12px;text-align:center;max-width:400px;}h1{color:#F87171;}a{color:#00CFEF;text-decoration:none;font-weight:600;}</style></head><body><div class="card"><h1>Access Denied</h1><p>You do not have permission (' . htmlspecialchars($permissionCode) . ') to access this resource.</p><p><a href="dashboard.php">Return to Dashboard</a></p></div></body></html>';
-=======
 
 /* ============================================================
    PERMISSION REQUIREMENT
@@ -1523,7 +1252,6 @@ if (!function_exists('requirePermission')) {
             </body>
             </html>';
 
->>>>>>> origin/user-master
             exit;
         }
     }

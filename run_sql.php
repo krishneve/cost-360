@@ -15,15 +15,9 @@ $filename = 'database/sample_customer.sql';
 try {
     $pdo = getDbConnection();
     
-<<<<<<< HEAD
-    if (isset($argv[1]) && !empty($argv[1])) {
-        $filename = $argv[1];
-    } elseif (isset($_GET['file']) && !empty($_GET['file'])) {
-=======
     // You can also pass the filename via URL parameter for convenience:
     // http://localhost/finalcost360/finalcost360/run_sql.php?file=database/sample_customer.sql
     if (isset($_GET['file']) && !empty($_GET['file'])) {
->>>>>>> origin/user-master
         $filename = $_GET['file'];
     }
 

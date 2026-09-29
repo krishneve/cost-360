@@ -8,23 +8,17 @@
 require_once __DIR__ . '/config/auth.php';
 require_once __DIR__ . '/config/upload_centre.php';
 
-<<<<<<< HEAD
-requireAuth();
-=======
 /*
  * Cost360 dashboard requires:
  * 1. Authenticated user
  * 2. Active company selected for the current session
  */
 requireActiveCompany();
->>>>>>> origin/user-master
 
 $user = getAuthUser();
 $role = getCurrentUserRole();
 $authorizedMenus = getUserAuthorizedMenus();
 
-<<<<<<< HEAD
-=======
 /*
  * Active company context.
  * All company-dependent modules should use $activeCompanyId
@@ -36,7 +30,6 @@ $activeCompanyCode = $activeCompany['company_code'] ?? '';
 $activeCompanyName = $activeCompany['company_name'] ?? '';
 $activeCustomerId = $activeCompany['customer_id'] ?? null;
 
->>>>>>> origin/user-master
 // Determine the current URL to set active menu states
 $currentUrl = $_SERVER['REQUEST_URI'];
 $currentPage = strtolower($_GET['page'] ?? 'dashboard'); // Kept as fallback for module inclusion, but we won't use it for navigation state
@@ -348,8 +341,6 @@ if (!function_exists('formatMenuRouteUrl')) {
       color: var(--color-primary-text);
     }
 
-<<<<<<< HEAD
-=======
     .active-company-context {
       display: flex;
       align-items: center;
@@ -395,7 +386,6 @@ if (!function_exists('formatMenuRouteUrl')) {
       text-decoration: underline;
     }
 
->>>>>>> origin/user-master
     .user-profile-menu {
       display: flex;
       align-items: center;
@@ -1042,8 +1032,6 @@ if (!function_exists('formatMenuRouteUrl')) {
       </div>
 
       <div class="user-profile-menu">
-<<<<<<< HEAD
-=======
 
         <!-- ACTIVE COMPANY -->
         <div class="active-company-context">
@@ -1067,16 +1055,10 @@ if (!function_exists('formatMenuRouteUrl')) {
           </a>
         </div>
 
->>>>>>> origin/user-master
         <div class="user-details">
           <div class="user-name"><?php echo htmlspecialchars(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? '')); ?></div>
           <div class="user-meta"><?php echo htmlspecialchars($user['email'] ?? ''); ?></div>
         </div>
-<<<<<<< HEAD
-        <span class="role-badge"><?php echo htmlspecialchars($role['role_name'] ?? 'No Role Assigned'); ?></span>
-        <span class="status-badge"><?php echo htmlspecialchars($user['status'] ?? 'ACTIVE'); ?></span>
-        <a href="<?php echo $baseUrlPrefix; ?>logout.php" class="btn-logout">Sign Out</a>
-=======
 
         <span class="role-badge"><?php echo htmlspecialchars($role['role_name'] ?? 'No Role Assigned'); ?></span>
 
@@ -1084,7 +1066,6 @@ if (!function_exists('formatMenuRouteUrl')) {
 
         <a href="<?php echo $baseUrlPrefix; ?>logout.php" class="btn-logout">Sign Out</a>
 
->>>>>>> origin/user-master
       </div>
     </header>
 

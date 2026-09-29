@@ -351,16 +351,6 @@ JOIN master_groups mg ON mg.code = x.m
 JOIN target_entities te ON te.table_name = x.t 
 ON CONFLICT (master_group_id, code) DO NOTHING;
 
-<<<<<<< HEAD
--- 7. Register Navigation Menus in menus for RBAC Sidebar
-INSERT INTO menus (menu_name, menu_code, route, icon, parent_menu_id, display_order)
-VALUES 
-('Upload Centre', 'UPLOAD_CENTRE', 'upload-centre.php', 'calculator', NULL, 20),
-('Mapping Centre', 'MAPPING_CENTRE', 'mapping-centre.php', 'database', NULL, 21),
-('Import History', 'IMPORT_HISTORY', 'import-history.php', 'assessment', NULL, 22),
-('Audit Logs', 'AUDIT_LOGS', 'audit-logs.php', 'settings', NULL, 23),
-('Master Groups', 'MASTER_GROUPS', 'master-groups.php', 'business', NULL, 24)
-=======
 -- 7. Register Navigation Menus in auth.menus for RBAC Sidebar
 INSERT INTO auth.menus (menu_name, menu_code, route, icon, parent_menu_id, display_order)
 VALUES 
@@ -369,20 +359,10 @@ VALUES
 ('Import History', 'IMPORT_HISTORY', 'dashboard.php?page=history', 'assessment', NULL, 22),
 ('Audit Logs', 'AUDIT_LOGS', 'dashboard.php?page=audit', 'settings', NULL, 23),
 ('Master Groups', 'MASTER_GROUPS', 'dashboard.php?page=masters', 'business', NULL, 24)
->>>>>>> origin/user-master
 ON CONFLICT (menu_code) DO UPDATE 
 SET route = EXCLUDED.route;
 
 -- Grant Menu Access to PLATFORM_ADMIN role
-<<<<<<< HEAD
-INSERT INTO role_menu (role_id, menu_id, can_view, is_active)
-SELECT r.role_id, m.menu_id, TRUE, TRUE
-FROM roles r
-CROSS JOIN menus m
-WHERE r.role_code = 'PLATFORM_ADMIN'
-  AND m.menu_code IN ('UPLOAD_CENTRE', 'MAPPING_CENTRE', 'IMPORT_HISTORY', 'AUDIT_LOGS', 'MASTER_GROUPS')
-ON CONFLICT (role_id, menu_id) DO NOTHING;
-=======
 INSERT INTO auth.role_menu (role_id, menu_id)
 SELECT r.role_id, m.menu_id
 FROM auth.roles r
@@ -390,4 +370,3 @@ CROSS JOIN auth.menus m
 WHERE r.role_code = 'PLATFORM_ADMIN'
   AND m.menu_code IN ('UPLOAD_CENTRE', 'MAPPING_CENTRE', 'IMPORT_HISTORY', 'AUDIT_LOGS', 'MASTER_GROUPS')
 ON CONFLICT DO NOTHING;
->>>>>>> origin/user-master
