@@ -62,7 +62,10 @@ if (!function_exists('getMenuIconSvg')) {
 
 $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
 $baseUrlPrefix = '';
-if (preg_match('#/(?:admin|administration|organization)/[^/]+/#i', $scriptName) || 
+if (preg_match('#/(?:admin|administration|organization)/[^/]+/[^/]+/#i', $scriptName) || 
+    preg_match('#/(?:admin|administration|organization)/[^/]+/[^/]+/index\.php#i', $scriptName)) {
+    $baseUrlPrefix = '../../../';
+} else if (preg_match('#/(?:admin|administration|organization)/[^/]+/#i', $scriptName) || 
     preg_match('#/(?:admin|administration|organization)/[^/]+/index\.php#i', $scriptName)) {
     $baseUrlPrefix = '../../';
 } else if (strpos($scriptName, '/admin/') !== false || strpos($scriptName, '/administration/') !== false || strpos($scriptName, '/organization/') !== false) {
@@ -83,33 +86,39 @@ if (!function_exists('formatMenuRouteUrl')) {
         }
 
         // Parent modules with no standalone page shouldn't navigate away to a 404
-        $parentOnlyRoutes = ['administration', 'data', 'costing', 'audit', 'reports', 'settings', 'organization'];
+        $parentOnlyRoutes = ['administration', 'data', 'costing', 'audit', 'reports', 'settings', 'organization', 'administration/subscriptions', 'subscriptions'];
         if (in_array($lower, $parentOnlyRoutes)) {
             return 'javascript:void(0);';
         }
 
         // Map known routes to actual working handlers
         $routeMap = [
-            'customers'              => 'customers.php',
-            'customers/master'       => 'customers.php',
-            'customers/companies'    => 'customers.php',
-            'customers/plants'       => 'customers.php',
-            'administration/users'   => 'admin/users/',
-            'admin/users'            => 'admin/users/',
-            'administration/roles'   => 'admin/roles/',
-            'admin/roles'            => 'admin/roles/',
-            'administration/menus'   => 'admin/menus/',
-            'admin/menus'            => 'admin/menus/',
-            'data/upload'            => 'upload-centre.php',
-            'data/mapping'           => 'mapping-centre.php',
-            'data/history'           => 'import-history.php',
-            'data/audit'             => 'audit-logs.php',
-            'data/masters'           => 'master-groups.php',
-            'organization/companies' => 'organization/companies/',
-            'organization/divisions' => 'organization/divisions/',
-            'organization/plants'    => 'organization/plants/',
-            'organization/warehouses' => 'organization/warehouses/',
-            'organization/periods'   => 'organization/periods/',
+            'customers'                          => 'customers.php',
+            'customers/master'                   => 'customers.php',
+            'customers/companies'                => 'customers.php',
+            'customers/plants'                   => 'customers.php',
+            'administration/users'               => 'admin/users/',
+            'admin/users'                        => 'admin/users/',
+            'administration/roles'               => 'admin/roles/',
+            'admin/roles'                        => 'admin/roles/',
+            'administration/menus'               => 'admin/menus/',
+            'admin/menus'                        => 'admin/menus/',
+            'administration/subscriptions/plans'     => 'administration/subscriptions/plans/',
+            'admin/subscription-plans'               => 'admin/subscription-plans/',
+            'subscription-plans'                     => 'subscription-plans.php',
+            'administration/subscriptions/customers' => 'administration/subscriptions/customers/',
+            'admin/customer-subscriptions'           => 'admin/customer-subscriptions/',
+            'customer-subscriptions'                 => 'customer-subscriptions.php',
+            'data/upload'                        => 'upload-centre.php',
+            'data/mapping'                       => 'mapping-centre.php',
+            'data/history'                       => 'import-history.php',
+            'data/audit'                         => 'audit-logs.php',
+            'data/masters'                       => 'master-groups.php',
+            'organization/companies'             => 'organization/companies/',
+            'organization/divisions'             => 'organization/divisions/',
+            'organization/plants'                => 'organization/plants/',
+            'organization/warehouses'            => 'organization/warehouses/',
+            'organization/periods'               => 'organization/periods/',
         ];
 
         if (isset($routeMap[$lower])) {
@@ -892,6 +901,7 @@ if (!function_exists('formatMenuRouteUrl')) {
           // Recursive function to mark active routes
           if (!function_exists('markActiveMenus')) {
               function markActiveMenus(&$node, $currentUrl, $baseUrlPrefix) {
+                  global $currentPage;
                   $isActive = false;
                   
                   $menuRoute = formatMenuRouteUrl($node['route'], $baseUrlPrefix);
@@ -906,6 +916,18 @@ if (!function_exists('formatMenuRouteUrl')) {
                   
                   if (!$isActive && strpos($currentUrl, 'dashboard.php') !== false && strpos($currentUrl, '?page') === false) {
                       if (strcasecmp($node['menu_code'], 'DASHBOARD') === 0) {
+                          $isActive = true;
+                      }
+                  }
+
+                  if (!$isActive && ($currentPage === 'subscription-plans' || strpos($currentUrl, 'subscription-plans') !== false || strpos($currentUrl, 'subscriptions/plans') !== false)) {
+                      if (strcasecmp($node['menu_code'], 'SUBSCRIPTION_PLANS') === 0) {
+                          $isActive = true;
+                      }
+                  }
+
+                  if (!$isActive && ($currentPage === 'customer-subscriptions' || strpos($currentUrl, 'customer-subscriptions') !== false || strpos($currentUrl, 'subscriptions/customers') !== false)) {
+                      if (strcasecmp($node['menu_code'], 'CUSTOMER_SUBSCRIPTIONS') === 0) {
                           $isActive = true;
                       }
                   }
@@ -2477,6 +2499,2055 @@ if (!function_exists('formatMenuRouteUrl')) {
           function escapeJs(str) {
             if (!str) return '';
             return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
+          }
+        </script>
+
+      <?php elseif ($currentPage === 'subscription-plans'): ?>
+        <!-- ============================================================
+             SUBSCRIPTION PLANS MODULE (DYNAMIC FROM NEON POSTGRESQL)
+             Hierarchy: Administration -> Subscription Management -> Subscription Plans
+             ============================================================ -->
+
+        <!-- KPI SUMMARY CARDS -->
+        <section class="grid-cards" style="margin-bottom: 1.5rem;">
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Total Plans</span></div>
+            <div class="stat-number" id="kpiTotalPlans">0</div>
+            <div class="stat-desc">Configured subscription tiers</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Active Plans</span></div>
+            <div class="stat-number" id="kpiActivePlans" style="color: var(--color-bright-cyan);">0</div>
+            <div class="stat-desc">Available for customer enrollment</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Inactive Plans</span></div>
+            <div class="stat-number" id="kpiInactivePlans" style="color: #DC2626;">0</div>
+            <div class="stat-desc">Archived / Disabled tiers</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Commercial / Paid</span></div>
+            <div class="stat-number" id="kpiCommercialPlans" style="color: var(--color-primary-blue);">0</div>
+            <div class="stat-desc">Revenue-generating plans</div>
+          </div>
+        </section>
+
+        <!-- MAIN SECTION CARD -->
+        <section class="section-card">
+          <!-- SECTION HEADER -->
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                <span style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-secondary-text);">
+                  Administration &bull; Subscription Management
+                </span>
+              </div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem; font-size: 1.3rem;">Subscription Plans</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage platform subscription tiers, user thresholds, and billing cycles</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-primary" onclick="openAddPlanModal()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>+ Add Plan</span>
+              </button>
+              <button type="button" class="btn-secondary" onclick="loadPlansTable()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- TOAST NOTIFICATION -->
+          <div id="planToast" style="display: none; padding: 0.75rem 1.25rem; border-radius: var(--radius-input); margin-top: 1rem; margin-bottom: 1rem; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- SEARCH & FILTERS BAR -->
+          <div style="display: flex; gap: 0.85rem; align-items: center; flex-wrap: wrap; margin-top: 1.25rem; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="flex: 2; min-width: 250px; position: relative;">
+              <input type="text" id="planSearchInput" class="cost360-select" placeholder="Search by plan name, code, type, description..." onkeyup="handlePlanSearchKeyup(event)" style="padding-left: 2.3rem;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--color-secondary-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%); pointer-events: none;">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <div style="flex: 1; min-width: 150px;">
+              <select id="planStatusFilter" class="cost360-select" onchange="loadPlansTable(1)">
+                <option value="ALL">All Status</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 160px;">
+              <select id="planTypeFilter" class="cost360-select" onchange="loadPlansTable(1)">
+                <option value="ALL">All Plan Types</option>
+                <option value="COMMERCIAL">Commercial</option>
+                <option value="FREE">Free</option>
+                <option value="ENTERPRISE">Enterprise</option>
+                <option value="TRIAL">Trial</option>
+                <option value="CUSTOM">Custom</option>
+              </select>
+            </div>
+            <button type="button" class="btn-secondary" onclick="resetPlanFilters()" style="padding: 0.5rem 1rem;">Reset</button>
+          </div>
+
+          <!-- PLANS TABLE CONTAINER -->
+          <div class="table-responsive" style="min-height: 240px;">
+            <table id="plansTable">
+              <thead>
+                <tr>
+                  <th style="width: 22%;">Plan Name</th>
+                  <th style="width: 13%;">Plan Code</th>
+                  <th style="width: 12%;">Plan Type</th>
+                  <th style="width: 13%;">Price</th>
+                  <th style="width: 12%;">Billing Cycle</th>
+                  <th style="width: 13%;">Maximum Users</th>
+                  <th style="width: 8%;">Status</th>
+                  <th style="width: 17%; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="plansTableBody">
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--color-secondary-text);">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.6rem;">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 2a10 10 0 0 1 10 10"></path>
+                      </svg>
+                      <span>Loading subscription plans from database...</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- PAGINATION CONTROLS -->
+          <div id="planPaginationContainer" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.85rem; color: var(--color-secondary-text);">
+            <div id="planPaginationInfo">Showing 0 of 0 plans</div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 0.82rem;">Rows per page:</span>
+              <select id="planPerPageSelect" class="cost360-select" style="width: auto; padding: 0.35rem 0.65rem; font-size: 0.82rem;" onchange="changePlanPerPage()">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="100">All</option>
+              </select>
+              <button type="button" id="planPrevBtn" class="btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;" onclick="navigatePlanPage(-1)">Previous</button>
+              <span id="planCurrentPageSpan" style="font-weight: 700; color: var(--color-primary-text); padding: 0 0.4rem;">Page 1</span>
+              <button type="button" id="planNextBtn" class="btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;" onclick="navigatePlanPage(1)">Next</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             MODAL: ADD SUBSCRIPTION PLAN
+             ============================================================ -->
+        <div id="addPlanModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="section-card" style="width: 650px; max-width: 95vw; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative;">
+            <button type="button" onclick="closeModal('addPlanModal')" style="position: absolute; top: 1.25rem; right: 1.25rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-secondary-text);">&times;</button>
+
+            <div style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 0.85rem;">
+              <h2 style="font-size: 1.25rem; color: var(--color-deep-navy);">Add Subscription Plan</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Create a new platform tier with user capacity and billing parameters</p>
+            </div>
+
+            <div id="addPlanError" style="display: none; background: #FEE2E2; color: #DC2626; border: 1px solid #FCA5A5; padding: 0.75rem 1rem; border-radius: var(--radius-input); margin-bottom: 1.25rem; font-size: 0.85rem;"></div>
+
+            <form id="addPlanForm" onsubmit="submitAddPlan(event)">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                  <label class="dropdown-label">Plan Name *</label>
+                  <input type="text" id="addPlanName" name="plan_name" class="cost360-select" placeholder="e.g. Growth Tier" required>
+                </div>
+                <div>
+                  <label class="dropdown-label">Plan Code * (Must be unique)</label>
+                  <input type="text" id="addPlanCode" name="plan_code" class="cost360-select" placeholder="e.g. GROWTH_TIER" style="text-transform: uppercase;" required>
+                  <small style="font-size: 0.72rem; color: var(--color-secondary-text);">Uppercase letters, numbers, hyphens, underscores</small>
+                </div>
+              </div>
+
+              <div style="margin-bottom: 1rem;">
+                <label class="dropdown-label">Description</label>
+                <textarea id="addPlanDescription" name="description" class="cost360-select" rows="2" placeholder="Brief outline of target customer profiles and tier capabilities..."></textarea>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                  <label class="dropdown-label">Plan Type *</label>
+                  <select id="addPlanType" name="plan_type" class="cost360-select" required>
+                    <option value="COMMERCIAL" selected>Commercial</option>
+                    <option value="FREE">Free</option>
+                    <option value="ENTERPRISE">Enterprise</option>
+                    <option value="TRIAL">Trial</option>
+                    <option value="CUSTOM">Custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="dropdown-label">Billing Cycle *</label>
+                  <select id="addBillingCycle" name="billing_cycle" class="cost360-select" required>
+                    <option value="MONTHLY" selected>Monthly</option>
+                    <option value="QUARTERLY">Quarterly</option>
+                    <option value="HALF_YEARLY">Half Yearly</option>
+                    <option value="ANNUAL">Annual</option>
+                    <option value="LIFETIME">Lifetime</option>
+                    <option value="CUSTOM">Custom</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                  <label class="dropdown-label">Price *</label>
+                  <input type="number" id="addPrice" name="price" class="cost360-select" min="0" step="0.01" value="0.00" required>
+                  <small style="font-size: 0.72rem; color: var(--color-secondary-text);">Cannot be negative</small>
+                </div>
+                <div>
+                  <label class="dropdown-label">Currency *</label>
+                  <select id="addCurrency" name="currency" class="cost360-select" required>
+                    <option value="INR" selected>INR (₹)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="dropdown-label">Maximum Users *</label>
+                  <input type="number" id="addMaxUsers" name="max_users" class="cost360-select" min="0" step="1" value="0" required>
+                  <small style="font-size: 0.72rem; color: var(--color-secondary-text);">0 for starter / free</small>
+                </div>
+              </div>
+
+              <div style="margin-bottom: 1.5rem;">
+                <label class="dropdown-label">Status *</label>
+                <select id="addStatus" name="status" class="cost360-select" required>
+                  <option value="ACTIVE" selected>Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                </select>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; border-top: 1px solid var(--color-border); padding-top: 1.25rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('addPlanModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="saveAddPlanBtn">Save Plan</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             MODAL: EDIT SUBSCRIPTION PLAN
+             ============================================================ -->
+        <div id="editPlanModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="section-card" style="width: 650px; max-width: 95vw; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative;">
+            <button type="button" onclick="closeModal('editPlanModal')" style="position: absolute; top: 1.25rem; right: 1.25rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-secondary-text);">&times;</button>
+
+            <div style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 0.85rem;">
+              <h2 style="font-size: 1.25rem; color: var(--color-deep-navy);">Edit Subscription Plan</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);" id="editPlanSubtitle">Update plan parameters, user limits, and pricing</p>
+            </div>
+
+            <!-- FREE PLAN PROTECTED BANNER (DYNAMIC) -->
+            <div id="freePlanNoticeBanner" style="display: none; background: var(--color-soft-blue); border: 1px solid #BAE6FD; color: var(--color-dark-blue); padding: 0.85rem 1rem; border-radius: var(--radius-input); margin-bottom: 1.25rem; font-size: 0.82rem; line-height: 1.4;">
+              <strong>System-Required Free Plan:</strong> Core parameters (Code: <code>FREE</code>, Price: ₹0, Maximum Users: 0, Status: Active) are locked by system rules to guarantee continuous tenant onboarding integrity.
+            </div>
+
+            <div id="editPlanError" style="display: none; background: #FEE2E2; color: #DC2626; border: 1px solid #FCA5A5; padding: 0.75rem 1rem; border-radius: var(--radius-input); margin-bottom: 1.25rem; font-size: 0.85rem;"></div>
+
+            <form id="editPlanForm" onsubmit="submitEditPlan(event)">
+              <input type="hidden" id="editPlanId" name="plan_id" value="">
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                  <label class="dropdown-label">Plan Name *</label>
+                  <input type="text" id="editPlanName" name="plan_name" class="cost360-select" required>
+                </div>
+                <div>
+                  <label class="dropdown-label">Plan Code *</label>
+                  <input type="text" id="editPlanCode" name="plan_code" class="cost360-select" style="text-transform: uppercase;" required>
+                  <small id="editPlanCodeHint" style="font-size: 0.72rem; color: var(--color-secondary-text);">Unique uppercase code</small>
+                </div>
+              </div>
+
+              <div style="margin-bottom: 1rem;">
+                <label class="dropdown-label">Description</label>
+                <textarea id="editPlanDescription" name="description" class="cost360-select" rows="2"></textarea>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                  <label class="dropdown-label">Plan Type *</label>
+                  <select id="editPlanType" name="plan_type" class="cost360-select" required>
+                    <option value="COMMERCIAL">Commercial</option>
+                    <option value="FREE">Free</option>
+                    <option value="ENTERPRISE">Enterprise</option>
+                    <option value="TRIAL">Trial</option>
+                    <option value="CUSTOM">Custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="dropdown-label">Billing Cycle *</label>
+                  <select id="editBillingCycle" name="billing_cycle" class="cost360-select" required>
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="QUARTERLY">Quarterly</option>
+                    <option value="HALF_YEARLY">Half Yearly</option>
+                    <option value="ANNUAL">Annual</option>
+                    <option value="LIFETIME">Lifetime</option>
+                    <option value="CUSTOM">Custom</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                  <label class="dropdown-label">Price *</label>
+                  <input type="number" id="editPrice" name="price" class="cost360-select" min="0" step="0.01" required>
+                  <small style="font-size: 0.72rem; color: var(--color-secondary-text);">Cannot be negative</small>
+                </div>
+                <div>
+                  <label class="dropdown-label">Currency *</label>
+                  <select id="editCurrency" name="currency" class="cost360-select" required>
+                    <option value="INR">INR (₹)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="dropdown-label">Maximum Users *</label>
+                  <input type="number" id="editMaxUsers" name="max_users" class="cost360-select" min="0" step="1" required>
+                  <small style="font-size: 0.72rem; color: var(--color-secondary-text);">Cannot be negative</small>
+                </div>
+              </div>
+
+              <div style="margin-bottom: 1.5rem;">
+                <label class="dropdown-label">Status *</label>
+                <select id="editStatus" name="status" class="cost360-select" required>
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                </select>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; border-top: 1px solid var(--color-border); padding-top: 1.25rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('editPlanModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="saveEditPlanBtn">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             MODAL: VIEW SUBSCRIPTION PLAN DETAILS
+             ============================================================ -->
+        <div id="viewPlanModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="section-card" style="width: 600px; max-width: 95vw; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative;">
+            <button type="button" onclick="closeModal('viewPlanModal')" style="position: absolute; top: 1.25rem; right: 1.25rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-secondary-text);">&times;</button>
+
+            <div style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.25rem;">
+                <h2 style="font-size: 1.3rem; color: var(--color-deep-navy);" id="viewPlanName">-</h2>
+                <div style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span id="viewPlanCodeBadge" class="plan-code-badge" style="font-size: 0.8rem; padding: 0.25rem 0.6rem; border-radius: 6px; background: var(--color-soft-blue); color: var(--color-primary-blue); font-weight: 700;">-</span>
+                  <span id="viewPlanStatusBadge">-</span>
+                </div>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);" id="viewPlanDescription">-</p>
+            </div>
+
+            <!-- KEY PLAN HIGHLIGHTS GRID -->
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+              <div style="background: var(--color-page-bg); padding: 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+                <div style="font-size: 0.74rem; text-transform: uppercase; font-weight: 700; color: var(--color-secondary-text); margin-bottom: 0.25rem;">Price & Billing</div>
+                <div style="font-size: 1.35rem; font-weight: 800; color: var(--color-primary-text);" id="viewPlanPriceDisplay">-</div>
+                <div style="font-size: 0.8rem; color: var(--color-secondary-text);" id="viewPlanBillingCycle">-</div>
+              </div>
+
+              <div style="background: var(--color-page-bg); padding: 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+                <div style="font-size: 0.74rem; text-transform: uppercase; font-weight: 700; color: var(--color-secondary-text); margin-bottom: 0.25rem;">Capacity & Thresholds</div>
+                <div style="font-size: 1.35rem; font-weight: 800; color: var(--color-primary-blue);" id="viewPlanMaxUsersDisplay">-</div>
+                <div style="font-size: 0.8rem; color: var(--color-secondary-text);" id="viewPlanTypeDisplay">-</div>
+              </div>
+            </div>
+
+            <!-- EXTENSIBLE LIMITS CONFIG BREAKDOWN -->
+            <div style="margin-bottom: 1.5rem; background: var(--color-page-bg); padding: 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+              <div style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; color: var(--color-secondary-text); margin-bottom: 0.75rem;">Configured Tier Thresholds</div>
+              <div id="viewPlanLimitsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; font-size: 0.82rem;">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+            <!-- METADATA TIMESTAMPS -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.78rem; color: var(--color-secondary-text); margin-bottom: 1.5rem; padding-top: 0.5rem; border-top: 1px solid var(--color-border);">
+              <div>Created: <span id="viewPlanCreatedAt" style="font-weight: 600; color: var(--color-primary-text);">-</span></div>
+              <div>Last Updated: <span id="viewPlanUpdatedAt" style="font-weight: 600; color: var(--color-primary-text);">-</span></div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; border-top: 1px solid var(--color-border); padding-top: 1.25rem;">
+              <button type="button" class="btn-secondary" onclick="closeModal('viewPlanModal')">Close</button>
+              <button type="button" class="btn-primary" id="viewPlanEditBtn" onclick="">Edit Plan</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             MODAL: TOGGLE STATUS (ACTIVATE / DEACTIVATE) CONFIRMATION
+             ============================================================ -->
+        <div id="toggleStatusPlanModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="section-card" style="width: 460px; max-width: 95vw; padding: 2rem; position: relative; text-align: center;">
+            <div id="toggleStatusIconCircle" style="width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; font-size: 1.5rem;">
+              <svg id="toggleStatusSvg" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+
+            <h3 style="font-size: 1.2rem; color: var(--color-deep-navy); margin-bottom: 0.5rem;" id="toggleStatusTitle">Confirm Status Change</h3>
+            <p style="font-size: 0.88rem; color: var(--color-secondary-text); margin-bottom: 1.5rem; line-height: 1.5;" id="toggleStatusDescription">
+              Are you sure you want to change the status of this plan?
+            </p>
+
+            <input type="hidden" id="toggleStatusPlanId" value="">
+            <input type="hidden" id="toggleStatusTargetValue" value="">
+
+            <div style="display: flex; justify-content: center; gap: 0.75rem;">
+              <button type="button" class="btn-secondary" onclick="closeModal('toggleStatusPlanModal')">Cancel</button>
+              <button type="button" class="btn-primary" id="confirmToggleStatusBtn" onclick="confirmTogglePlanStatus()">Confirm</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             MODAL: DELETE PLAN CONFIRMATION (DESTRUCTIVE ACTION)
+             ============================================================ -->
+        <div id="deletePlanModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="section-card" style="width: 460px; max-width: 95vw; padding: 2rem; position: relative; text-align: center;">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: #FEE2E2; color: #DC2626; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem;">
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </div>
+
+            <h3 style="font-size: 1.2rem; color: #991B1B; margin-bottom: 0.5rem;">Delete Subscription Plan</h3>
+            <p style="font-size: 0.88rem; color: var(--color-secondary-text); margin-bottom: 1.5rem; line-height: 1.5;" id="deletePlanDescription">
+              Are you sure you want to permanently delete this plan?
+            </p>
+
+            <input type="hidden" id="deletePlanIdInput" value="">
+
+            <div style="display: flex; justify-content: center; gap: 0.75rem;">
+              <button type="button" class="btn-secondary" onclick="closeModal('deletePlanModal')">Cancel</button>
+              <button type="button" class="btn-primary" id="confirmDeletePlanBtn" style="background: #DC2626; border-color: #DC2626;" onclick="confirmDeletePlan()">Delete Plan</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             JAVASCRIPT CONTROLLER FOR SUBSCRIPTION PLANS
+             ============================================================ -->
+        <script>
+          let cachedPlansList = [];
+          let filteredPlansList = [];
+          let planSearchDebounceTimer = null;
+          let currentPlanPage = 1;
+          let plansPerPage = 10;
+
+          // Helper to get Subscription API URL
+          function getSubscriptionPlansApiUrl(params = '') {
+            const prefix = window.cost360BaseUrlPrefix || '';
+            let url = prefix + 'api/subscriptions_api.php';
+            if (params) {
+              url += (params.startsWith('?') ? params : '?' + params);
+            }
+            return url;
+          }
+
+          // Show in-page Toast Feedback
+          function showPlanToast(message, isSuccess = true) {
+            const toast = document.getElementById('planToast');
+            if (!toast) return;
+
+            toast.style.display = 'block';
+            toast.style.background = isSuccess ? '#E6F9F6' : '#FEE2E2';
+            toast.style.color = isSuccess ? '#00A88F' : '#DC2626';
+            toast.style.border = isSuccess ? '1px solid #A7F3D0' : '1px solid #FCA5A5';
+            toast.textContent = message;
+
+            setTimeout(() => {
+              toast.style.display = 'none';
+            }, 4500);
+          }
+
+          // Search Debounce Handler
+          function handlePlanSearchKeyup(e) {
+            clearTimeout(planSearchDebounceTimer);
+            planSearchDebounceTimer = setTimeout(() => {
+              applyPlanFiltersAndRender(1);
+            }, 250);
+          }
+
+          // Reset Filters
+          function resetPlanFilters() {
+            document.getElementById('planSearchInput').value = '';
+            document.getElementById('planStatusFilter').value = 'ALL';
+            document.getElementById('planTypeFilter').value = 'ALL';
+            applyPlanFiltersAndRender(1);
+          }
+
+          // Change items per page
+          function changePlanPerPage() {
+            const sel = document.getElementById('planPerPageSelect');
+            plansPerPage = parseInt(sel.value, 10) || 10;
+            renderPlansTablePage(1);
+          }
+
+          // Navigate Next / Previous page
+          function navigatePlanPage(direction) {
+            const totalPages = Math.ceil(filteredPlansList.length / plansPerPage) || 1;
+            const targetPage = currentPlanPage + direction;
+            if (targetPage >= 1 && targetPage <= totalPages) {
+              renderPlansTablePage(targetPage);
+            }
+          }
+
+          // Load Plans from API (all=1 so admin sees both active & inactive)
+          async function loadPlansTable(targetPage = 1) {
+            const tbody = document.getElementById('plansTableBody');
+            if (!tbody) return;
+
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--color-secondary-text);">
+                  <div style="display: flex; align-items: center; justify-content: center; gap: 0.6rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <path d="M12 2a10 10 0 0 1 10 10"></path>
+                    </svg>
+                    <span>Loading subscription plans from database...</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+
+            try {
+              const res = await fetch(getSubscriptionPlansApiUrl('action=list_plans&all=1'));
+              const data = await res.json();
+
+              if (!data.success) {
+                tbody.innerHTML = `
+                  <tr>
+                    <td colspan="8" style="text-align: center; padding: 2.5rem; color: #DC2626;">
+                      <strong>Error loading plans:</strong> ${escapeHtml(data.error || 'Failed to fetch data')}
+                      <div style="margin-top: 0.75rem;">
+                        <button type="button" class="btn-secondary" onclick="loadPlansTable()">Try Again</button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+                return;
+              }
+
+              cachedPlansList = Array.isArray(data.plans) ? data.plans : [];
+              applyPlanFiltersAndRender(targetPage);
+
+            } catch (err) {
+              console.error('Error fetching subscription plans:', err);
+              tbody.innerHTML = `
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 2.5rem; color: #DC2626;">
+                    <strong>Network Error:</strong> Failed to connect to subscription plans service.
+                    <div style="margin-top: 0.75rem;">
+                      <button type="button" class="btn-secondary" onclick="loadPlansTable()">Try Again</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }
+          }
+
+          // Filter Cached Plans and Render
+          function applyPlanFiltersAndRender(targetPage = 1) {
+            const searchVal = (document.getElementById('planSearchInput')?.value || '').trim().toLowerCase();
+            const statusVal = (document.getElementById('planStatusFilter')?.value || 'ALL').toUpperCase();
+            const typeVal = (document.getElementById('planTypeFilter')?.value || 'ALL').toUpperCase();
+
+            // Update KPI Cards from ALL cached plans
+            let total = cachedPlansList.length;
+            let active = 0;
+            let inactive = 0;
+            let commercial = 0;
+
+            cachedPlansList.forEach(p => {
+              const st = (p.status || '').toUpperCase();
+              const pt = (p.plan_type || '').toUpperCase();
+              if (st === 'ACTIVE') active++;
+              else inactive++;
+              if (pt === 'COMMERCIAL' || pt === 'ENTERPRISE' || (parseFloat(p.price) > 0)) commercial++;
+            });
+
+            document.getElementById('kpiTotalPlans').textContent = total;
+            document.getElementById('kpiActivePlans').textContent = active;
+            document.getElementById('kpiInactivePlans').textContent = inactive;
+            document.getElementById('kpiCommercialPlans').textContent = commercial;
+
+            // Apply Filters
+            filteredPlansList = cachedPlansList.filter(p => {
+              const pStatus = (p.status || '').toUpperCase();
+              const pType = (p.plan_type || '').toUpperCase();
+
+              if (statusVal !== 'ALL' && pStatus !== statusVal) return false;
+              if (typeVal !== 'ALL' && pType !== typeVal) return false;
+
+              if (searchVal !== '') {
+                const name = (p.plan_name || '').toLowerCase();
+                const code = (p.plan_code || '').toLowerCase();
+                const type = (p.plan_type || '').toLowerCase();
+                const desc = (p.description || '').toLowerCase();
+                if (!name.includes(searchVal) && !code.includes(searchVal) && !type.includes(searchVal) && !desc.includes(searchVal)) {
+                  return false;
+                }
+              }
+              return true;
+            });
+
+            renderPlansTablePage(targetPage);
+          }
+
+          // Render a Specific Page of Filtered Plans
+          function renderPlansTablePage(page = 1) {
+            const tbody = document.getElementById('plansTableBody');
+            if (!tbody) return;
+
+            const totalItems = filteredPlansList.length;
+
+            if (totalItems === 0) {
+              tbody.innerHTML = `
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 3rem 1rem;">
+                    <div class="empty-state" style="padding: 1rem;">
+                      <svg viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="var(--color-border-hover)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.75rem;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M16 16s-1.5-2-4-2-4 2-4 2"></path>
+                        <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                        <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                      </svg>
+                      <div style="font-weight: 700; color: var(--color-primary-text); margin-bottom: 0.35rem;">No Subscription Plans Found</div>
+                      <p style="font-size: 0.85rem; color: var(--color-secondary-text); margin-bottom: 1rem;">No subscription plans match your search or filter criteria.</p>
+                      <button type="button" class="btn-secondary" onclick="resetPlanFilters()" style="font-size: 0.82rem; padding: 0.4rem 1rem;">Reset Filters</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+              updatePaginationControls(0, 0, 0, 1, 1);
+              return;
+            }
+
+            const totalPages = Math.ceil(totalItems / plansPerPage) || 1;
+            currentPlanPage = Math.max(1, Math.min(page, totalPages));
+
+            const startIndex = (currentPlanPage - 1) * plansPerPage;
+            const endIndex = Math.min(startIndex + plansPerPage, totalItems);
+            const pagePlans = filteredPlansList.slice(startIndex, endIndex);
+
+            tbody.innerHTML = pagePlans.map(p => {
+              const isFree = (p.plan_code || '').toUpperCase() === 'FREE' || p.plan_id === 1;
+              const isActive = (p.status || '').toUpperCase() === 'ACTIVE';
+
+              // Format Price: Free is displayed as ₹0 as requested
+              let formattedPrice = '₹0';
+              if (isFree || parseFloat(p.price) === 0) {
+                formattedPrice = '₹0';
+              } else {
+                const currencySymbol = (p.currency === 'USD') ? '$' : ((p.currency === 'EUR') ? '€' : ((p.currency === 'GBP') ? '£' : '₹'));
+                formattedPrice = `${currencySymbol}${parseFloat(p.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              }
+
+              // Format Maximum Users
+              const maxUsersDisplay = isFree ? '0' : (p.max_users > 0 ? `${p.max_users}` : '0');
+
+              // Status Badge
+              const statusPill = isActive
+                ? `<span style="background: #E6F9F6; color: #00A88F; padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.78rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #00A88F;"></span>Active</span>`
+                : `<span style="background: #F1F5F9; color: #6B7F91; padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.78rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #6B7F91;"></span>Inactive</span>`;
+
+              // Plan Type Badge
+              let typeBg = '#E0F2FE';
+              let typeColor = '#0369A1';
+              if (isFree) { typeBg = '#FEF3C7'; typeColor = '#92400E'; }
+              else if ((p.plan_type || '').toUpperCase() === 'ENTERPRISE') { typeBg = '#F3E8FF'; typeColor = '#6B21A8'; }
+              else if ((p.plan_type || '').toUpperCase() === 'TRIAL') { typeBg = '#FCE7F3'; typeColor = '#9D174D'; }
+
+              const typeBadge = `<span style="background: ${typeBg}; color: ${typeColor}; padding: 0.2rem 0.55rem; border-radius: 4px; font-size: 0.74rem; font-weight: 700; text-transform: uppercase;">${escapeHtml(p.plan_type || 'COMMERCIAL')}</span>`;
+
+              // Billing Cycle Display
+              const cycleDisplay = (p.billing_cycle || 'MONTHLY').charAt(0).toUpperCase() + (p.billing_cycle || 'monthly').slice(1).toLowerCase().replace('_', ' ');
+
+              // Free Plan System-Required Safeguard Badges
+              const freeBadge = isFree ? `<span title="System-Required Free Plan: Protected against accidental deletion" style="font-size: 0.7rem; background: rgba(8, 120, 209, 0.12); color: var(--color-primary-blue); font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 6px;">System Default</span>` : '';
+
+              // Actions
+              const toggleBtnText = isActive ? 'Deactivate' : 'Activate';
+              const toggleBtnClass = isActive ? 'color: #D97706; border-color: #FCD34D;' : 'color: #059669; border-color: #A7F3D0;';
+              
+              // Deactivate button disabled for system Free plan
+              const toggleActionHtml = isFree && isActive
+                ? `<button type="button" class="btn-secondary" style="padding: 0.32rem 0.6rem; font-size: 0.78rem; opacity: 0.45; cursor: not-allowed;" title="The system-required Free Plan cannot be deactivated." disabled>Active</button>`
+                : `<button type="button" class="btn-secondary" style="padding: 0.32rem 0.6rem; font-size: 0.78rem; ${toggleBtnClass}" onclick="openToggleStatusModal(${p.plan_id}, '${isActive ? 'ACTIVE' : 'INACTIVE'}', '${escapeJs(p.plan_name)}')">${toggleBtnText}</button>`;
+
+              // Delete button disabled with lock for Free plan
+              const deleteActionHtml = isFree
+                ? `<button type="button" class="btn-secondary" style="padding: 0.32rem 0.6rem; font-size: 0.78rem; opacity: 0.45; cursor: not-allowed;" title="Do not allow accidental deletion of the system-required Free plan." disabled>&#128274; Delete</button>`
+                : `<button type="button" class="btn-secondary" style="padding: 0.32rem 0.6rem; font-size: 0.78rem; color: #DC2626; border-color: #FCA5A5;" onclick="openDeletePlanModal(${p.plan_id}, '${escapeJs(p.plan_name)}', '${escapeJs(p.plan_code)}')">Delete</button>`;
+
+              return `
+                <tr id="planRow-${p.plan_id}">
+                  <td>
+                    <div style="font-weight: 700; color: var(--color-primary-text); font-size: 0.92rem; display: flex; align-items: center;">
+                      ${escapeHtml(p.plan_name)} ${freeBadge}
+                    </div>
+                    ${p.description ? `<div style="font-size: 0.78rem; color: var(--color-secondary-text); margin-top: 2px; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(p.description)}</div>` : ''}
+                  </td>
+                  <td>
+                    <code style="font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em;">${escapeHtml(p.plan_code)}</code>
+                  </td>
+                  <td>${typeBadge}</td>
+                  <td>
+                    <div style="font-weight: 800; color: var(--color-primary-text); font-size: 0.95rem;">${formattedPrice}</div>
+                    <div style="font-size: 0.72rem; color: var(--color-secondary-text);">${escapeHtml(p.currency || 'INR')}</div>
+                  </td>
+                  <td>
+                    <span style="font-size: 0.82rem; font-weight: 600; color: var(--color-primary-text);">${escapeHtml(cycleDisplay)}</span>
+                  </td>
+                  <td>
+                    <div style="font-weight: 700; color: var(--color-primary-text); font-size: 0.88rem;">
+                      ${isFree ? 'Maximum Users: 0' : `${maxUsersDisplay} ${p.max_users === 1 ? 'User' : 'Users'}`}
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--color-secondary-text);">${isFree ? 'Starter / Zero Tier' : 'Licensed threshold'}</div>
+                  </td>
+                  <td>${statusPill}</td>
+                  <td style="text-align: right; white-space: nowrap;">
+                    <div style="display: inline-flex; gap: 4px;">
+                      <button type="button" class="btn-secondary" style="padding: 0.32rem 0.6rem; font-size: 0.78rem;" onclick="openViewPlanModal(${p.plan_id})">View</button>
+                      <button type="button" class="btn-secondary" style="padding: 0.32rem 0.6rem; font-size: 0.78rem;" onclick="openEditPlanModal(${p.plan_id})">Edit</button>
+                      ${toggleActionHtml}
+                      ${deleteActionHtml}
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('');
+
+            updatePaginationControls(startIndex + 1, endIndex, totalItems, currentPlanPage, totalPages);
+          }
+
+          // Update Pagination UI
+          function updatePaginationControls(start, end, total, page, totalPages) {
+            const info = document.getElementById('planPaginationInfo');
+            const pageSpan = document.getElementById('planCurrentPageSpan');
+            const prevBtn = document.getElementById('planPrevBtn');
+            const nextBtn = document.getElementById('planNextBtn');
+
+            if (info) {
+              info.textContent = total > 0 ? `Showing ${start} to ${end} of ${total} plans` : 'Showing 0 plans';
+            }
+            if (pageSpan) {
+              pageSpan.textContent = `Page ${page} of ${totalPages}`;
+            }
+            if (prevBtn) {
+              prevBtn.disabled = page <= 1;
+              prevBtn.style.opacity = page <= 1 ? '0.45' : '1';
+              prevBtn.style.cursor = page <= 1 ? 'not-allowed' : 'pointer';
+            }
+            if (nextBtn) {
+              nextBtn.disabled = page >= totalPages;
+              nextBtn.style.opacity = page >= totalPages ? '0.45' : '1';
+              nextBtn.style.cursor = page >= totalPages ? 'not-allowed' : 'pointer';
+            }
+          }
+
+          // ============================================================
+          // MODAL ACTIONS & FORM HANDLERS
+          // ============================================================
+
+          // Open Add Plan Modal
+          function openAddPlanModal() {
+            const form = document.getElementById('addPlanForm');
+            if (form) form.reset();
+            document.getElementById('addPlanError').style.display = 'none';
+            document.getElementById('addPrice').value = '0.00';
+            document.getElementById('addMaxUsers').value = '0';
+            document.getElementById('addPlanModal').style.display = 'flex';
+          }
+
+          // Submit Add Plan
+          async function submitAddPlan(e) {
+            e.preventDefault();
+            const form = e.target;
+            const errBox = document.getElementById('addPlanError');
+            const saveBtn = document.getElementById('saveAddPlanBtn');
+            errBox.style.display = 'none';
+
+            const price = parseFloat(document.getElementById('addPrice').value);
+            const maxUsers = parseInt(document.getElementById('addMaxUsers').value, 10);
+            const planCode = document.getElementById('addPlanCode').value.trim();
+
+            if (price < 0) {
+              errBox.textContent = 'Price cannot be negative.';
+              errBox.style.display = 'block';
+              return;
+            }
+
+            if (maxUsers < 0) {
+              errBox.textContent = 'Maximum users cannot be negative.';
+              errBox.style.display = 'block';
+              return;
+            }
+
+            if (!planCode) {
+              errBox.textContent = 'Plan Code is required.';
+              errBox.style.display = 'block';
+              return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            const formData = new FormData(form);
+            formData.append('action', 'create_plan');
+
+            try {
+              const res = await fetch(getSubscriptionPlansApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeModal('addPlanModal');
+                showPlanToast(data.message || 'Subscription plan created successfully.', true);
+                loadPlansTable(1);
+              } else {
+                errBox.textContent = data.error || 'Failed to create plan.';
+                errBox.style.display = 'block';
+              }
+            } catch (err) {
+              errBox.textContent = 'Server connection error. Please try again.';
+              errBox.style.display = 'block';
+            } finally {
+              saveBtn.disabled = false;
+              saveBtn.textContent = 'Save Plan';
+            }
+          }
+
+          // Open Edit Plan Modal
+          async function openEditPlanModal(planId) {
+            const errBox = document.getElementById('editPlanError');
+            errBox.style.display = 'none';
+
+            let plan = cachedPlansList.find(p => p.plan_id === planId);
+            if (!plan) {
+              try {
+                const res = await fetch(getSubscriptionPlansApiUrl(`action=get_plan&plan_id=${planId}`));
+                const data = await res.json();
+                if (data.success && data.plan) {
+                  plan = data.plan;
+                }
+              } catch (e) {}
+            }
+
+            if (!plan) {
+              showPlanToast('Could not load plan details.', false);
+              return;
+            }
+
+            const isFree = (plan.plan_code || '').toUpperCase() === 'FREE' || plan.plan_id === 1;
+
+            document.getElementById('editPlanId').value = plan.plan_id;
+            document.getElementById('editPlanName').value = plan.plan_name || '';
+            document.getElementById('editPlanCode').value = plan.plan_code || '';
+            document.getElementById('editPlanDescription').value = plan.description || '';
+            document.getElementById('editPlanType').value = (plan.plan_type || 'COMMERCIAL').toUpperCase();
+            document.getElementById('editBillingCycle').value = (plan.billing_cycle || 'MONTHLY').toUpperCase();
+            document.getElementById('editPrice').value = isFree ? '0.00' : (parseFloat(plan.price) || 0).toFixed(2);
+            document.getElementById('editCurrency').value = (plan.currency || 'INR').toUpperCase();
+            document.getElementById('editMaxUsers').value = isFree ? '0' : (parseInt(plan.max_users, 10) || 0);
+            document.getElementById('editStatus').value = (plan.status || 'ACTIVE').toUpperCase();
+
+            // Handle Free Plan protection rules
+            const freeNotice = document.getElementById('freePlanNoticeBanner');
+            const codeInput = document.getElementById('editPlanCode');
+            const priceInput = document.getElementById('editPrice');
+            const maxUsersInput = document.getElementById('editMaxUsers');
+            const typeSelect = document.getElementById('editPlanType');
+            const statusSelect = document.getElementById('editStatus');
+
+            if (isFree) {
+              freeNotice.style.display = 'block';
+              codeInput.readOnly = true;
+              codeInput.style.backgroundColor = '#F1F5F9';
+              priceInput.readOnly = true;
+              priceInput.style.backgroundColor = '#F1F5F9';
+              maxUsersInput.readOnly = true;
+              maxUsersInput.style.backgroundColor = '#F1F5F9';
+              typeSelect.disabled = true;
+              statusSelect.disabled = true;
+            } else {
+              freeNotice.style.display = 'none';
+              codeInput.readOnly = false;
+              codeInput.style.backgroundColor = '';
+              priceInput.readOnly = false;
+              priceInput.style.backgroundColor = '';
+              maxUsersInput.readOnly = false;
+              maxUsersInput.style.backgroundColor = '';
+              typeSelect.disabled = false;
+              statusSelect.disabled = false;
+            }
+
+            document.getElementById('editPlanModal').style.display = 'flex';
+          }
+
+          // Submit Edit Plan
+          async function submitEditPlan(e) {
+            e.preventDefault();
+            const form = e.target;
+            const errBox = document.getElementById('editPlanError');
+            const saveBtn = document.getElementById('saveEditPlanBtn');
+            errBox.style.display = 'none';
+
+            const price = parseFloat(document.getElementById('editPrice').value);
+            const maxUsers = parseInt(document.getElementById('editMaxUsers').value, 10);
+            const planCode = document.getElementById('editPlanCode').value.trim();
+
+            if (price < 0) {
+              errBox.textContent = 'Price cannot be negative.';
+              errBox.style.display = 'block';
+              return;
+            }
+
+            if (maxUsers < 0) {
+              errBox.textContent = 'Maximum users cannot be negative.';
+              errBox.style.display = 'block';
+              return;
+            }
+
+            if (!planCode) {
+              errBox.textContent = 'Plan Code cannot be empty.';
+              errBox.style.display = 'block';
+              return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            const formData = new FormData(form);
+            formData.append('action', 'update_plan');
+
+            // If fields were disabled for Free plan, ensure values are in FormData
+            const typeSelect = document.getElementById('editPlanType');
+            const statusSelect = document.getElementById('editStatus');
+            if (typeSelect.disabled) formData.append('plan_type', typeSelect.value);
+            if (statusSelect.disabled) formData.append('status', statusSelect.value);
+
+            try {
+              const res = await fetch(getSubscriptionPlansApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeModal('editPlanModal');
+                showPlanToast(data.message || 'Subscription plan updated successfully.', true);
+                loadPlansTable(currentPlanPage);
+              } else {
+                errBox.textContent = data.error || 'Failed to update plan.';
+                errBox.style.display = 'block';
+              }
+            } catch (err) {
+              errBox.textContent = 'Server connection error. Please try again.';
+              errBox.style.display = 'block';
+            } finally {
+              saveBtn.disabled = false;
+              saveBtn.textContent = 'Save Changes';
+            }
+          }
+
+          // Open View Plan Modal
+          function openViewPlanModal(planId) {
+            const plan = cachedPlansList.find(p => p.plan_id === planId);
+            if (!plan) return;
+
+            const isFree = (plan.plan_code || '').toUpperCase() === 'FREE' || plan.plan_id === 1;
+            const isActive = (plan.status || '').toUpperCase() === 'ACTIVE';
+
+            document.getElementById('viewPlanName').textContent = plan.plan_name;
+            document.getElementById('viewPlanCodeBadge').textContent = plan.plan_code;
+            document.getElementById('viewPlanDescription').textContent = plan.description || 'No description provided for this tier.';
+
+            // Status Badge
+            const statusContainer = document.getElementById('viewPlanStatusBadge');
+            statusContainer.innerHTML = isActive
+              ? `<span style="background: #E6F9F6; color: #00A88F; padding: 0.25rem 0.65rem; border-radius: 20px; font-size: 0.78rem; font-weight: 700;">Active</span>`
+              : `<span style="background: #F1F5F9; color: #6B7F91; padding: 0.25rem 0.65rem; border-radius: 20px; font-size: 0.78rem; font-weight: 700;">Inactive</span>`;
+
+            // Price Display
+            const currencySymbol = (plan.currency === 'USD') ? '$' : ((plan.currency === 'EUR') ? '€' : ((plan.currency === 'GBP') ? '£' : '₹'));
+            const priceText = isFree || parseFloat(plan.price) === 0 ? '₹0' : `${currencySymbol}${parseFloat(plan.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('viewPlanPriceDisplay').textContent = priceText;
+
+            const cycleText = (plan.billing_cycle || 'MONTHLY').charAt(0).toUpperCase() + (plan.billing_cycle || 'monthly').slice(1).toLowerCase().replace('_', ' ');
+            document.getElementById('viewPlanBillingCycle').textContent = `Billed ${cycleText} in ${plan.currency || 'INR'}`;
+
+            // User Limits Display
+            document.getElementById('viewPlanMaxUsersDisplay').textContent = isFree ? '0 Users (Free Starter)' : `${plan.max_users} Users Capacity`;
+            document.getElementById('viewPlanTypeDisplay').textContent = `Type: ${plan.plan_type || 'COMMERCIAL'}`;
+
+            // Limits Config Grid
+            const limitsGrid = document.getElementById('viewPlanLimitsGrid');
+            limitsGrid.innerHTML = '';
+            const limits = plan.limits_config || {};
+
+            const limitsItems = [
+              { label: 'Max Companies', val: limits.max_companies !== undefined ? limits.max_companies : '-' },
+              { label: 'Max Plants', val: limits.max_plants !== undefined ? limits.max_plants : '-' },
+              { label: 'Max Warehouses', val: limits.max_warehouses !== undefined ? limits.max_warehouses : '-' },
+              { label: 'Storage', val: limits.storage_mb !== undefined ? `${limits.storage_mb} MB` : '-' },
+            ];
+
+            limitsItems.forEach(item => {
+              const div = document.createElement('div');
+              div.style.background = '#fff';
+              div.style.padding = '0.5rem 0.75rem';
+              div.style.borderRadius = '6px';
+              div.style.border = '1px solid var(--color-border)';
+              div.innerHTML = `<span style="color: var(--color-secondary-text); font-size: 0.72rem; display: block;">${item.label}</span><strong style="color: var(--color-primary-text); font-size: 0.95rem;">${item.val}</strong>`;
+              limitsGrid.appendChild(div);
+            });
+
+            if (limits.features && Array.isArray(limits.features) && limits.features.length > 0) {
+              const featDiv = document.createElement('div');
+              featDiv.style.gridColumn = '1 / -1';
+              featDiv.style.background = '#fff';
+              featDiv.style.padding = '0.5rem 0.75rem';
+              featDiv.style.borderRadius = '6px';
+              featDiv.style.border = '1px solid var(--color-border)';
+              featDiv.innerHTML = `<span style="color: var(--color-secondary-text); font-size: 0.72rem; display: block; margin-bottom: 4px;">Features Included</span>` +
+                limits.features.map(f => `<span style="background: var(--color-soft-blue); color: var(--color-primary-blue); padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; margin-right: 4px; display: inline-block;">${escapeHtml(f.replace('_', ' '))}</span>`).join('');
+              limitsGrid.appendChild(featDiv);
+            }
+
+            // Timestamps
+            document.getElementById('viewPlanCreatedAt').textContent = plan.created_at || 'Predefined';
+            document.getElementById('viewPlanUpdatedAt').textContent = plan.updated_at || 'Predefined';
+
+            // Edit button hook
+            const editBtn = document.getElementById('viewPlanEditBtn');
+            editBtn.onclick = () => {
+              closeModal('viewPlanModal');
+              openEditPlanModal(plan.plan_id);
+            };
+
+            document.getElementById('viewPlanModal').style.display = 'flex';
+          }
+
+          // Open Toggle Status Modal (Confirmation Dialog)
+          function openToggleStatusModal(planId, currentStatus, planName) {
+            const isFree = planId === 1 || (planName || '').toLowerCase().includes('free');
+            const targetStatus = (currentStatus === 'ACTIVE') ? 'INACTIVE' : 'ACTIVE';
+
+            // Safeguard: Do not allow deactivating system Free plan
+            if (isFree && targetStatus === 'INACTIVE') {
+              showPlanToast('The system-required Free Plan cannot be deactivated.', false);
+              return;
+            }
+
+            document.getElementById('toggleStatusPlanId').value = planId;
+            document.getElementById('toggleStatusTargetValue').value = targetStatus;
+
+            const iconCircle = document.getElementById('toggleStatusIconCircle');
+            const titleEl = document.getElementById('toggleStatusTitle');
+            const descEl = document.getElementById('toggleStatusDescription');
+            const confirmBtn = document.getElementById('confirmToggleStatusBtn');
+
+            if (targetStatus === 'INACTIVE') {
+              iconCircle.style.background = '#FEF3C7';
+              iconCircle.style.color = '#D97706';
+              titleEl.textContent = `Deactivate ${planName}?`;
+              descEl.innerHTML = `Are you sure you want to deactivate <strong>${escapeHtml(planName)}</strong>?<br><span style="font-size: 0.8rem; color: #92400E;">New customer tenants will no longer be able to select or enroll in this plan. Existing subscriptions will remain intact.</span>`;
+              confirmBtn.textContent = 'Confirm Deactivation';
+              confirmBtn.style.background = '#D97706';
+              confirmBtn.style.borderColor = '#D97706';
+            } else {
+              iconCircle.style.background = '#E6F9F6';
+              iconCircle.style.color = '#00A88F';
+              titleEl.textContent = `Activate ${planName}?`;
+              descEl.innerHTML = `Are you sure you want to activate <strong>${escapeHtml(planName)}</strong>?<br><span style="font-size: 0.8rem; color: #065F46;">This plan will become available for customer tenant enrollment.</span>`;
+              confirmBtn.textContent = 'Confirm Activation';
+              confirmBtn.style.background = 'var(--color-primary-blue)';
+              confirmBtn.style.borderColor = 'var(--color-primary-blue)';
+            }
+
+            document.getElementById('toggleStatusPlanModal').style.display = 'flex';
+          }
+
+          // Confirm Toggle Status Execution
+          async function confirmTogglePlanStatus() {
+            const planId = document.getElementById('toggleStatusPlanId').value;
+            const targetStatus = document.getElementById('toggleStatusTargetValue').value;
+            const confirmBtn = document.getElementById('confirmToggleStatusBtn');
+
+            if (!planId) return;
+
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Updating...';
+
+            const formData = new FormData();
+            formData.append('action', 'set_plan_status');
+            formData.append('plan_id', planId);
+            formData.append('status', targetStatus);
+
+            try {
+              const res = await fetch(getSubscriptionPlansApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeModal('toggleStatusPlanModal');
+                showPlanToast(data.message || `Plan status updated to ${targetStatus}.`, true);
+                loadPlansTable(currentPlanPage);
+              } else {
+                alert(data.error || 'Failed to update plan status.');
+              }
+            } catch (err) {
+              alert('Server connection error. Please try again.');
+            } finally {
+              confirmBtn.disabled = false;
+            }
+          }
+
+          // Open Delete Plan Confirmation Modal (Destructive Action)
+          function openDeletePlanModal(planId, planName, planCode) {
+            // STRICT RULE: Do not allow accidental deletion of the system-required Free plan
+            if (planId === 1 || (planCode || '').toUpperCase() === 'FREE') {
+              showPlanToast('Deletion Forbidden: The system-required Free Plan cannot be deleted.', false);
+              return;
+            }
+
+            document.getElementById('deletePlanIdInput').value = planId;
+            document.getElementById('deletePlanDescription').innerHTML = `
+              Are you sure you want to permanently delete plan <strong>${escapeHtml(planName)}</strong> (<code>${escapeHtml(planCode)}</code>)?<br><br>
+              <span style="font-size: 0.8rem; color: #DC2626;">This action cannot be undone. Plans assigned to active or historical customers cannot be deleted to preserve audit trails.</span>
+            `;
+            document.getElementById('deletePlanModal').style.display = 'flex';
+          }
+
+          // Confirm Delete Plan Execution
+          async function confirmDeletePlan() {
+            const planId = document.getElementById('deletePlanIdInput').value;
+            const confirmBtn = document.getElementById('confirmDeletePlanBtn');
+
+            if (!planId) return;
+
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Deleting...';
+
+            const formData = new FormData();
+            formData.append('action', 'delete_plan');
+            formData.append('plan_id', planId);
+
+            try {
+              const res = await fetch(getSubscriptionPlansApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeModal('deletePlanModal');
+                showPlanToast(data.message || 'Subscription plan deleted successfully.', true);
+                loadPlansTable(currentPlanPage);
+              } else {
+                alert(data.error || 'Failed to delete subscription plan.');
+              }
+            } catch (err) {
+              alert('Server connection error. Please try again.');
+            } finally {
+              confirmBtn.disabled = false;
+              confirmBtn.textContent = 'Delete Plan';
+            }
+          }
+
+          // Initial loader on module load
+          document.addEventListener('DOMContentLoaded', () => {
+            loadPlansTable(1);
+          });
+          // Also call immediately in case DOM is already parsed
+          if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            loadPlansTable(1);
+          }
+        </script>
+
+      <?php elseif ($currentPage === 'customer-subscriptions'): ?>
+        <!-- ============================================================
+             CUSTOMER SUBSCRIPTIONS MODULE (STEPS 5-9)
+             Hierarchy: Administration -> Subscription Management -> Customer Subscriptions
+             ============================================================ -->
+
+        <!-- KPI SUMMARY CARDS -->
+        <section class="grid-cards" style="margin-bottom: 1.5rem;">
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Total Tenants</span></div>
+            <div class="stat-number" id="kpiTotalCustomerSubs">0</div>
+            <div class="stat-desc">Customer accounts in system</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Active Subscriptions</span></div>
+            <div class="stat-number" id="kpiActiveCustomerSubs" style="color: var(--color-bright-cyan);">0</div>
+            <div class="stat-desc">Tenants with active access</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Near User Limit</span></div>
+            <div class="stat-number" id="kpiNearLimitCustomerSubs" style="color: #D97706;">0</div>
+            <div class="stat-desc">Tenants at &ge; 80% user capacity</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Expired / Inactive</span></div>
+            <div class="stat-number" id="kpiExpiredCustomerSubs" style="color: #DC2626;">0</div>
+            <div class="stat-desc">Expired, suspended, or unassigned</div>
+          </div>
+        </section>
+
+        <!-- MAIN SECTION CARD -->
+        <section class="section-card">
+          <!-- SECTION HEADER -->
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                <span style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-secondary-text);">
+                  Administration &bull; Subscription Management
+                </span>
+              </div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem; font-size: 1.3rem;">Customer Subscriptions</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage customer subscription plans, track user allocations, enforce limits, and manage lifecycles.</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-secondary" onclick="loadCustomerSubscriptionsTable()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- TOAST NOTIFICATION -->
+          <div id="custSubToast" style="display: none; padding: 0.75rem 1.25rem; border-radius: var(--radius-input); margin-top: 1rem; margin-bottom: 1rem; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- SEARCH & FILTERS BAR -->
+          <div style="display: flex; gap: 0.85rem; align-items: center; flex-wrap: wrap; margin-top: 1.25rem; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="flex: 2; min-width: 250px; position: relative;">
+              <input type="text" id="custSubSearchInput" class="cost360-select" placeholder="Search by customer name or customer code..." onkeyup="handleCustSubSearchKeyup(event)" style="padding-left: 2.3rem;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--color-secondary-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%); pointer-events: none;">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <div style="flex: 1; min-width: 170px;">
+              <select id="custSubPlanFilter" class="cost360-select" onchange="loadCustomerSubscriptionsTable()">
+                <option value="ALL">All Plans</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 150px;">
+              <select id="custSubStatusFilter" class="cost360-select" onchange="loadCustomerSubscriptionsTable()">
+                <option value="ALL">All Status</option>
+                <option value="ACTIVE">Active</option>
+                <option value="EXPIRED">Expired</option>
+                <option value="SUSPENDED">Suspended</option>
+                <option value="CANCELLED">Cancelled</option>
+                <option value="NO_PLAN">No Plan</option>
+              </select>
+            </div>
+            <button type="button" class="btn-secondary" onclick="resetCustSubFilters()" style="padding: 0.55rem 0.85rem; font-size: 0.84rem;">Reset</button>
+          </div>
+
+          <!-- CUSTOMER SUBSCRIPTIONS DATA TABLE -->
+          <div class="cost360-table-container" style="overflow-x: auto; border: 1px solid var(--color-border); border-radius: 8px;">
+            <table class="cost360-data-table" id="custSubscriptionsTable" style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+              <thead>
+                <tr style="background: var(--color-page-bg); border-bottom: 2px solid var(--color-border); text-align: left;">
+                  <th style="padding: 0.85rem 1rem;">Customer</th>
+                  <th style="padding: 0.85rem 1rem;">Current Plan</th>
+                  <th style="padding: 0.85rem 1rem;">Users</th>
+                  <th style="padding: 0.85rem 1rem;">Available</th>
+                  <th style="padding: 0.85rem 1rem;">Start Date</th>
+                  <th style="padding: 0.85rem 1rem;">End Date</th>
+                  <th style="padding: 0.85rem 1rem;">Status</th>
+                  <th style="padding: 0.85rem 1rem; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="custSubscriptionsTableBody">
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 3rem 1rem; color: var(--color-secondary-text);">
+                    <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-animation"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+                      <span>Loading customer subscriptions...</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             MODAL: CUSTOMER SUBSCRIPTION DETAILS
+             ============================================================ -->
+        <div id="custSubDetailsModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+          <div class="cost360-modal-container" style="background: #FFFFFF; width: 100%; max-width: 580px; border-radius: 12px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25); overflow: hidden; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="cost360-modal-header" style="background: var(--color-page-bg); padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text);">Customer Subscription</span>
+                <h2 id="detailsModalCustomerTitle" style="font-size: 1.25rem; color: var(--color-deep-navy); margin: 0.2rem 0 0 0;">Customer Details</h2>
+              </div>
+              <button type="button" onclick="closeCustSubModal('custSubDetailsModal')" style="background: none; border: none; cursor: pointer; color: var(--color-secondary-text); padding: 4px;">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <div class="cost360-modal-body" style="padding: 1.5rem; overflow-y: auto;">
+              <!-- Customer Overview Card -->
+              <div style="background: var(--color-page-bg); border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <div style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); margin-bottom: 0.5rem;">Customer Information</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                  <div>
+                    <strong id="detailsCustomerName" style="font-size: 1.05rem; color: var(--color-deep-navy);">-</strong>
+                    <div id="detailsCustomerCode" style="font-size: 0.8rem; color: var(--color-secondary-text); margin-top: 2px;">-</div>
+                  </div>
+                  <div>
+                    <span id="detailsCustomerStatusBadge" style="padding: 0.25rem 0.65rem; border-radius: 20px; font-size: 0.76rem; font-weight: 700;">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Subscription Info Grid -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; margin-bottom: 1rem;">
+                <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.85rem;">
+                  <span style="font-size: 0.74rem; font-weight: 700; color: var(--color-secondary-text); text-transform: uppercase;">Current Plan</span>
+                  <div id="detailsCurrentPlan" style="font-weight: 700; font-size: 1rem; color: var(--color-deep-navy); margin-top: 3px;">-</div>
+                </div>
+                <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.85rem;">
+                  <span style="font-size: 0.74rem; font-weight: 700; color: var(--color-secondary-text); text-transform: uppercase;">Subscription Status</span>
+                  <div id="detailsSubStatus" style="font-weight: 700; font-size: 1rem; margin-top: 3px;">-</div>
+                </div>
+                <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.85rem;">
+                  <span style="font-size: 0.74rem; font-weight: 700; color: var(--color-secondary-text); text-transform: uppercase;">Start Date</span>
+                  <div id="detailsStartDate" style="font-weight: 600; font-size: 0.95rem; color: var(--color-primary-text); margin-top: 3px;">-</div>
+                </div>
+                <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.85rem;">
+                  <span style="font-size: 0.74rem; font-weight: 700; color: var(--color-secondary-text); text-transform: uppercase;">End Date</span>
+                  <div id="detailsEndDate" style="font-weight: 600; font-size: 0.95rem; color: var(--color-primary-text); margin-top: 3px;">-</div>
+                </div>
+              </div>
+
+              <!-- User Quota Breakdown Card -->
+              <div style="background: #F8FAFC; border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem;">
+                <div style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); margin-bottom: 0.75rem;">User Limit & Slot Allocation</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; text-align: center; margin-bottom: 0.75rem;">
+                  <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 6px; padding: 0.65rem 0.5rem;">
+                    <div style="font-size: 0.72rem; color: var(--color-secondary-text); font-weight: 600;">Current Users</div>
+                    <div id="detailsCurrentUsers" style="font-size: 1.25rem; font-weight: 800; color: var(--color-deep-navy); margin-top: 2px;">0</div>
+                  </div>
+                  <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 6px; padding: 0.65rem 0.5rem;">
+                    <div style="font-size: 0.72rem; color: var(--color-secondary-text); font-weight: 600;">Maximum Users</div>
+                    <div id="detailsMaxUsers" style="font-size: 1.25rem; font-weight: 800; color: var(--color-primary-blue); margin-top: 2px;">0</div>
+                  </div>
+                  <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 6px; padding: 0.65rem 0.5rem;">
+                    <div style="font-size: 0.72rem; color: var(--color-secondary-text); font-weight: 600;">Available Users</div>
+                    <div id="detailsAvailableUsers" style="font-size: 1.25rem; font-weight: 800; color: #00A88F; margin-top: 2px;">0</div>
+                  </div>
+                </div>
+                <!-- Progress bar -->
+                <div style="background: #E2E8F0; border-radius: 10px; height: 8px; width: 100%; overflow: hidden;">
+                  <div id="detailsUsageProgressBar" style="background: #00A88F; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+                </div>
+                <div id="detailsUsageNote" style="font-size: 0.75rem; color: var(--color-secondary-text); margin-top: 6px; text-align: right;"></div>
+              </div>
+            </div>
+
+            <div class="cost360-modal-footer" style="background: var(--color-page-bg); padding: 1rem 1.5rem; border-top: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+              <button type="button" class="btn-secondary" id="detailsViewHistoryBtn" onclick="openHistoryFromDetailsModal()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                <span>View History</span>
+              </button>
+              <div style="display: flex; gap: 0.5rem;">
+                <button type="button" class="btn-secondary" onclick="closeCustSubModal('custSubDetailsModal')">Close</button>
+                <button type="button" class="btn-primary" id="detailsChangeSubBtn" onclick="openChangeSubFromDetailsModal()">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                  <span>Change Subscription</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             MODAL: ASSIGN / CHANGE SUBSCRIPTION
+             Section 4 Specification:
+             - Customer (read-only)
+             - Current Plan (read-only)
+             - New Plan (<select>)
+             - Maximum Users (read-only, populated dynamically from plan, no manual override!)
+             - Start Date (DD/MM/YYYY)
+             - End Date (DD/MM/YYYY)
+             - Notes (textarea)
+             ============================================================ -->
+        <div id="assignChangeSubscriptionModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+          <div class="cost360-modal-container" style="background: #FFFFFF; width: 100%; max-width: 540px; border-radius: 12px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25); overflow: hidden; max-height: 92vh; display: flex; flex-direction: column;">
+            <div class="cost360-modal-header" style="background: var(--color-page-bg); padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text);">Project Admin Action</span>
+                <h2 id="assignChangeModalTitle" style="font-size: 1.25rem; color: var(--color-deep-navy); margin: 0.2rem 0 0 0;">Assign / Change Subscription</h2>
+              </div>
+              <button type="button" onclick="closeCustSubModal('assignChangeSubscriptionModal')" style="background: none; border: none; cursor: pointer; color: var(--color-secondary-text); padding: 4px;">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <form id="assignChangeSubForm" onsubmit="submitAssignChangeSubscription(event)" style="display: flex; flex-direction: column; overflow-y: auto; flex: 1;">
+              <input type="hidden" id="changeSubCustomerId" name="customer_id" value="">
+
+              <div class="cost360-modal-body" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                <!-- Error Alert Box -->
+                <div id="changeSubErrorBox" style="display: none; background: #FEE2E2; border: 1px solid #FCA5A5; color: #DC2626; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.85rem; line-height: 1.4;"></div>
+
+                <!-- Customer (read-only) -->
+                <div>
+                  <label class="dropdown-label" style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--color-primary-text); margin-bottom: 0.35rem;">Customer</label>
+                  <input type="text" id="changeSubCustomerName" class="cost360-select" readonly style="background: #F1F5F9; color: var(--color-deep-navy); font-weight: 700; cursor: not-allowed;" value="">
+                </div>
+
+                <!-- Current Plan (read-only) -->
+                <div>
+                  <label class="dropdown-label" style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--color-primary-text); margin-bottom: 0.35rem;">Current Plan</label>
+                  <input type="text" id="changeSubCurrentPlanName" class="cost360-select" readonly style="background: #F1F5F9; color: var(--color-secondary-text); font-weight: 600; cursor: not-allowed;" value="">
+                </div>
+
+                <!-- New Plan (Dropdown) -->
+                <div>
+                  <label class="dropdown-label" style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--color-primary-text); margin-bottom: 0.35rem;">New Plan <span style="color: #DC2626;">*</span></label>
+                  <select id="changeSubNewPlanSelect" name="new_plan_id" class="cost360-select" required onchange="handleNewPlanSelection()" style="font-weight: 600;">
+                    <option value="">-- Select Subscription Plan --</option>
+                  </select>
+                </div>
+
+                <!-- Maximum Users (Read-only, strictly from selected plan!) -->
+                <div>
+                  <label class="dropdown-label" style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--color-primary-text); margin-bottom: 0.35rem;">
+                    Maximum Users <span style="font-weight: 400; color: var(--color-secondary-text); font-size: 0.75rem;">(Read-only &bull; From selected plan)</span>
+                  </label>
+                  <div style="position: relative;">
+                    <input type="number" id="changeSubMaxUsers" class="cost360-select" readonly disabled style="background: #F8FAFC; color: var(--color-deep-navy); font-weight: 800; font-size: 1.05rem; cursor: not-allowed;" value="0">
+                    <span style="position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%); font-size: 0.75rem; color: var(--color-secondary-text); font-weight: 600;">users max</span>
+                  </div>
+                  <div style="font-size: 0.75rem; color: var(--color-secondary-text); margin-top: 3px;">
+                    Plan limit is loaded dynamically and cannot be manually overridden.
+                  </div>
+                </div>
+
+                <!-- Start Date & End Date Grid -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem;">
+                  <div>
+                    <label class="dropdown-label" style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--color-primary-text); margin-bottom: 0.35rem;">Start Date <span style="color: #DC2626;">*</span></label>
+                    <input type="date" id="changeSubStartDate" name="start_date" class="cost360-select" required>
+                  </div>
+                  <div>
+                    <label class="dropdown-label" style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--color-primary-text); margin-bottom: 0.35rem;">End Date <span style="font-weight: 400; color: var(--color-secondary-text); font-size: 0.75rem;">(Optional)</span></label>
+                    <input type="date" id="changeSubEndDate" name="end_date" class="cost360-select">
+                  </div>
+                </div>
+
+                <!-- Notes / Reason -->
+                <div>
+                  <label class="dropdown-label" style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--color-primary-text); margin-bottom: 0.35rem;">Notes / Reason</label>
+                  <textarea id="changeSubNotes" name="notes" rows="3" class="cost360-select" placeholder="Enter reason for assignment or change (e.g. Upgraded to Standard per commercial agreement)..." style="resize: vertical; font-family: inherit; font-size: 0.85rem;"></textarea>
+                </div>
+              </div>
+
+              <div class="cost360-modal-footer" style="background: var(--color-page-bg); padding: 1rem 1.5rem; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 0.75rem;">
+                <button type="button" class="btn-secondary" onclick="closeCustSubModal('assignChangeSubscriptionModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="changeSubSubmitBtn">Save Subscription</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             MODAL: SUBSCRIPTION HISTORY
+             ============================================================ -->
+        <div id="custSubHistoryModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+          <div class="cost360-modal-container" style="background: #FFFFFF; width: 100%; max-width: 780px; border-radius: 12px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25); overflow: hidden; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="cost360-modal-header" style="background: var(--color-page-bg); padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text);">Audit & Lifecycle</span>
+                <h2 id="historyModalCustomerTitle" style="font-size: 1.25rem; color: var(--color-deep-navy); margin: 0.2rem 0 0 0;">Subscription History</h2>
+              </div>
+              <button type="button" onclick="closeCustSubModal('custSubHistoryModal')" style="background: none; border: none; cursor: pointer; color: var(--color-secondary-text); padding: 4px;">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <div class="cost360-modal-body" style="padding: 1.25rem; overflow-y: auto;">
+              <div class="cost360-table-container" style="overflow-x: auto; border: 1px solid var(--color-border); border-radius: 8px;">
+                <table class="cost360-data-table" style="width: 100%; border-collapse: collapse; font-size: 0.84rem;">
+                  <thead>
+                    <tr style="background: var(--color-page-bg); border-bottom: 2px solid var(--color-border); text-align: left;">
+                      <th style="padding: 0.75rem 0.85rem;">Plan</th>
+                      <th style="padding: 0.75rem 0.85rem;">Limit</th>
+                      <th style="padding: 0.75rem 0.85rem;">Start Date</th>
+                      <th style="padding: 0.75rem 0.85rem;">End Date</th>
+                      <th style="padding: 0.75rem 0.85rem;">Status</th>
+                      <th style="padding: 0.75rem 0.85rem;">Assigned By</th>
+                      <th style="padding: 0.75rem 0.85rem;">Change Date</th>
+                      <th style="padding: 0.75rem 0.85rem;">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="custSubHistoryTableBody">
+                    <tr>
+                      <td colspan="8" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">Loading history...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="cost360-modal-footer" style="background: var(--color-page-bg); padding: 1rem 1.5rem; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end;">
+              <button type="button" class="btn-secondary" onclick="closeCustSubModal('custSubHistoryModal')">Close</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             JAVASCRIPT CONTROLLER FOR CUSTOMER SUBSCRIPTIONS
+             ============================================================ -->
+        <script>
+          let custSubsCache = [];
+          let activePlansCache = [];
+          let currentSelectedCustomer = null;
+          let custSubSearchTimer = null;
+
+          function getCustSubApiUrl(params = '') {
+            let prefix = window.cost360BaseUrlPrefix || '';
+            let url = prefix + 'api/subscriptions_api.php';
+            if (params) {
+              url += (url.includes('?') ? '&' : '?') + params;
+            }
+            return url;
+          }
+
+          function showCustSubToast(msg, isSuccess = true) {
+            const toast = document.getElementById('custSubToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.style.display = 'block';
+            toast.style.background = isSuccess ? '#E6F9F6' : '#FEE2E2';
+            toast.style.color = isSuccess ? '#00A88F' : '#DC2626';
+            toast.style.border = isSuccess ? '1px solid #A7F3D0' : '1px solid #FCA5A5';
+
+            setTimeout(() => {
+              toast.style.display = 'none';
+            }, 4500);
+          }
+
+          function closeCustSubModal(modalId) {
+            const m = document.getElementById(modalId);
+            if (m) m.style.display = 'none';
+          }
+
+          // Search debounce
+          function handleCustSubSearchKeyup(e) {
+            clearTimeout(custSubSearchTimer);
+            custSubSearchTimer = setTimeout(() => {
+              loadCustomerSubscriptionsTable();
+            }, 300);
+          }
+
+          function resetCustSubFilters() {
+            document.getElementById('custSubSearchInput').value = '';
+            document.getElementById('custSubPlanFilter').value = 'ALL';
+            document.getElementById('custSubStatusFilter').value = 'ALL';
+            loadCustomerSubscriptionsTable();
+          }
+
+          // Preload active plans into filter dropdown and modal select
+          async function preloadActivePlans() {
+            try {
+              const res = await fetch(getCustSubApiUrl('action=list_plans&all=1'));
+              const data = await res.json();
+              if (data.success && Array.isArray(data.plans)) {
+                activePlansCache = data.plans;
+
+                // Populate filter dropdown
+                const planFilter = document.getElementById('custSubPlanFilter');
+                if (planFilter) {
+                  planFilter.innerHTML = '<option value="ALL">All Plans</option>' +
+                    data.plans.map(p => `<option value="${p.plan_id}">${escapeHtml(p.plan_name)} (${escapeHtml(p.plan_code)})</option>`).join('');
+                }
+
+                // Populate assign/change modal dropdown (active plans only)
+                const changePlanSelect = document.getElementById('changeSubNewPlanSelect');
+                if (changePlanSelect) {
+                  const activeTiers = data.plans.filter(p => p.status.toUpperCase() === 'ACTIVE');
+                  changePlanSelect.innerHTML = '<option value="">-- Select Subscription Plan --</option>' +
+                    activeTiers.map(p => `<option value="${p.plan_id}" data-max-users="${p.max_users}">${escapeHtml(p.plan_name)} (Max: ${p.max_users} users - ${p.price > 0 ? p.currency + ' ' + Number(p.price).toLocaleString() : 'Free'})</option>`).join('');
+                }
+              }
+            } catch (err) {
+              console.error('Error preloading plans:', err);
+            }
+          }
+
+          // Handle plan selection in Assign/Change modal: updates read-only Maximum Users
+          function handleNewPlanSelection() {
+            const select = document.getElementById('changeSubNewPlanSelect');
+            const maxUsersInput = document.getElementById('changeSubMaxUsers');
+            if (!select || !maxUsersInput) return;
+
+            const selectedOption = select.options[select.selectedIndex];
+            if (selectedOption && selectedOption.dataset.maxUsers !== undefined) {
+              maxUsersInput.value = selectedOption.dataset.maxUsers;
+            } else {
+              maxUsersInput.value = '0';
+            }
+          }
+
+          // Load main customer subscriptions table
+          async function loadCustomerSubscriptionsTable() {
+            const tbody = document.getElementById('custSubscriptionsTableBody');
+            if (!tbody) return;
+
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 2.5rem 1rem; color: var(--color-secondary-text);">
+                  <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-animation"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+                    <span>Fetching subscriptions...</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+
+            const search = encodeURIComponent(document.getElementById('custSubSearchInput')?.value.trim() || '');
+            const planId = encodeURIComponent(document.getElementById('custSubPlanFilter')?.value || 'ALL');
+            const status = encodeURIComponent(document.getElementById('custSubStatusFilter')?.value || 'ALL');
+
+            try {
+              const res = await fetch(getCustSubApiUrl(`action=list_customer_subscriptions&search=${search}&plan_id=${planId}&status=${status}`));
+              const data = await res.json();
+
+              if (!data.success) {
+                tbody.innerHTML = `
+                  <tr>
+                    <td colspan="8" style="text-align: center; padding: 2rem; color: #DC2626;">
+                      ${escapeHtml(data.error || 'Failed to load customer subscriptions.')}
+                    </td>
+                  </tr>
+                `;
+                return;
+              }
+
+              custSubsCache = data.subscriptions || [];
+
+              // Update KPIs
+              if (data.kpis) {
+                document.getElementById('kpiTotalCustomerSubs').textContent = data.kpis.total_subscriptions || 0;
+                document.getElementById('kpiActiveCustomerSubs').textContent = data.kpis.active_subscriptions || 0;
+                document.getElementById('kpiNearLimitCustomerSubs').textContent = data.kpis.near_limit || 0;
+                document.getElementById('kpiExpiredCustomerSubs').textContent = data.kpis.expired_inactive || 0;
+              }
+
+              if (custSubsCache.length === 0) {
+                tbody.innerHTML = `
+                  <tr>
+                    <td colspan="8" style="text-align: center; padding: 3rem 1rem;">
+                      <div style="font-weight: 700; color: var(--color-primary-text); margin-bottom: 0.35rem;">No Customer Subscriptions Found</div>
+                      <p style="font-size: 0.85rem; color: var(--color-secondary-text);">No customer records match your filter criteria.</p>
+                    </td>
+                  </tr>
+                `;
+                return;
+              }
+
+              tbody.innerHTML = custSubsCache.map(sub => {
+                const status = (sub.display_status || 'NO_PLAN').toUpperCase();
+                let statusBg = '#F1F5F9', statusColor = '#475569';
+                if (status === 'ACTIVE') {
+                  statusBg = '#E6F9F6'; statusColor = '#00A88F';
+                } else if (status === 'EXPIRED') {
+                  statusBg = '#FEE2E2'; statusColor = '#DC2626';
+                } else if (status === 'SUSPENDED') {
+                  statusBg = '#FEF3C7'; statusColor = '#D97706';
+                } else if (status === 'CANCELLED') {
+                  statusBg = '#F3F4F6'; statusColor = '#6B7280';
+                } else if (status === 'NO_PLAN') {
+                  statusBg = '#FEE2E2'; statusColor = '#991B1B';
+                }
+
+                const usersDisplay = `${sub.current_users} / ${sub.max_users}`;
+                const availableDisplay = `${sub.available_users}`;
+                const startDateFmt = sub.start_date ? formatDateDisplay(sub.start_date) : '&mdash;';
+                const endDateFmt = sub.end_date ? formatDateDisplay(sub.end_date) : '<span style="color: var(--color-secondary-text); font-size: 0.8rem;">Lifetime / &mdash;</span>';
+
+                // User capacity badge styling
+                const pct = sub.max_users > 0 ? (sub.current_users / sub.max_users) : 0;
+                let userColor = 'var(--color-primary-text)';
+                if (sub.max_users > 0 && sub.current_users >= sub.max_users) {
+                  userColor = '#DC2626';
+                } else if (pct >= 0.8) {
+                  userColor = '#D97706';
+                }
+
+                return `
+                  <tr style="border-bottom: 1px solid var(--color-border); transition: background 0.15s ease;">
+                    <td style="padding: 0.85rem 1rem;">
+                      <div style="font-weight: 700; color: var(--color-deep-navy);">${escapeHtml(sub.customer_name)}</div>
+                      <div style="display: flex; gap: 0.4rem; align-items: center; margin-top: 2px;">
+                        <span style="font-size: 0.72rem; background: #EEF2F6; color: var(--color-secondary-text); padding: 1px 6px; border-radius: 4px; font-weight: 600;">${escapeHtml(sub.customer_code)}</span>
+                        ${sub.customer_status === 'Inactive' ? '<span style="font-size: 0.7rem; color: #DC2626; font-weight: 700;">(Inactive Account)</span>' : ''}
+                      </div>
+                    </td>
+                    <td style="padding: 0.85rem 1rem;">
+                      <div style="font-weight: 600; color: var(--color-primary-text);">${escapeHtml(sub.plan_name)}</div>
+                      ${sub.plan_code && sub.plan_code !== 'NONE' ? `<span style="font-size: 0.72rem; color: var(--color-secondary-text); text-transform: uppercase;">${escapeHtml(sub.plan_code)} &bull; ${escapeHtml(sub.plan_type || '')}</span>` : ''}
+                    </td>
+                    <td style="padding: 0.85rem 1rem;">
+                      <strong style="color: ${userColor}; font-size: 0.95rem;">${usersDisplay}</strong>
+                    </td>
+                    <td style="padding: 0.85rem 1rem;">
+                      <span style="font-weight: 700; color: ${sub.available_users > 0 ? '#00A88F' : '#DC2626'};">${availableDisplay}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: var(--color-secondary-text);">${startDateFmt}</td>
+                    <td style="padding: 0.85rem 1rem;">${endDateFmt}</td>
+                    <td style="padding: 0.85rem 1rem;">
+                      <span style="background: ${statusBg}; color: ${statusColor}; padding: 0.25rem 0.65rem; border-radius: 20px; font-size: 0.76rem; font-weight: 700; text-transform: uppercase;">
+                        ${escapeHtml(status.replace('_', ' '))}
+                      </span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: right; white-space: nowrap;">
+                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openCustomerSubscriptionDetailsModal(${sub.customer_id})">View</button>
+                      <button type="button" class="btn-primary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openChangeSubscriptionModal(${sub.customer_id})">Manage</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('');
+
+            } catch (err) {
+              console.error('Error loading subscriptions table:', err);
+              tbody.innerHTML = `
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 2rem; color: #DC2626;">
+                    Network error occurred while fetching customer subscriptions.
+                  </td>
+                </tr>
+              `;
+            }
+          }
+
+          function formatDateDisplay(dStr) {
+            if (!dStr) return '&mdash;';
+            try {
+              const parts = dStr.split('-');
+              if (parts.length === 3) {
+                return `${parts[2]}/${parts[1]}/${parts[0]}`;
+              }
+              const d = new Date(dStr);
+              if (isNaN(d.getTime())) return dStr;
+              return d.toLocaleDateString('en-GB');
+            } catch(e) {
+              return dStr;
+            }
+          }
+
+          // Open Details Modal
+          async function openCustomerSubscriptionDetailsModal(customerId) {
+            currentSelectedCustomer = customerId;
+            const modal = document.getElementById('custSubDetailsModal');
+            if (!modal) return;
+
+            try {
+              const res = await fetch(getCustSubApiUrl(`action=get_customer_subscription_details&customer_id=${customerId}`));
+              const data = await res.json();
+
+              if (!data.success) {
+                alert(data.error || 'Failed to load customer subscription details.');
+                return;
+              }
+
+              const c = data.customer || {};
+              const s = data.subscription;
+              const slots = data.slots || {};
+
+              document.getElementById('detailsModalCustomerTitle').textContent = c.customer_name || 'Customer Details';
+              document.getElementById('detailsCustomerName').textContent = c.customer_name || '-';
+              document.getElementById('detailsCustomerCode').textContent = `Customer Code: ${c.customer_code || '-'}`;
+
+              const cBadge = document.getElementById('detailsCustomerStatusBadge');
+              const isCustActive = (c.status || '').toLowerCase() === 'active';
+              cBadge.textContent = c.status || 'Active';
+              cBadge.style.background = isCustActive ? '#E6F9F6' : '#FEE2E2';
+              cBadge.style.color = isCustActive ? '#00A88F' : '#DC2626';
+
+              if (s) {
+                document.getElementById('detailsCurrentPlan').textContent = `${s.plan_name} (${s.plan_code})`;
+                document.getElementById('detailsSubStatus').textContent = s.status;
+                document.getElementById('detailsSubStatus').style.color = s.status === 'ACTIVE' ? '#00A88F' : '#DC2626';
+                document.getElementById('detailsStartDate').textContent = s.start_date ? formatDateDisplay(s.start_date) : '&mdash;';
+                document.getElementById('detailsEndDate').textContent = s.end_date ? formatDateDisplay(s.end_date) : 'Lifetime / No Expiry';
+              } else {
+                document.getElementById('detailsCurrentPlan').textContent = 'No Active Plan';
+                document.getElementById('detailsSubStatus').textContent = 'NO PLAN';
+                document.getElementById('detailsSubStatus').style.color = '#DC2626';
+                document.getElementById('detailsStartDate').innerHTML = '&mdash;';
+                document.getElementById('detailsEndDate').innerHTML = '&mdash;';
+              }
+
+              const curUsers = slots.current_active_users !== undefined ? slots.current_active_users : (slots.current_users || 0);
+              const maxUsers = slots.max_users || 0;
+              const availUsers = slots.available_users || 0;
+
+              document.getElementById('detailsCurrentUsers').textContent = curUsers;
+              document.getElementById('detailsMaxUsers').textContent = maxUsers;
+              document.getElementById('detailsAvailableUsers').textContent = availUsers;
+
+              const pct = maxUsers > 0 ? Math.min(100, Math.round((curUsers / maxUsers) * 100)) : 0;
+              const bar = document.getElementById('detailsUsageProgressBar');
+              bar.style.width = pct + '%';
+              bar.style.background = (maxUsers > 0 && curUsers >= maxUsers) ? '#DC2626' : (pct >= 80 ? '#D97706' : '#00A88F');
+
+              document.getElementById('detailsUsageNote').textContent = maxUsers === 0 
+                ? 'FREE Plan: 0 users allowed.' 
+                : `${pct}% capacity utilized (${availUsers} slots available).`;
+
+              modal.style.display = 'flex';
+
+            } catch (err) {
+              console.error('Error opening details modal:', err);
+              alert('Network error loading customer details.');
+            }
+          }
+
+          function openChangeSubFromDetailsModal() {
+            closeCustSubModal('custSubDetailsModal');
+            if (currentSelectedCustomer) {
+              openChangeSubscriptionModal(currentSelectedCustomer);
+            }
+          }
+
+          function openHistoryFromDetailsModal() {
+            closeCustSubModal('custSubDetailsModal');
+            if (currentSelectedCustomer) {
+              openCustomerSubscriptionHistoryModal(currentSelectedCustomer);
+            }
+          }
+
+          // Open Assign / Change Subscription Modal
+          async function openChangeSubscriptionModal(customerId) {
+            currentSelectedCustomer = customerId;
+            const modal = document.getElementById('assignChangeSubscriptionModal');
+            const errBox = document.getElementById('changeSubErrorBox');
+            if (!modal) return;
+
+            errBox.style.display = 'none';
+            errBox.textContent = '';
+
+            // Find in cache or fetch
+            let sub = custSubsCache.find(x => x.customer_id === customerId);
+
+            document.getElementById('changeSubCustomerId').value = customerId;
+            document.getElementById('changeSubCustomerName').value = sub ? `${sub.customer_name} (${sub.customer_code})` : `Customer #${customerId}`;
+            document.getElementById('changeSubCurrentPlanName').value = sub && sub.plan_name && sub.display_status === 'ACTIVE' ? `${sub.plan_name} (Max: ${sub.max_users} users)` : (sub && sub.plan_name ? `${sub.plan_name} [${sub.display_status}]` : 'No Active Subscription');
+
+            // Default dates
+            const todayStr = new Date().toISOString().split('T')[0];
+            document.getElementById('changeSubStartDate').value = todayStr;
+            document.getElementById('changeSubEndDate').value = '';
+            document.getElementById('changeSubNotes').value = '';
+
+            // Reset plan select
+            const planSelect = document.getElementById('changeSubNewPlanSelect');
+            if (sub && sub.plan_id) {
+              planSelect.value = sub.plan_id;
+            } else {
+              planSelect.value = '';
+            }
+
+            handleNewPlanSelection();
+            modal.style.display = 'flex';
+          }
+
+          // Submit Assign / Change Subscription
+          async function submitAssignChangeSubscription(e) {
+            e.preventDefault();
+            const submitBtn = document.getElementById('changeSubSubmitBtn');
+            const errBox = document.getElementById('changeSubErrorBox');
+            errBox.style.display = 'none';
+
+            const customerId = parseInt(document.getElementById('changeSubCustomerId').value, 10);
+            const planId = parseInt(document.getElementById('changeSubNewPlanSelect').value, 10);
+            const startDate = document.getElementById('changeSubStartDate').value;
+            const endDate = document.getElementById('changeSubEndDate').value;
+            const notes = document.getElementById('changeSubNotes').value.trim();
+
+            if (!customerId || !planId) {
+              errBox.textContent = 'Please select a valid subscription plan.';
+              errBox.style.display = 'block';
+              return;
+            }
+
+            // Determine if customer has active plan
+            const currentSub = custSubsCache.find(x => x.customer_id === customerId);
+            const hasActive = (currentSub && currentSub.subscription_id && currentSub.display_status === 'ACTIVE');
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Saving...';
+
+            const formData = new FormData();
+            formData.append('customer_id', customerId);
+            formData.append('plan_id', planId);
+            formData.append('new_plan_id', planId);
+            formData.append('start_date', startDate);
+            if (endDate) formData.append('end_date', endDate);
+            if (notes) formData.append('notes', notes);
+            formData.append('force_replace', '1');
+
+            // Call 'change' if already has subscription, else 'assign'
+            formData.append('action', hasActive ? 'change' : 'assign');
+
+            try {
+              const res = await fetch(getCustSubApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeCustSubModal('assignChangeSubscriptionModal');
+                showCustSubToast(data.message || 'Subscription successfully updated.', true);
+                loadCustomerSubscriptionsTable();
+              } else {
+                errBox.textContent = data.error || 'Failed to update subscription.';
+                errBox.style.display = 'block';
+              }
+            } catch (err) {
+              console.error('Error saving subscription:', err);
+              errBox.textContent = 'Server connection error. Please try again.';
+              errBox.style.display = 'block';
+            } finally {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Save Subscription';
+            }
+          }
+
+          // Open Subscription History Modal
+          async function openCustomerSubscriptionHistoryModal(customerId) {
+            currentSelectedCustomer = customerId;
+            const modal = document.getElementById('custSubHistoryModal');
+            const tbody = document.getElementById('custSubHistoryTableBody');
+            if (!modal || !tbody) return;
+
+            const sub = custSubsCache.find(x => x.customer_id === customerId);
+            document.getElementById('historyModalCustomerTitle').textContent = sub ? `${sub.customer_name} &bull; History` : `Customer #${customerId} History`;
+
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                  Loading historical subscription records...
+                </td>
+              </tr>
+            `;
+
+            modal.style.display = 'flex';
+
+            try {
+              const res = await fetch(getCustSubApiUrl(`action=get_history&customer_id=${customerId}`));
+              const data = await res.json();
+
+              if (!data.success || !Array.isArray(data.history) || data.history.length === 0) {
+                tbody.innerHTML = `
+                  <tr>
+                    <td colspan="8" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                      No historical subscription records found for this customer.
+                    </td>
+                  </tr>
+                `;
+                return;
+              }
+
+              tbody.innerHTML = data.history.map(h => {
+                const status = (h.status || '').toUpperCase();
+                let statusBg = '#F1F5F9', statusColor = '#475569';
+                if (status === 'ACTIVE') {
+                  statusBg = '#E6F9F6'; statusColor = '#00A88F';
+                } else if (status === 'EXPIRED') {
+                  statusBg = '#FEE2E2'; statusColor = '#DC2626';
+                } else if (status === 'SUSPENDED') {
+                  statusBg = '#FEF3C7'; statusColor = '#D97706';
+                } else if (status === 'CANCELLED') {
+                  statusBg = '#F3F4F6'; statusColor = '#6B7280';
+                }
+
+                const changeDate = h.assigned_date ? formatDateDisplay(h.assigned_date.split(' ')[0]) : (h.created_at ? formatDateDisplay(h.created_at.split(' ')[0]) : '&mdash;');
+
+                return `
+                  <tr style="border-bottom: 1px solid var(--color-border);">
+                    <td style="padding: 0.75rem 0.85rem;">
+                      <strong>${escapeHtml(h.plan_name)}</strong>
+                      <div style="font-size: 0.72rem; color: var(--color-secondary-text);">${escapeHtml(h.plan_code)}</div>
+                    </td>
+                    <td style="padding: 0.75rem 0.85rem; font-weight: 700;">${h.max_users} users</td>
+                    <td style="padding: 0.75rem 0.85rem; color: var(--color-secondary-text);">${formatDateDisplay(h.start_date)}</td>
+                    <td style="padding: 0.75rem 0.85rem; color: var(--color-secondary-text);">${h.end_date ? formatDateDisplay(h.end_date) : '&mdash;'}</td>
+                    <td style="padding: 0.75rem 0.85rem;">
+                      <span style="background: ${statusBg}; color: ${statusColor}; padding: 2px 7px; border-radius: 12px; font-size: 0.74rem; font-weight: 700;">
+                        ${escapeHtml(status)}
+                      </span>
+                    </td>
+                    <td style="padding: 0.75rem 0.85rem; font-size: 0.8rem;">${escapeHtml(h.assigned_by_name || 'System')}</td>
+                    <td style="padding: 0.75rem 0.85rem; font-size: 0.8rem; color: var(--color-secondary-text);">${changeDate}</td>
+                    <td style="padding: 0.75rem 0.85rem; font-size: 0.78rem; color: var(--color-secondary-text); max-width: 180px;">${escapeHtml(h.notes || '&mdash;')}</td>
+                  </tr>
+                `;
+              }).join('');
+
+            } catch (err) {
+              console.error('Error loading history:', err);
+              tbody.innerHTML = `
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 2rem; color: #DC2626;">
+                    Error loading subscription history.
+                  </td>
+                </tr>
+              `;
+            }
+          }
+
+          // Initialize Customer Subscriptions on load
+          document.addEventListener('DOMContentLoaded', () => {
+            preloadActivePlans();
+            loadCustomerSubscriptionsTable();
+          });
+          if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            preloadActivePlans();
+            loadCustomerSubscriptionsTable();
           }
         </script>
 
@@ -5223,8 +7294,9 @@ if (!function_exists('formatMenuRouteUrl')) {
     }
 
     function toggleSubmenu(btnEl) {
+      const parentItem = btnEl.closest('.nav-parent-item');
       const group = btnEl.closest('.nav-parent-group');
-      const container = group ? group.querySelector('.submenu-container') : null;
+      const container = parentItem ? parentItem.nextElementSibling : (group ? group.querySelector('.submenu-container') : null);
       if (!container) return;
 
       const isShow = container.classList.contains('show');

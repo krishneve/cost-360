@@ -1002,6 +1002,34 @@ try {
                     $roleId
                 );
 
+            /* --------------------------------------------------
+               CUSTOMER / TENANT & SUBSCRIPTION USER LIMIT ENFORCEMENT
+               -------------------------------------------------- */
+            $targetCustomerId = 0;
+            if (!empty($_POST['customer_id'])) {
+                $targetCustomerId = (int)$_POST['customer_id'];
+            } elseif (!empty($_SESSION['active_customer_id'])) {
+                $targetCustomerId = (int)$_SESSION['active_customer_id'];
+            } else {
+                // Check if creator is a customer-scoped user (e.g. Customer Admin)
+                $stmtScope = $pdo->prepare("
+                    SELECT customer_id 
+                    FROM user_organization_access 
+                    WHERE user_id = :uid AND UPPER(status) = 'ACTIVE' AND customer_id IS NOT NULL 
+                    ORDER BY access_id ASC LIMIT 1
+                ");
+                $stmtScope->execute([':uid' => $currentUserId]);
+                $targetCustomerId = (int)($stmtScope->fetchColumn() ?: 0);
+            }
+
+            if ($targetCustomerId > 0) {
+                require_once __DIR__ . '/../../config/subscription.php';
+                $limitCheck = checkUserLimit($targetCustomerId);
+                if (!$limitCheck['allowed']) {
+                    throw new Exception($limitCheck['reason']);
+                }
+            }
+
 
             /* --------------------------------------------------
                DUPLICATE USERNAME
@@ -1241,6 +1269,31 @@ try {
                         : null
             ]);
 
+            /* --------------------------------------------------
+               CUSTOMER TENANT SCOPE
+               -------------------------------------------------- */
+            if ($targetCustomerId > 0) {
+                $stmtCustAccess = $pdo->prepare("
+                    INSERT INTO user_organization_access
+                    (
+                        user_id,
+                        customer_id,
+                        valid_from,
+                        status
+                    )
+                    VALUES
+                    (
+                        :user_id,
+                        :customer_id,
+                        CURRENT_DATE,
+                        'Active'
+                    )
+                ");
+                $stmtCustAccess->execute([
+                    ':user_id' => $newUserId,
+                    ':customer_id' => $targetCustomerId
+                ]);
+            }
 
             /* --------------------------------------------------
                AUDIT

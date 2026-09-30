@@ -426,7 +426,14 @@ try {
             ':cid' => $newCustomerId
         ]);
 
-        // 6. Record Audit Log
+        // 6. Automatically Assign Default FREE Subscription
+        require_once __DIR__ . '/../config/subscription.php';
+        $subResult = assignDefaultCustomerSubscription((int)$newCustomerId, (int)$currentUser['user_id']);
+        if (!$subResult['success']) {
+            throw new Exception("Customer created, but failed to assign default FREE subscription: " . ($subResult['error'] ?? ''));
+        }
+
+        // 7. Record Audit Log
         $insAudit = $pdo->prepare("
             INSERT INTO audit_log (user_id, entity_name, entity_id, action, old_value, new_value, timestamp, ip_address)
             VALUES (:uid, 'customers', :eid, 'INSERT', NULL, :new_val, CURRENT_TIMESTAMP, :ip)
@@ -434,7 +441,7 @@ try {
         $insAudit->execute([
             ':uid' => $currentUser['user_id'],
             ':eid' => $newCustomerId,
-            ':new_val' => "Customer created: {$customerName} ({$customerCode}), Admin: {$adminFullName} ({$adminEmail})",
+            ':new_val' => "Customer created: {$customerName} ({$customerCode}), Admin: {$adminFullName} ({$adminEmail}), Subscription: {$subResult['plan_name']}",
             ':ip' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'
         ]);
 
@@ -442,12 +449,19 @@ try {
 
         echo json_encode([
             'success' => true,
-            'message' => 'Customer created successfully.',
+            'message' => 'Customer created successfully with default FREE subscription.',
             'customer_id' => $newCustomerId,
             'customer_code' => $customerCode,
             'customer_name' => $customerName,
             'admin_name' => $adminFullName,
-            'admin_email' => $adminEmail
+            'admin_email' => $adminEmail,
+            'subscription' => [
+                'subscription_id' => $subResult['subscription_id'],
+                'plan_code'       => $subResult['plan_code'],
+                'plan_name'       => $subResult['plan_name'],
+                'max_users'       => $subResult['max_users'],
+                'status'          => $subResult['status']
+            ]
         ]);
         exit;
     }

@@ -629,7 +629,14 @@ try {
                     }
                 }
 
-                // 7. Audit Log
+                // 7. Automatically Assign Default FREE Subscription
+                require_once __DIR__ . '/../../config/subscription.php';
+                $subResult = assignDefaultCustomerSubscription($newCustomerId, $authUserId);
+                if (!$subResult['success']) {
+                    throw new Exception("Failed to assign default subscription: " . ($subResult['error'] ?? ''));
+                }
+
+                // 8. Audit Log
                 logAudit(
                     $pdo,
                     $authUserId,
@@ -643,19 +650,27 @@ try {
                         'customer_name' => $customerName,
                         'admin_user_id' => $newAdminUserId,
                         'admin_email'   => $adminEmail,
-                        'company_id'    => $createdCompanyId
+                        'company_id'    => $createdCompanyId,
+                        'subscription'  => $subResult['plan_name']
                     ])
                 );
 
                 $pdo->commit();
 
-                sendApiResponse(true, 'Customer tenant and Customer Administrator created successfully.', [
+                sendApiResponse(true, 'Customer tenant and Customer Administrator created successfully with default FREE subscription.', [
                     'customer_id'   => $newCustomerId,
                     'customer_code' => $customerCode,
                     'customer_name' => $customerName,
                     'admin_user_id' => $newAdminUserId,
                     'admin_email'   => $adminEmail,
-                    'status'        => 'Active'
+                    'status'        => 'Active',
+                    'subscription'  => [
+                        'subscription_id' => $subResult['subscription_id'],
+                        'plan_code'       => $subResult['plan_code'],
+                        'plan_name'       => $subResult['plan_name'],
+                        'max_users'       => $subResult['max_users'],
+                        'status'          => $subResult['status']
+                    ]
                 ]);
 
             } catch (Exception $txErr) {
@@ -972,6 +987,13 @@ try {
             }
 
             enforceCustomerScope($customerId, $userScopedCustomerId, $userRoleCode);
+
+            // Enforce Subscription User Limit
+            require_once __DIR__ . '/../../config/subscription.php';
+            $limitCheck = checkUserLimit($customerId);
+            if (!$limitCheck['allowed']) {
+                sendApiResponse(false, $limitCheck['reason'], ['limit_info' => $limitCheck], 403);
+            }
 
             if (strlen($password) < 6) {
                 sendApiResponse(false, 'Password must be at least 6 characters.');
