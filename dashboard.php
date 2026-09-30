@@ -20,15 +20,57 @@ $role = getCurrentUserRole();
 $authorizedMenus = getUserAuthorizedMenus();
 
 /*
- * Active company context.
- * All company-dependent modules should use $activeCompanyId
- * when querying company-specific data.
+ * Active 6-tier organization & period context.
+ * All modules operate within this selected context.
  */
+$orgContext = getActiveOrganizationContext();
 $activeCompany = getActiveCompany();
-$activeCompanyId = $activeCompany['company_id'] ?? null;
-$activeCompanyCode = $activeCompany['company_code'] ?? '';
-$activeCompanyName = $activeCompany['company_name'] ?? '';
-$activeCustomerId = $activeCompany['customer_id'] ?? null;
+$activeCompanyId = $orgContext['company_id'] ?? null;
+$activeCompanyCode = $orgContext['company_code'] ?? '';
+$activeCompanyName = $orgContext['company_name'] ?? '';
+$activeCustomerId = $orgContext['customer_id'] ?? null;
+$activeCustomerName = $orgContext['customer_name'] ?? '';
+$activeDivisionId = $orgContext['division_id'] ?? null;
+$activeDivisionName = $orgContext['division_name'] ?? '';
+$activePlantId = $orgContext['plant_id'] ?? null;
+$activePlantName = $orgContext['plant_name'] ?? '';
+$activeWarehouseId = $orgContext['warehouse_id'] ?? null;
+$activeWarehouseName = $orgContext['warehouse_name'] ?? '';
+$activePeriodId = $orgContext['period_id'] ?? null;
+$activePeriodName = $orgContext['period_name'] ?? '';
+$availablePeriods = getUserAccessiblePeriods($activeCompanyId);
+
+/* ============================================================
+   HANDLE INLINE PERIOD CREATION & ACTIVATION FROM POPOVER
+   ============================================================ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_and_select_period') {
+    $pName = trim($_POST['period_name'] ?? '');
+    $sDate = trim($_POST['start_date'] ?? '');
+    $eDate = trim($_POST['end_date'] ?? '');
+    $pStatus = trim($_POST['status'] ?? 'Active');
+
+    $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+              || (isset($_POST['is_ajax']) && $_POST['is_ajax'] === '1');
+
+    try {
+        $newPeriod = createAccountingPeriod($pName, $sDate, $eDate, $pStatus);
+        setActivePeriod($newPeriod['period_id']);
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true, 'period' => $newPeriod]);
+            exit;
+        }
+        header('Location: ' . $_SERVER['REQUEST_URI']);
+        exit;
+    } catch (Exception $e) {
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            exit;
+        }
+        $periodCreationError = $e->getMessage();
+    }
+}
 
 // Determine the current URL to set active menu states
 $currentUrl = $_SERVER['REQUEST_URI'];
@@ -62,10 +104,7 @@ if (!function_exists('getMenuIconSvg')) {
 
 $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
 $baseUrlPrefix = '';
-if (preg_match('#/(?:admin|administration|organization)/[^/]+/[^/]+/#i', $scriptName) || 
-    preg_match('#/(?:admin|administration|organization)/[^/]+/[^/]+/index\.php#i', $scriptName)) {
-    $baseUrlPrefix = '../../../';
-} else if (preg_match('#/(?:admin|administration|organization)/[^/]+/#i', $scriptName) || 
+if (preg_match('#/(?:admin|administration|organization)/[^/]+/#i', $scriptName) ||
     preg_match('#/(?:admin|administration|organization)/[^/]+/index\.php#i', $scriptName)) {
     $baseUrlPrefix = '../../';
 } else if (strpos($scriptName, '/admin/') !== false || strpos($scriptName, '/administration/') !== false || strpos($scriptName, '/organization/') !== false) {
@@ -86,39 +125,32 @@ if (!function_exists('formatMenuRouteUrl')) {
         }
 
         // Parent modules with no standalone page shouldn't navigate away to a 404
-        $parentOnlyRoutes = ['administration', 'data', 'costing', 'audit', 'reports', 'settings', 'organization', 'administration/subscriptions', 'subscriptions'];
+        $parentOnlyRoutes = ['administration', 'data', 'costing', 'audit', 'reports', 'settings', 'organization', 'customers', 'customer_mgmt', 'administration/subscriptions', 'subscriptions'];
         if (in_array($lower, $parentOnlyRoutes)) {
             return 'javascript:void(0);';
         }
 
         // Map known routes to actual working handlers
         $routeMap = [
-            'customers'                          => 'customers.php',
-            'customers/master'                   => 'customers.php',
-            'customers/companies'                => 'customers.php',
-            'customers/plants'                   => 'customers.php',
-            'administration/users'               => 'admin/users/',
-            'admin/users'                        => 'admin/users/',
-            'administration/roles'               => 'admin/roles/',
-            'admin/roles'                        => 'admin/roles/',
-            'administration/menus'               => 'admin/menus/',
-            'admin/menus'                        => 'admin/menus/',
-            'administration/subscriptions/plans'     => 'administration/subscriptions/plans/',
-            'admin/subscription-plans'               => 'admin/subscription-plans/',
-            'subscription-plans'                     => 'subscription-plans.php',
-            'administration/subscriptions/customers' => 'administration/subscriptions/customers/',
-            'admin/customer-subscriptions'           => 'admin/customer-subscriptions/',
-            'customer-subscriptions'                 => 'customer-subscriptions.php',
-            'data/upload'                        => 'upload-centre.php',
-            'data/mapping'                       => 'mapping-centre.php',
-            'data/history'                       => 'import-history.php',
-            'data/audit'                         => 'audit-logs.php',
-            'data/masters'                       => 'master-groups.php',
-            'organization/companies'             => 'organization/companies/',
-            'organization/divisions'             => 'organization/divisions/',
-            'organization/plants'                => 'organization/plants/',
-            'organization/warehouses'            => 'organization/warehouses/',
-            'organization/periods'               => 'organization/periods/',
+            'customers'              => 'customers.php',
+            'customers/master'       => 'customers.php',
+            'organization/overview'  => 'organization/overview/',
+            'organization/companies' => 'organization/companies/',
+            'organization/divisions' => 'organization/divisions/',
+            'organization/plants'    => 'organization/plants/',
+            'organization/warehouses' => 'organization/warehouses/',
+            'organization/periods'   => 'organization/periods/',
+            'administration/users'   => 'admin/users/',
+            'admin/users'            => 'admin/users/',
+            'administration/roles'   => 'admin/roles/',
+            'admin/roles'            => 'admin/roles/',
+            'administration/menus'   => 'admin/menus/',
+            'admin/menus'            => 'admin/menus/',
+            'data/upload'            => 'upload-centre.php',
+            'data/mapping'           => 'mapping-centre.php',
+            'data/history'           => 'import-history.php',
+            'data/audit'             => 'audit-logs.php',
+            'data/masters'           => 'master-groups.php',
         ];
 
         if (isset($routeMap[$lower])) {
@@ -330,14 +362,16 @@ if (!function_exists('formatMenuRouteUrl')) {
     }
 
     /* TOP HEADER */
+    /* TOP HEADER */
     .top-header {
-      height: 72px;
+      height: 68px;
       background: var(--color-white);
       border-bottom: 1px solid var(--color-border);
-      padding: 0 2rem;
+      padding: 0 1.5rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 1rem;
       position: sticky;
       top: 0;
       z-index: 90;
@@ -345,60 +379,342 @@ if (!function_exists('formatMenuRouteUrl')) {
     }
 
     .page-heading {
-      font-size: 1.15rem;
+      font-size: 1.1rem;
       font-weight: 700;
       color: var(--color-primary-text);
-    }
-
-    .active-company-context {
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-      padding: 0.42rem 0.7rem;
-      background: var(--color-soft-blue);
-      border: 1px solid #D6EAF7;
-      border-radius: 8px;
+      flex-shrink: 0;
       white-space: nowrap;
     }
 
-    .active-company-label {
-      font-size: 0.68rem;
-      color: var(--color-secondary-text);
+    /* CENTER FLEXIBLE CONTEXT CONTAINER & BAR */
+    .active-org-context-container {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+
+    .header-context-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .org-context-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.38rem 0.75rem;
+      background: var(--color-soft-blue);
+      border: 1px solid #D6EAF7;
+      border-radius: 8px;
+      color: var(--color-deep-navy);
       font-weight: 600;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    .org-context-btn:hover {
+      background: #D6EAF7;
+      border-color: #B3D8F5;
+      color: var(--color-primary-blue);
+    }
+    .org-context-btn.active {
+      background: #E0F0FA;
+      border-color: var(--color-primary-blue);
+      color: var(--color-primary-blue);
+    }
+    .org-context-btn .toggle-chevron {
+      transition: transform 0.2s ease;
+    }
+    .org-context-btn.active .toggle-chevron {
+      transform: rotate(180deg);
+    }
+
+    /* ACTIVE ORG CONTEXT CONTAINER & COMPACT TRIGGER BUTTON */
+    .active-org-context-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .context-trigger-pill-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      background: #FFFFFF;
+      border: 1px solid #C8DDF2;
+      padding: 0.35rem 0.8rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 8px rgba(3, 54, 101, 0.05);
+      text-decoration: none;
+      user-select: none;
+      max-width: 270px;
+      font-family: inherit;
+      outline: none;
+    }
+    .context-trigger-pill-btn:hover,
+    .context-trigger-pill-btn.active {
+      border-color: #0070BA;
+      background: #F4FAFF;
+      box-shadow: 0 4px 14px rgba(0, 112, 186, 0.12);
+    }
+    .context-user-icon-img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+    .context-trigger-summary {
+      display: flex;
+      flex-direction: column;
+      text-align: left;
+      overflow: hidden;
+      line-height: 1.15;
+    }
+    .context-trigger-scope {
+      font-size: 0.73rem;
+      font-weight: 700;
+      color: #033665;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+    }
+    .context-trigger-period-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #0284C7;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+    }
+    .context-trigger-arrow {
+      color: #64748B;
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+      margin-left: 2px;
+    }
+    .context-trigger-pill-btn.active .context-trigger-arrow {
+      transform: rotate(180deg);
+      color: #0070BA;
+    }
+
+    /* EXPANDABLE CONTEXT POPOVER */
+    .active-context-popover {
+      display: none;
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      width: 380px;
+      max-width: 92vw;
+      background: #FFFFFF;
+      border: 1px solid #D8E6F0;
+      border-radius: 14px;
+      box-shadow: 0 16px 40px rgba(3, 54, 101, 0.16);
+      z-index: 1050;
+      padding: 1.15rem;
+      animation: popoverSlideIn 0.2s ease forwards;
+    }
+    .active-context-popover.active {
+      display: block;
+    }
+    @keyframes popoverSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .popover-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #E2E8F0;
+      padding-bottom: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .popover-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+    .popover-header-icon {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+    }
+    .popover-title {
+      font-size: 0.86rem;
+      font-weight: 800;
+      color: #033665;
       text-transform: uppercase;
       letter-spacing: 0.03em;
     }
-
-    .active-company-value {
+    .popover-close-btn {
+      background: transparent;
+      border: none;
+      font-size: 1.25rem;
+      color: #94A3B8;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1;
+    }
+    .popover-close-btn:hover {
+      color: #0F172A;
+      background: #F1F5F9;
+    }
+    .popover-hierarchy-box {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem;
+      margin-bottom: 0.85rem;
+    }
+    .popover-hierarchy-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       font-size: 0.78rem;
-      color: var(--color-deep-navy);
-      font-weight: 700;
+      padding: 0.3rem 0;
+      border-bottom: 1px dashed #E2E8F0;
     }
-
-    .active-company-code {
-      color: var(--color-secondary-text);
-      font-size: 0.68rem;
-      font-weight: 500;
-      margin-left: 0.2rem;
+    .popover-hierarchy-row:last-child {
+      border-bottom: none;
     }
-
-    .switch-company-link {
-      color: var(--color-primary-blue);
+    .popover-h-label {
+      color: #64748B;
+      font-weight: 600;
       font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .popover-h-value {
+      color: #033665;
+      font-weight: 700;
+      text-align: right;
+    }
+    .popover-loc-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 5px;
+    }
+    .popover-loc-badge.plant {
+      background: #E0F2FE;
+      color: #0284C7;
+    }
+    .popover-loc-badge.warehouse {
+      background: #FEF3C7;
+      color: #D97706;
+    }
+    .btn-popover-switch-wizard {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      width: 100%;
+      padding: 0.45rem;
+      border-radius: 8px;
+      background: #F0F7FD;
+      border: 1px solid #B3D8F5;
+      color: #0070BA;
+      font-size: 0.78rem;
       font-weight: 700;
       text-decoration: none;
-      margin-left: 0.2rem;
+      margin-top: 0.6rem;
+      transition: all 0.2s ease;
     }
-
-    .switch-company-link:hover {
-      color: var(--color-dark-blue);
+    .btn-popover-switch-wizard:hover {
+      background: #0070BA;
+      color: #FFFFFF;
+      border-color: #0070BA;
+    }
+    .popover-period-card {
+      border-top: 1px solid #E2E8F0;
+      padding-top: 0.85rem;
+      margin-top: 0.85rem;
+    }
+    .popover-period-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+    .popover-period-title {
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: #033665;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .btn-toggle-add-period {
+      background: transparent;
+      border: none;
+      color: #0070BA;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .btn-toggle-add-period:hover {
       text-decoration: underline;
+    }
+    .popover-period-select {
+      width: 100%;
+      padding: 0.45rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid #CBD5E1;
+      background: #FFFFFF;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #033665;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+    .popover-period-select:focus {
+      border-color: #0070BA;
+    }
+    .popover-add-period-form {
+      display: none;
+      background: #F8FAFC;
+      border: 1px solid #CBD5E1;
+      border-radius: 8px;
+      padding: 0.75rem;
+      margin-top: 0.65rem;
+    }
+    .popover-add-period-form.active {
+      display: block;
+      animation: popoverSlideIn 0.2s ease forwards;
+    }
+    .form-input-p {
+      width: 100%;
+      padding: 0.35rem 0.55rem;
+      border: 1px solid #CBD5E1;
+      border-radius: 6px;
+      font-size: 0.76rem;
+      outline: none;
+      margin-bottom: 0.45rem;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    .form-input-p:focus {
+      border-color: #0070BA;
     }
 
     .user-profile-menu {
       display: flex;
       align-items: center;
-      gap: 1.25rem;
+      gap: 0.85rem;
+      flex-shrink: 0;
     }
 
     .user-details {
@@ -877,17 +1193,17 @@ if (!function_exists('formatMenuRouteUrl')) {
 
     <nav class="sidebar-nav">
       <?php if (!empty($authorizedMenus)): ?>
-        <?php 
+        <?php
           // Build a recursive tree from the flat $authorizedMenus list
           $menuTree = [];
           $menuMap = [];
-          
+
           foreach ($authorizedMenus as $m) {
               $m['children'] = [];
               $m['is_active'] = false;
               $menuMap[$m['menu_id']] = $m;
           }
-          
+
           foreach ($menuMap as $id => &$m) {
               if (empty($m['parent_menu_id'])) {
                   $menuTree[] = &$m;
@@ -901,59 +1217,46 @@ if (!function_exists('formatMenuRouteUrl')) {
           // Recursive function to mark active routes
           if (!function_exists('markActiveMenus')) {
               function markActiveMenus(&$node, $currentUrl, $baseUrlPrefix) {
-                  global $currentPage;
                   $isActive = false;
-                  
+
                   $menuRoute = formatMenuRouteUrl($node['route'], $baseUrlPrefix);
                   if ($menuRoute !== '#' && $menuRoute !== '') {
                       $normUrl = parse_url($currentUrl, PHP_URL_PATH) . (parse_url($currentUrl, PHP_URL_QUERY) ? '?' . parse_url($currentUrl, PHP_URL_QUERY) : '');
                       $normMenu = parse_url($menuRoute, PHP_URL_PATH) . (parse_url($menuRoute, PHP_URL_QUERY) ? '?' . parse_url($menuRoute, PHP_URL_QUERY) : '');
-                      
+
                       if (strpos($normUrl, ltrim($normMenu, '/')) !== false || strpos($normUrl, $normMenu) !== false) {
                           $isActive = true;
                       }
                   }
-                  
+
                   if (!$isActive && strpos($currentUrl, 'dashboard.php') !== false && strpos($currentUrl, '?page') === false) {
                       if (strcasecmp($node['menu_code'], 'DASHBOARD') === 0) {
                           $isActive = true;
                       }
                   }
 
-                  if (!$isActive && ($currentPage === 'subscription-plans' || strpos($currentUrl, 'subscription-plans') !== false || strpos($currentUrl, 'subscriptions/plans') !== false)) {
-                      if (strcasecmp($node['menu_code'], 'SUBSCRIPTION_PLANS') === 0) {
-                          $isActive = true;
-                      }
-                  }
-
-                  if (!$isActive && ($currentPage === 'customer-subscriptions' || strpos($currentUrl, 'customer-subscriptions') !== false || strpos($currentUrl, 'subscriptions/customers') !== false)) {
-                      if (strcasecmp($node['menu_code'], 'CUSTOMER_SUBSCRIPTIONS') === 0) {
-                          $isActive = true;
-                      }
-                  }
-                  
                   $node['is_active'] = $isActive;
                   $childActive = false;
-                  
+
                   foreach ($node['children'] as &$child) {
                       if (markActiveMenus($child, $currentUrl, $baseUrlPrefix)) {
                           $childActive = true;
                       }
                   }
-                  
+
                   if ($childActive) {
                       $node['is_active'] = true;
                   }
-                  
+
                   return $node['is_active'];
               }
           }
-          
+
           $activeMenuName = 'Cost Management & Manufacturing Analytics';
           foreach ($menuTree as &$rootMenu) {
               markActiveMenus($rootMenu, $currentUrl, $baseUrlPrefix);
           }
-          
+
           if (!function_exists('findActiveMenuName')) {
               function findActiveMenuName($nodes, &$activeName) {
                   foreach ($nodes as $node) {
@@ -975,7 +1278,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   $isActive = $node['is_active'];
                   $route = formatMenuRouteUrl($node['route'], $baseUrlPrefix);
                   $linkHref = ($route && $route !== '#') ? htmlspecialchars($route) : 'javascript:void(0);';
-                  
+
                   if ($depth === 0) {
                       if ($hasChildren) {
                           echo '<div class="nav-parent-group ' . ($isActive ? 'open' : '') . '">';
@@ -1029,7 +1332,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   }
               }
           }
-          
+
           foreach ($menuTree as $rootMenu) {
               renderRecursiveMenu($rootMenu, $baseUrlPrefix, 0);
           }
@@ -1044,39 +1347,143 @@ if (!function_exists('formatMenuRouteUrl')) {
 
   <!-- MAIN APPLICATION AREA -->
   <div class="app-main">
-    
+
     <!-- TOP HEADER -->
     <header class="top-header">
       <div class="page-heading">
-        <?php 
+        <?php
           echo htmlspecialchars($activeMenuName);
         ?>
       </div>
 
-      <div class="user-profile-menu">
+      <!-- ACTIVE ORGANIZATION & OPERATIONAL LOCATION CONTEXT HEADER -->
+      <div class="active-org-context-container">
+        <!-- COMPACT TRIGGER BUTTON (Prevents header squishing on long titles) -->
+        <button
+          type="button"
+          id="contextPopoverToggle"
+          class="context-trigger-pill-btn"
+          onclick="toggleContextPopover(event)"
+          title="Click to view Organization Scope & Switch Period"
+        >
+          <img src="<?php echo $baseUrlPrefix; ?>assets/images/context-switch-icon.png" alt="Switch Context" class="context-user-icon-img" />
+          <div class="context-trigger-summary">
+            <span class="context-trigger-scope">
+              <?php if ($activeCompanyId === 'ALL' && isPlatformAdmin($user['user_id'])): ?>
+                Global Platform Scope
+              <?php else: ?>
+                <?php echo htmlspecialchars($activeCompanyName ?: 'Select Context'); ?>
+              <?php endif; ?>
+            </span>
+            <span class="context-trigger-period-label">
+              <?php echo htmlspecialchars($activePeriodName ?: 'Select Period'); ?>
+            </span>
+          </div>
+          <svg class="context-trigger-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
 
-        <!-- ACTIVE COMPANY -->
-        <div class="active-company-context">
-          <div class="active-company-label">Company</div>
-
-          <div class="active-company-value">
-            <?php echo htmlspecialchars($activeCompanyName); ?>
-
-            <?php if (!empty($activeCompanyCode)): ?>
-              <span class="active-company-code">
-                <?php echo htmlspecialchars($activeCompanyCode); ?>
-              </span>
-            <?php endif; ?>
+        <!-- FLYOUT / POPUP MODAL -->
+        <div id="contextPopover" class="active-context-popover" onclick="event.stopPropagation();">
+          <div class="popover-header">
+            <div class="popover-title-wrap">
+              <img src="<?php echo $baseUrlPrefix; ?>assets/images/context-switch-icon.png" alt="Context" class="popover-header-icon" />
+              <div class="popover-title">Organization Scope</div>
+            </div>
+            <button type="button" class="popover-close-btn" onclick="toggleContextPopover(event)" title="Close">&times;</button>
           </div>
 
-          <a
-            href="<?php echo $baseUrlPrefix; ?>company-selection.php"
-            class="switch-company-link"
-          >
-            Switch
-          </a>
-        </div>
+          <div class="popover-hierarchy-box">
+            <?php if (!empty($activeCustomerName) && $activeCustomerName !== 'All Customers'): ?>
+              <div class="popover-hierarchy-row">
+                <span class="popover-h-label">Customer</span>
+                <span class="popover-h-value"><?php echo htmlspecialchars($activeCustomerName); ?></span>
+              </div>
+            <?php endif; ?>
 
+            <div class="popover-hierarchy-row">
+              <span class="popover-h-label">Company</span>
+              <span class="popover-h-value"><?php echo htmlspecialchars($activeCompanyName ?: 'All Companies'); ?></span>
+            </div>
+
+            <div class="popover-hierarchy-row">
+              <span class="popover-h-label">Division</span>
+              <span class="popover-h-value"><?php echo htmlspecialchars($activeDivisionName ?: 'All Divisions'); ?></span>
+            </div>
+
+            <?php
+              $loc = getActiveOperationalLocation();
+            ?>
+            <div class="popover-hierarchy-row">
+              <span class="popover-h-label">Location</span>
+              <span class="popover-h-value">
+                <?php if ($loc): ?>
+                  <?php echo htmlspecialchars($loc['name']); ?>
+                  <span class="popover-loc-badge <?php echo htmlspecialchars($loc['type']); ?>"><?php echo htmlspecialchars($loc['label']); ?></span>
+                <?php else: ?>
+                  All Locations
+                <?php endif; ?>
+              </span>
+            </div>
+
+            <a href="<?php echo $baseUrlPrefix; ?>customer-selection.php" class="btn-popover-switch-wizard" title="Switch Organization Hierarchy Scope">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"></polyline>
+                <polyline points="23 20 23 14 17 14"></polyline>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+              </svg>
+              <span>Switch Hierarchy Scope</span>
+            </a>
+          </div>
+
+          <div class="popover-period-card">
+            <div class="popover-period-header">
+              <span class="popover-period-title">Accounting Period</span>
+              <button type="button" class="btn-toggle-add-period" onclick="toggleAddPeriodForm()">
+                <span>+ Add Period</span>
+              </button>
+            </div>
+
+            <?php if (!empty($availablePeriods)): ?>
+              <select class="popover-period-select" onchange="switchActivePeriod(this.value)">
+                <?php foreach ($availablePeriods as $per): ?>
+                  <option value="<?php echo htmlspecialchars($per['period_id']); ?>" <?php echo ((string)$per['period_id'] === (string)$activePeriodId) ? 'selected' : ''; ?>>
+                    <?php echo htmlspecialchars($per['period_name']); ?> (<?php echo date('M Y', strtotime($per['start_date'])); ?>)
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            <?php else: ?>
+              <div style="font-size: 0.75rem; color: #64748B; margin-bottom: 6px;">No accounting periods found.</div>
+            <?php endif; ?>
+
+            <!-- INLINE ADD PERIOD FORM -->
+            <div id="popoverAddPeriodForm" class="popover-add-period-form">
+              <div style="font-size: 0.76rem; font-weight: 700; color: #033665; margin-bottom: 6px;">Create &amp; Select Period</div>
+              <form id="ajaxAddPeriodForm" onsubmit="submitPopoverNewPeriod(event)">
+                <input type="text" id="newPeriodName" name="period_name" placeholder="Period Name (e.g. October 2026)" required class="form-input-p" />
+                <div style="display: flex; gap: 6px;">
+                  <div style="flex: 1;">
+                    <label style="font-size: 0.68rem; color: #64748B; font-weight: 600; display: block; margin-bottom: 2px;">Start Date</label>
+                    <input type="date" id="newPeriodStart" name="start_date" required class="form-input-p" />
+                  </div>
+                  <div style="flex: 1;">
+                    <label style="font-size: 0.68rem; color: #64748B; font-weight: 600; display: block; margin-bottom: 2px;">End Date</label>
+                    <input type="date" id="newPeriodEnd" name="end_date" required class="form-input-p" />
+                  </div>
+                </div>
+                <div id="addPeriodErrorMsg" style="display: none; color: #DC2626; font-size: 0.72rem; font-weight: 600; margin-bottom: 6px;"></div>
+                <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px;">
+                  <button type="button" onclick="toggleAddPeriodForm()" style="padding: 4px 10px; font-size: 0.74rem; border: 1px solid #CBD5E1; background: #FFFFFF; border-radius: 5px; cursor: pointer;">Cancel</button>
+                  <button type="submit" id="btnSaveNewPeriod" style="padding: 4px 12px; font-size: 0.74rem; border: none; background: #0070BA; color: #FFFFFF; font-weight: 700; border-radius: 5px; cursor: pointer;">Save &amp; Activate</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="user-profile-menu">
         <div class="user-details">
           <div class="user-name"><?php echo htmlspecialchars(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? '')); ?></div>
           <div class="user-meta"><?php echo htmlspecialchars($user['email'] ?? ''); ?></div>
@@ -1228,7 +1635,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                 </thead>
                 <tbody>
                   <?php foreach ($mappingConfigsData as $map): ?>
-                    <?php 
+                    <?php
                       $conf = (float)$map['confidence'];
                       $confClass = $conf >= 90 ? 'conf-high' : ($conf >= 70 ? 'conf-med' : 'conf-low');
                     ?>
@@ -1796,6 +2203,376 @@ if (!function_exists('formatMenuRouteUrl')) {
           </div>
         </div>
 
+      <?php elseif ($currentPage === 'overview'): ?>
+        <!-- ============================================================
+             ORGANIZATION OVERVIEW (CUSTOMER MANAGEMENT HIERARCHY TREE)
+             ============================================================ -->
+        <section class="section-card">
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <div style="font-size: 0.8rem; color: #00CFEF; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                Customer Management &amp; Organization Hierarchy
+              </div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem;">Organization Overview</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Visual 5-level dependent hierarchy tree: Customer &rarr; Company &rarr; Division &rarr; Plant &rarr; Warehouse.</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-secondary" onclick="toggleExpandAllTree(true)">
+                <span>Expand All</span>
+              </button>
+              <button type="button" class="btn-secondary" onclick="toggleExpandAllTree(false)">
+                <span>Collapse All</span>
+              </button>
+              <button type="button" class="btn-primary" onclick="loadHierarchyTree()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh Tree</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 5-LEVEL KPI CARDS -->
+          <div class="grid-cards" style="margin-bottom: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #00CFEF;">
+              <div class="stat-label">Customers</div>
+              <div class="stat-number" id="kpiTreeCustomers" style="color: #00CFEF;">-</div>
+              <div class="stat-desc">Top-level Tenants</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #3B82F6;">
+              <div class="stat-label">Companies</div>
+              <div class="stat-number" id="kpiTreeCompanies" style="color: #3B82F6;">-</div>
+              <div class="stat-desc">Legal Entities</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #8B5CF6;">
+              <div class="stat-label">Divisions</div>
+              <div class="stat-number" id="kpiTreeDivisions" style="color: #8B5CF6;">-</div>
+              <div class="stat-desc">Business Units</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #10B981;">
+              <div class="stat-label">Plants</div>
+              <div class="stat-number" id="kpiTreePlants" style="color: #10B981;">-</div>
+              <div class="stat-desc">Manufacturing/Facilities</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #F59E0B;">
+              <div class="stat-label">Warehouses</div>
+              <div class="stat-number" id="kpiTreeWarehouses" style="color: #F59E0B;">-</div>
+              <div class="stat-desc">Storage Locations</div>
+            </div>
+          </div>
+
+          <!-- FILTER BAR -->
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
+            <div style="flex: 1; min-width: 240px;">
+              <input type="text" id="treeSearchInput" class="form-input" placeholder="Search by customer, company, division, plant, or warehouse name..." oninput="filterTreeNodes()">
+            </div>
+            <div style="min-width: 200px;">
+              <select id="treeCustomerFilter" class="form-select" onchange="loadHierarchyTree()">
+                <option value="">All Customers</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- TREE CONTAINER -->
+          <div id="treeContainer" style="background: rgba(3, 54, 101, 0.4); border: 1px solid var(--color-border); border-radius: 12px; padding: 1.5rem; min-height: 350px;">
+            <div style="text-align: center; color: var(--color-secondary-text); padding: 3rem;">
+              Loading organization hierarchy tree from database...
+            </div>
+          </div>
+        </section>
+
+        <!-- TREE SCRIPTS -->
+        <script>
+          let rawTreeData = [];
+
+          document.addEventListener('DOMContentLoaded', function() {
+            if (typeof loadHierarchyTree === 'function') {
+              loadHierarchyTree();
+            }
+          });
+
+          function loadHierarchyTree() {
+            const container = document.getElementById('treeContainer');
+            const custFilter = document.getElementById('treeCustomerFilter').value;
+            const searchVal = document.getElementById('treeSearchInput').value;
+
+            container.innerHTML = '<div style="text-align:center; padding: 3rem; color: var(--color-secondary-text);">Fetching live hierarchy structure...</div>';
+
+            fetch(`${window.cost360BaseUrlPrefix}organization/overview/api.php?action=tree&customer_id=${encodeURIComponent(custFilter)}&search=${encodeURIComponent(searchVal)}`)
+              .then(res => res.json())
+              .then(data => {
+                if (!data.success) {
+                  container.innerHTML = `<div style="color: #F87171; text-align: center; padding: 2rem;">Error: ${data.error || 'Failed to load hierarchy tree.'}</div>`;
+                  return;
+                }
+
+                rawTreeData = data.tree || [];
+
+                // Update KPI counts
+                document.getElementById('kpiTreeCustomers').textContent = data.kpis.customers || 0;
+                document.getElementById('kpiTreeCompanies').textContent = data.kpis.companies || 0;
+                document.getElementById('kpiTreeDivisions').textContent = data.kpis.divisions || 0;
+                document.getElementById('kpiTreePlants').textContent = data.kpis.plants || 0;
+                document.getElementById('kpiTreeWarehouses').textContent = data.kpis.warehouses || 0;
+
+                // Populate Customer Filter if empty
+                const custSelect = document.getElementById('treeCustomerFilter');
+                if (custSelect.options.length <= 1 && data.tree) {
+                  custSelect.innerHTML = '<option value="">All Customers</option>';
+                  data.tree.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.customer_id;
+                    opt.textContent = `${c.customer_code} - ${c.customer_name}`;
+                    if (custFilter == c.customer_id) opt.selected = true;
+                    custSelect.appendChild(opt);
+                  });
+                }
+
+                renderTreeNodes(rawTreeData);
+              })
+              .catch(err => {
+                container.innerHTML = `<div style="color: #F87171; text-align: center; padding: 2rem;">Connection Error: ${err.message}</div>`;
+              });
+          }
+
+          function renderTreeNodes(tree) {
+            const container = document.getElementById('treeContainer');
+            if (!tree || tree.length === 0) {
+              container.innerHTML = '<div style="text-align:center; padding: 3rem; color: var(--color-secondary-text);">No organization structures found matching criteria.</div>';
+              return;
+            }
+
+            let html = '<div class="org-tree-root" style="display: flex; flex-direction: column; gap: 1rem;">';
+
+            tree.forEach(cust => {
+              const custActive = cust.status ? cust.status.toUpperCase() === 'ACTIVE' : true;
+              html += `
+                <div class="tree-node customer-node" style="border: 1px solid rgba(0, 207, 239, 0.3); border-radius: 10px; background: rgba(8, 120, 209, 0.15); overflow: hidden;">
+                  <div class="tree-node-header" onclick="toggleTreeNode(this)" style="padding: 0.9rem 1.2rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                      <span class="chevron" style="transition: transform 0.2s ease; display: inline-block; color: #00CFEF;">&#9654;</span>
+                      <span style="background: rgba(0,207,239,0.2); color: #00CFEF; padding: 3px 8px; border-radius: 5px; font-size: 0.75rem; font-weight: 800;">CUSTOMER</span>
+                      <strong style="color: #FFF; font-size: 1.05rem;">${escapeHtml(cust.customer_name)}</strong>
+                      <span style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">(${escapeHtml(cust.customer_code)})</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                      <span style="font-size: 0.8rem; background: rgba(255,255,255,0.1); padding: 3px 10px; border-radius: 12px; color: rgba(255,255,255,0.8);">
+                        ${cust.companies ? cust.companies.length : 0} Companies
+                      </span>
+                      <span class="badge ${custActive ? 'badge-success' : 'badge-inactive'}">${custActive ? 'Active' : 'Inactive'}</span>
+                    </div>
+                  </div>
+
+                  <div class="tree-node-children" style="display: none; padding: 0.5rem 1rem 1rem 2.2rem; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(3, 54, 101, 0.3);">
+              `;
+
+              if (cust.companies && cust.companies.length > 0) {
+                cust.companies.forEach(comp => {
+                  const compActive = comp.status ? comp.status.toUpperCase() === 'ACTIVE' : true;
+                  html += `
+                    <div class="tree-node company-node" style="margin-top: 0.75rem; border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; background: rgba(6, 61, 112, 0.6); overflow: hidden;">
+                      <div class="tree-node-header" onclick="toggleTreeNode(this)" style="padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                          <span class="chevron" style="transition: transform 0.2s ease; display: inline-block; color: #3B82F6;">&#9654;</span>
+                          <span style="background: rgba(59,130,246,0.2); color: #60A5FA; padding: 2px 7px; border-radius: 4px; font-size: 0.7rem; font-weight: 700;">COMPANY</span>
+                          <span style="color: #FFF; font-weight: 600;">${escapeHtml(comp.company_name)}</span>
+                          <span style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">[${escapeHtml(comp.company_code)}]</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                          <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7);">${comp.divisions ? comp.divisions.length : 0} Divisions</span>
+                          <span class="badge ${compActive ? 'badge-success' : 'badge-inactive'}">${compActive ? 'Active' : 'Inactive'}</span>
+                        </div>
+                      </div>
+
+                      <div class="tree-node-children" style="display: none; padding: 0.5rem 1rem 0.75rem 2rem; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(3, 54, 101, 0.5);">
+                  `;
+
+                  if (comp.divisions && comp.divisions.length > 0) {
+                    comp.divisions.forEach(div => {
+                      const divActive = div.status ? div.status.toUpperCase() === 'ACTIVE' : true;
+                      html += `
+                        <div class="tree-node division-node" style="margin-top: 0.5rem; border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 6px; background: rgba(15, 23, 42, 0.5); overflow: hidden;">
+                          <div class="tree-node-header" onclick="toggleTreeNode(this)" style="padding: 0.65rem 0.85rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                              <span class="chevron" style="transition: transform 0.2s ease; display: inline-block; color: #8B5CF6;">&#9654;</span>
+                              <span style="background: rgba(139,92,246,0.2); color: #C084FC; padding: 2px 6px; border-radius: 4px; font-size: 0.68rem; font-weight: 700;">DIVISION</span>
+                              <span style="color: #E2E8F0; font-weight: 600; font-size: 0.9rem;">${escapeHtml(div.division_name)}</span>
+                              <span style="color: rgba(255,255,255,0.4); font-size: 0.75rem;">[${escapeHtml(div.division_code)}]</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                              <span style="font-size: 0.72rem; color: rgba(255,255,255,0.6);">${div.plants ? div.plants.length : 0} Plants</span>
+                              <span class="badge ${divActive ? 'badge-success' : 'badge-inactive'}">${divActive ? 'Active' : 'Inactive'}</span>
+                            </div>
+                          </div>
+
+                          <div class="tree-node-children" style="display: none; padding: 0.4rem 0.85rem 0.6rem 1.8rem; background: rgba(3, 54, 101, 0.7);">
+                      `;
+
+                      if (div.plants && div.plants.length > 0) {
+                        div.plants.forEach(plant => {
+                          const plantActive = plant.status ? plant.status.toUpperCase() === 'ACTIVE' : true;
+                          html += `
+                            <div class="tree-node plant-node" style="margin-top: 0.4rem; border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; background: rgba(6, 78, 59, 0.3); overflow: hidden;">
+                              <div class="tree-node-header" onclick="toggleTreeNode(this)" style="padding: 0.55rem 0.75rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                  <span class="chevron" style="transition: transform 0.2s ease; display: inline-block; color: #10B981;">&#9654;</span>
+                                  <span style="background: rgba(16,185,129,0.2); color: #34D399; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;">PLANT</span>
+                                  <span style="color: #F1F5F9; font-weight: 600; font-size: 0.85rem;">${escapeHtml(plant.plant_name)}</span>
+                                  <span style="color: rgba(255,255,255,0.4); font-size: 0.75rem;">[${escapeHtml(plant.plant_code)}]</span>
+                                  ${plant.location ? `<span style="font-size: 0.7rem; color: #94A3B8;">&bull; ${escapeHtml(plant.location)}</span>` : ''}
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                  <span style="font-size: 0.7rem; color: rgba(255,255,255,0.6);">${plant.warehouses ? plant.warehouses.length : 0} Warehouses</span>
+                                  <span class="badge ${plantActive ? 'badge-success' : 'badge-inactive'}">${plantActive ? 'Active' : 'Inactive'}</span>
+                                </div>
+                              </div>
+
+                              <div class="tree-node-children" style="display: none; padding: 0.4rem 0.75rem 0.5rem 1.6rem; background: rgba(15, 23, 42, 0.8);">
+                          `;
+
+                          if (plant.warehouses && plant.warehouses.length > 0) {
+                            plant.warehouses.forEach(wh => {
+                              const whActive = wh.status ? wh.status.toUpperCase() === 'ACTIVE' : true;
+                              html += `
+                                <div class="warehouse-leaf" style="margin-top: 0.3rem; padding: 0.4rem 0.75rem; border-radius: 4px; background: rgba(245, 158, 11, 0.1); border: 1px dashed rgba(245, 158, 11, 0.3); display: flex; align-items: center; justify-content: space-between;">
+                                  <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span style="background: rgba(245, 158, 11, 0.2); color: #FBBF24; padding: 1px 5px; border-radius: 3px; font-size: 0.62rem; font-weight: 700;">WAREHOUSE</span>
+                                    <span style="color: #FDF6B2; font-weight: 500; font-size: 0.82rem;">${escapeHtml(wh.warehouse_name)}</span>
+                                    <span style="color: rgba(255,255,255,0.5); font-size: 0.72rem;">[${escapeHtml(wh.warehouse_code)}]</span>
+                                  </div>
+                                  <span class="badge ${whActive ? 'badge-success' : 'badge-inactive'}" style="font-size: 0.65rem;">${whActive ? 'Active' : 'Inactive'}</span>
+                                </div>
+                              `;
+                            });
+                          } else {
+                            html += '<div style="color: rgba(255,255,255,0.4); font-size: 0.75rem; padding: 0.3rem 0;">No warehouses defined.</div>';
+                          }
+
+                          html += '</div></div>'; // plant children & node end
+                        });
+                      } else {
+                        html += '<div style="color: rgba(255,255,255,0.4); font-size: 0.75rem; padding: 0.3rem 0;">No plants defined under this division.</div>';
+                      }
+
+                      html += '</div></div>'; // div children & node end
+                    });
+                  } else {
+                    html += '<div style="color: rgba(255,255,255,0.4); font-size: 0.75rem; padding: 0.3rem 0;">No divisions defined under this company.</div>';
+                  }
+
+                  html += '</div></div>'; // company children & node end
+                });
+              } else {
+                html += '<div style="color: rgba(255,255,255,0.4); font-size: 0.8rem; padding: 0.4rem 0;">No companies assigned to this customer.</div>';
+              }
+
+              html += '</div></div>'; // customer children & node end
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+          }
+
+          function toggleTreeNode(headerEl) {
+            const childrenEl = headerEl.nextElementSibling;
+            const chevron = headerEl.querySelector('.chevron');
+            if (!childrenEl) return;
+
+            if (childrenEl.style.display === 'none' || !childrenEl.style.display) {
+              childrenEl.style.display = 'block';
+              if (chevron) chevron.style.transform = 'rotate(90deg)';
+            } else {
+              childrenEl.style.display = 'none';
+              if (chevron) chevron.style.transform = 'rotate(0deg)';
+            }
+          }
+
+          function toggleExpandAllTree(expand) {
+            const allChildren = document.querySelectorAll('#treeContainer .tree-node-children');
+            const allChevrons = document.querySelectorAll('#treeContainer .chevron');
+            allChildren.forEach(el => {
+              el.style.display = expand ? 'block' : 'none';
+            });
+            allChevrons.forEach(ch => {
+              ch.style.transform = expand ? 'rotate(90deg)' : 'rotate(0deg)';
+            });
+          }
+
+          function filterTreeNodes() {
+            const query = document.getElementById('treeSearchInput').value.toLowerCase().trim();
+            if (!query) {
+              renderTreeNodes(rawTreeData);
+              return;
+            }
+
+            // Filter tree
+            const filtered = [];
+            rawTreeData.forEach(cust => {
+              let custMatch = cust.customer_name.toLowerCase().includes(query) || cust.customer_code.toLowerCase().includes(query);
+              let matchedCompanies = [];
+
+              if (cust.companies) {
+                cust.companies.forEach(comp => {
+                  let compMatch = comp.company_name.toLowerCase().includes(query) || comp.company_code.toLowerCase().includes(query);
+                  let matchedDivs = [];
+
+                  if (comp.divisions) {
+                    comp.divisions.forEach(div => {
+                      let divMatch = div.division_name.toLowerCase().includes(query) || div.division_code.toLowerCase().includes(query);
+                      let matchedPlants = [];
+
+                      if (div.plants) {
+                        div.plants.forEach(p => {
+                          let plantMatch = p.plant_name.toLowerCase().includes(query) || p.plant_code.toLowerCase().includes(query) || (p.location && p.location.toLowerCase().includes(query));
+                          let matchedWhs = [];
+
+                          if (p.warehouses) {
+                            p.warehouses.forEach(w => {
+                              if (w.warehouse_name.toLowerCase().includes(query) || w.warehouse_code.toLowerCase().includes(query)) {
+                                matchedWhs.push(w);
+                              }
+                            });
+                          }
+
+                          if (plantMatch || matchedWhs.length > 0) {
+                            matchedPlants.push(Object.assign({}, p, { warehouses: matchedWhs.length > 0 ? matchedWhs : p.warehouses }));
+                          }
+                        });
+                      }
+
+                      if (divMatch || matchedPlants.length > 0) {
+                        matchedDivs.push(Object.assign({}, div, { plants: matchedPlants.length > 0 ? matchedPlants : div.plants }));
+                      }
+                    });
+                  }
+
+                  if (compMatch || matchedDivs.length > 0) {
+                    matchedCompanies.push(Object.assign({}, comp, { divisions: matchedDivs.length > 0 ? matchedDivs : comp.divisions }));
+                  }
+                });
+              }
+
+              if (custMatch || matchedCompanies.length > 0) {
+                filtered.push(Object.assign({}, cust, { companies: matchedCompanies.length > 0 ? matchedCompanies : cust.companies }));
+              }
+            });
+
+            renderTreeNodes(filtered);
+            toggleExpandAllTree(true);
+          }
+
+          function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+          }
+        </script>
+
       <?php elseif ($currentPage === 'users'): ?>
         <!-- ============================================================
              USER MASTER PAGE MODULE (DYNAMIC FROM NEON DB)
@@ -1835,7 +2612,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                <span>+ Add User</span>
+                <span>Add User</span>
               </button>
               <button type="button" class="btn-secondary" onclick="exportUsersData()">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
@@ -2499,6 +3276,1164 @@ if (!function_exists('formatMenuRouteUrl')) {
           function escapeJs(str) {
             if (!str) return '';
             return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
+          }
+        </script>
+
+      <?php elseif ($currentPage === 'roles'): ?>
+        <!-- ============================================================
+             ROLE MASTER PAGE MODULE (DYNAMIC FROM NEON DB)
+             ============================================================ -->
+        <style>
+          /* Modern Toggle Switch */
+          .cost360-toggle-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            cursor: pointer;
+            user-select: none;
+            padding: 2px;
+          }
+          .cost360-toggle-track {
+            width: 44px;
+            height: 24px;
+            background-color: #CBD5E1;
+            border-radius: 9999px;
+            position: relative;
+            transition: background-color 0.25s ease, box-shadow 0.2s ease;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.12);
+            flex-shrink: 0;
+          }
+          .cost360-toggle-track.active {
+            background: linear-gradient(135deg, #00A88F 0%, #00CFEF 100%);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1), 0 0 6px rgba(0, 207, 239, 0.35);
+          }
+          .cost360-toggle-thumb {
+            width: 18px;
+            height: 18px;
+            background-color: #FFFFFF;
+            border-radius: 50%;
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+          }
+          .cost360-toggle-track.active .cost360-toggle-thumb {
+            transform: translateX(20px);
+          }
+          .cost360-toggle-label {
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+          }
+          .cost360-toggle-label.active {
+            color: #00A88F;
+          }
+          .cost360-toggle-label.inactive {
+            color: #64748B;
+          }
+
+          /* Matrix Permissions Table */
+          .perm-matrix-wrapper {
+            max-height: 58vh;
+            overflow-y: auto;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-input);
+          }
+          .perm-matrix-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.84rem;
+          }
+          .perm-matrix-table th {
+            position: sticky;
+            top: 0;
+            background: var(--color-soft-blue);
+            color: var(--color-primary-text);
+            font-weight: 700;
+            padding: 0.75rem 0.65rem;
+            border-bottom: 2px solid var(--color-border);
+            z-index: 2;
+            text-align: center;
+          }
+          .perm-matrix-table th.th-menu {
+            text-align: left;
+            min-width: 230px;
+          }
+          .perm-matrix-table td {
+            padding: 0.6rem 0.65rem;
+            border-bottom: 1px solid var(--color-border);
+            vertical-align: middle;
+          }
+          .perm-matrix-table tr:hover td {
+            background-color: #F8FAFC;
+          }
+          .perm-check-cell {
+            text-align: center;
+          }
+          .perm-checkbox {
+            width: 17px;
+            height: 17px;
+            cursor: pointer;
+            accent-color: var(--color-primary-blue);
+            vertical-align: middle;
+          }
+          .th-clickable {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.15s ease;
+          }
+          .th-clickable:hover {
+            color: var(--color-primary-blue);
+            background: #D9EEF9;
+          }
+        </style>
+
+        <!-- KPI STATS CARDS -->
+        <section class="grid-cards" style="margin-bottom: 1.5rem;">
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Total Roles</span></div>
+            <div class="stat-number" id="kpiTotalRoles">0</div>
+            <div class="stat-desc">All system defined roles</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Active Roles</span></div>
+            <div class="stat-number" id="kpiActiveRoles" style="color: var(--color-bright-cyan);">0</div>
+            <div class="stat-desc">Currently enabled roles</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Inactive Roles</span></div>
+            <div class="stat-number" id="kpiInactiveRoles" style="color: #DC2626;">0</div>
+            <div class="stat-desc">Deactivated roles</div>
+          </div>
+        </section>
+
+        <!-- ROLE MASTER MAIN SECTION -->
+        <section class="section-card">
+          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h2 class="section-title" style="margin-bottom: 0.2rem;">Role Master</h2>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage system roles and their access permissions.</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button type="button" class="btn-primary" onclick="openAddRoleModal()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Add Role</span>
+              </button>
+              <button type="button" class="btn-secondary" onclick="loadRolesTable()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- SEARCH & FILTERS TOOLBAR -->
+          <div style="display: flex; gap: 1rem; align-items: center; margin-top: 1.25rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 220px; position: relative;">
+              <input type="text" id="roleSearchInput" class="cost360-select" placeholder="Search roles..." onkeyup="handleRoleSearchKeyup(event)" style="padding-left: 2.25rem;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--color-secondary-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none;">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+
+            <div style="min-width: 180px;">
+              <select id="roleCategoryFilter" class="cost360-select" onchange="loadRolesTable()">
+                <option value="ALL">All Categories</option>
+              </select>
+            </div>
+
+            <div style="min-width: 150px;">
+              <select id="roleStatusFilter" class="cost360-select" onchange="loadRolesTable()">
+                <option value="ALL">All Statuses</option>
+                <option value="Active">ACTIVE</option>
+                <option value="Inactive">INACTIVE</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- FEEDBACK TOAST BANNER -->
+          <div id="roleMasterToast" style="display: none; padding: 0.85rem 1.25rem; border-radius: var(--radius-input); margin-bottom: 1rem; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- ROLES LIST TABLE -->
+          <div class="table-responsive">
+            <table id="rolesTable">
+              <thead>
+                <tr>
+                  <th style="min-width: 160px;">Role Code</th>
+                  <th style="min-width: 200px;">Role Name</th>
+                  <th style="min-width: 160px;">Category</th>
+                  <th style="min-width: 220px;">Description</th>
+                  <th style="min-width: 140px;">Status</th>
+                  <th style="text-align: right; min-width: 260px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="rolesTableBody">
+                <tr>
+                  <td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--color-secondary-text);">
+                    Loading system roles from Neon database...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ADD ROLE MODAL -->
+        <div id="addRoleModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 540px;">
+            <div class="modal-header">
+              <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);">+ Add New Role</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('addRoleModal')">&times;</button>
+            </div>
+            <form id="addRoleForm" onsubmit="submitAddRole(event)" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div id="addRoleError" style="display: none; padding: 0.65rem 0.85rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-size: 0.82rem; font-weight: 600;"></div>
+
+              <div>
+                <label class="dropdown-label">Role Category *</label>
+                <select name="category_id" id="addRoleCategorySelect" class="cost360-select" required>
+                  <option value="">Select Category...</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Role Code *</label>
+                <input type="text" name="role_code" id="addRoleCode" class="cost360-select" required placeholder="e.g. COMPANY_ADMIN" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_')">
+                <span style="font-size: 0.75rem; color: var(--color-secondary-text); margin-top: 0.2rem; display: block;">Uppercase letters, numbers, and underscores (e.g. PLATFORM_ADMIN).</span>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Role Name *</label>
+                <input type="text" name="role_name" id="addRoleName" class="cost360-select" required placeholder="e.g. Company Administrator">
+              </div>
+
+              <div>
+                <label class="dropdown-label">Description</label>
+                <textarea name="description" id="addRoleDescription" class="cost360-select" rows="3" placeholder="Brief description of the role's scope and responsibilities" style="resize: vertical;"></textarea>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Status *</label>
+                <select name="status" id="addRoleStatus" class="cost360-select" required>
+                  <option value="Active" selected>Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('addRoleModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="btnSubmitAddRole">Create Role</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- EDIT ROLE MODAL -->
+        <div id="editRoleModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 540px;">
+            <div class="modal-header">
+              <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);">Edit Role Details</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('editRoleModal')">&times;</button>
+            </div>
+            <form id="editRoleForm" onsubmit="submitEditRole(event)" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+              <input type="hidden" name="role_id" id="editRoleId">
+              <div id="editRoleError" style="display: none; padding: 0.65rem 0.85rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-size: 0.82rem; font-weight: 600;"></div>
+
+              <div>
+                <label class="dropdown-label">Role Category *</label>
+                <select name="category_id" id="editRoleCategorySelect" class="cost360-select" required>
+                  <option value="">Select Category...</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Role Code (Read-Only)</label>
+                <input type="text" id="editRoleCode" class="cost360-select" readonly style="background: #F1F5F9; color: var(--color-secondary-text); cursor: not-allowed; font-weight: 700;">
+                <span style="font-size: 0.75rem; color: var(--color-secondary-text); margin-top: 0.2rem; display: block;">Role code cannot be modified as it is referenced across system access policies.</span>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Role Name *</label>
+                <input type="text" name="role_name" id="editRoleName" class="cost360-select" required>
+              </div>
+
+              <div>
+                <label class="dropdown-label">Description</label>
+                <textarea name="description" id="editRoleDescription" class="cost360-select" rows="3" style="resize: vertical;"></textarea>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('editRoleModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="btnSubmitEditRole">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- VIEW ROLE MODAL -->
+        <div id="viewRoleModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 560px;">
+            <div class="modal-header">
+              <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);">Role Details</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('viewRoleModal')">&times;</button>
+            </div>
+            <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; background: var(--color-soft-blue); padding: 1.25rem; border-radius: var(--radius-input);">
+                <div>
+                  <span style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); display: block; margin-bottom: 0.25rem;">Role Code</span>
+                  <code id="viewRoleCode" style="font-size: 0.95rem; font-weight: 700; color: var(--color-primary-blue);"></code>
+                </div>
+                <div>
+                  <span style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); display: block; margin-bottom: 0.25rem;">Status</span>
+                  <span id="viewRoleStatusBadge"></span>
+                </div>
+              </div>
+
+              <div>
+                <span style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); display: block; margin-bottom: 0.25rem;">Role Name</span>
+                <div id="viewRoleName" style="font-size: 1.05rem; font-weight: 700; color: var(--color-primary-text);"></div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                  <span style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); display: block; margin-bottom: 0.25rem;">Category</span>
+                  <div id="viewRoleCategory" style="font-size: 0.9rem; font-weight: 600; color: var(--color-primary-text);"></div>
+                </div>
+                <div>
+                  <span style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); display: block; margin-bottom: 0.25rem;">Assigned Users</span>
+                  <div id="viewRoleUsers" style="font-size: 0.9rem; font-weight: 600; color: var(--color-primary-text);"></div>
+                </div>
+              </div>
+
+              <div>
+                <span style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); display: block; margin-bottom: 0.25rem;">Description</span>
+                <div id="viewRoleDescription" style="font-size: 0.88rem; color: var(--color-primary-text); line-height: 1.5; background: #F8FAFC; border: 1px solid var(--color-border); padding: 0.75rem; border-radius: 6px; min-height: 48px;"></div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; border-top: 1px dashed var(--color-border); padding-top: 0.75rem; font-size: 0.8rem; color: var(--color-secondary-text);">
+                <div>Created: <span id="viewRoleCreatedAt" style="font-weight: 600; color: var(--color-primary-text);"></span></div>
+                <div>Updated: <span id="viewRoleUpdatedAt" style="font-weight: 600; color: var(--color-primary-text);"></span></div>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('viewRoleModal')">Close</button>
+                <button type="button" class="btn-secondary" id="btnViewModalEdit">Edit Role</button>
+                <button type="button" class="btn-primary" id="btnViewModalPerms">Manage Permissions</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STATUS CONFIRMATION MODAL -->
+        <div id="roleConfirmStatusModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 440px;">
+            <div class="modal-header">
+              <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary-text);" id="roleConfirmStatusTitle">Change Role Status?</h3>
+              <button type="button" class="modal-close-btn" onclick="closeModal('roleConfirmStatusModal')">&times;</button>
+            </div>
+            <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+              <p id="roleConfirmStatusMessage" style="font-size: 0.92rem; color: var(--color-primary-text); margin: 0; line-height: 1.5;">
+                Are you sure you want to change the status of this role?
+              </p>
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('roleConfirmStatusModal')">Cancel</button>
+                <button type="button" class="btn-primary" id="roleConfirmSubmitBtn" onclick="executeRoleStatusToggle()">Confirm</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MANAGE PERMISSIONS MODAL -->
+        <div id="rolePermissionsModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 1200px; width: 96%; max-height: 90vh;">
+            <div class="modal-header" style="flex-shrink: 0;">
+              <div>
+                <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--color-primary-text); margin-bottom: 0.2rem;">Manage Permissions</h3>
+                <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--color-secondary-text);">
+                  Role: <code id="permModalRoleCode" class="role-badge" style="font-size: 0.8rem;"></code>
+                  <span id="permModalRoleName" style="color: var(--color-primary-text); font-weight: 700;"></span>
+                </div>
+              </div>
+              <button type="button" class="modal-close-btn" onclick="closeModal('rolePermissionsModal')">&times;</button>
+            </div>
+
+            <!-- Matrix Search & Quick Actions -->
+            <div style="padding: 0.75rem 1.5rem; background: #F8FAFC; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; flex-shrink: 0;">
+              <div style="flex: 1; min-width: 250px; position: relative;">
+                <input type="text" id="permSearchInput" class="cost360-select" placeholder="Filter menus in matrix..." onkeyup="filterPermissionsMatrix()" style="padding-left: 2rem; font-size: 0.82rem; padding-top: 0.45rem; padding-bottom: 0.45rem;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--color-secondary-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%); pointer-events: none;">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+              <div style="display: flex; gap: 0.5rem;">
+                <button type="button" class="btn-secondary" style="font-size: 0.78rem; padding: 0.4rem 0.75rem;" onclick="toggleAllMatrixPerms(true)">Select All</button>
+                <button type="button" class="btn-secondary" style="font-size: 0.78rem; padding: 0.4rem 0.75rem;" onclick="toggleAllMatrixPerms(false)">Clear All</button>
+              </div>
+            </div>
+
+            <!-- Matrix Table Container -->
+            <div class="modal-body-tablewrap" style="flex: 1; overflow-y: auto; padding: 0;">
+              <div id="permModalLoading" style="text-align: center; padding: 3.5rem; color: var(--color-secondary-text);">
+                Loading role permissions matrix from database...
+              </div>
+              <div id="permModalError" style="display: none; margin: 1.5rem; padding: 1rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-weight: 600;"></div>
+
+              <div class="perm-matrix-wrapper" id="permMatrixWrapper" style="display: none; border: none; border-radius: 0; max-height: none;">
+                <table class="perm-matrix-table" id="permMatrixTable">
+                  <thead>
+                    <tr>
+                      <th class="th-menu">Menu / Module</th>
+                      <th style="min-width: 80px;">Type</th>
+                      <th class="th-clickable" title="Click to toggle VIEW for all" onclick="toggleColumnPerm('can_view')">VIEW</th>
+                      <th class="th-clickable" title="Click to toggle CREATE for all" onclick="toggleColumnPerm('can_create')">CREATE</th>
+                      <th class="th-clickable" title="Click to toggle EDIT for all" onclick="toggleColumnPerm('can_edit')">EDIT</th>
+                      <th class="th-clickable" title="Click to toggle DELETE for all" onclick="toggleColumnPerm('can_delete')">DELETE</th>
+                      <th class="th-clickable" title="Click to toggle UPLOAD for all" onclick="toggleColumnPerm('can_upload')">UPLOAD</th>
+                      <th class="th-clickable" title="Click to toggle DOWNLOAD for all" onclick="toggleColumnPerm('can_download')">DOWNLOAD</th>
+                      <th class="th-clickable" title="Click to toggle APPROVE for all" onclick="toggleColumnPerm('can_approve')">APPROVE</th>
+                      <th class="th-clickable" title="Click to toggle EXPORT for all" onclick="toggleColumnPerm('can_export')">EXPORT</th>
+                      <th class="th-clickable" title="Click to toggle PRINT for all" onclick="toggleColumnPerm('can_print')">PRINT</th>
+                      <th class="th-clickable" title="Click to toggle CONFIGURE for all" onclick="toggleColumnPerm('can_configure')">CONFIGURE</th>
+                      <th style="min-width: 75px;">Row</th>
+                    </tr>
+                  </thead>
+                  <tbody id="permMatrixTbody">
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Permissions Modal Footer -->
+            <div class="modal-footer" style="flex-shrink: 0; background: #fff; gap: 0.75rem;">
+              <button type="button" class="btn-secondary" onclick="closeModal('rolePermissionsModal')">Cancel</button>
+              <button type="button" class="btn-primary" id="btnSavePermissions" onclick="saveRolePermissions()">
+                Save Permissions
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          // ============================================================
+          // ROLE MASTER MODULE JAVASCRIPT
+          // ============================================================
+          let roleSearchDebounceTimer = null;
+          let availableCategoriesCache = [];
+          let currentViewRoleId = null;
+          let pendingToggleRoleId = null;
+          let pendingToggleNewStatus = null;
+          let currentPermsRoleId = null;
+          let currentPermsList = [];
+
+          function getRoleApiUrl(actionQuery) {
+            let apiEndpoint = 'admin/roles/api.php';
+            const path = window.location.pathname;
+            if (path.includes('/admin/roles') || path.includes('/administration/roles')) {
+              apiEndpoint = 'api.php';
+            }
+            if (actionQuery) {
+              if (actionQuery.startsWith('?') || actionQuery.startsWith('&')) {
+                apiEndpoint += actionQuery;
+              } else {
+                apiEndpoint += '?' + actionQuery;
+              }
+            }
+            return apiEndpoint;
+          }
+
+          function showRoleToast(msg, isSuccess) {
+            const toast = document.getElementById('roleMasterToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.style.background = isSuccess ? '#D1FAE5' : '#FEE2E2';
+            toast.style.color = isSuccess ? '#065F46' : '#991B1B';
+            toast.style.border = isSuccess ? '1px solid #A7F3D0' : '1px solid #FCA5A5';
+            toast.style.display = 'block';
+            setTimeout(() => {
+              toast.style.display = 'none';
+            }, 4500);
+          }
+
+          function initRoleMasterPage() {
+            loadRoleCategories().then(() => {
+              loadRolesTable();
+            });
+          }
+
+          async function loadRoleCategories() {
+            try {
+              const res = await fetch(getRoleApiUrl('action=categories'));
+              const data = await res.json();
+              if (data.success && Array.isArray(data.categories)) {
+                availableCategoriesCache = data.categories;
+                populateRoleCategoryDropdowns(data.categories);
+              }
+            } catch (err) {
+              console.error('Error loading role categories:', err);
+            }
+          }
+
+          function populateRoleCategoryDropdowns(categories) {
+            const filterSelect = document.getElementById('roleCategoryFilter');
+            const addSelect = document.getElementById('addRoleCategorySelect');
+            const editSelect = document.getElementById('editRoleCategorySelect');
+
+            const optionsHtml = categories.map(c =>
+              `<option value="${c.category_id}">${escapeHtml(c.category_name)}</option>`
+            ).join('');
+
+            if (filterSelect) {
+              filterSelect.innerHTML = '<option value="ALL">All Categories</option>' + optionsHtml;
+            }
+            if (addSelect) {
+              addSelect.innerHTML = '<option value="">Select Category...</option>' + optionsHtml;
+            }
+            if (editSelect) {
+              editSelect.innerHTML = '<option value="">Select Category...</option>' + optionsHtml;
+            }
+          }
+
+          function handleRoleSearchKeyup(e) {
+            clearTimeout(roleSearchDebounceTimer);
+            roleSearchDebounceTimer = setTimeout(() => {
+              loadRolesTable();
+            }, 300);
+          }
+
+          async function loadRolesTable() {
+            const tbody = document.getElementById('rolesTableBody');
+            if (!tbody) return;
+
+            const search = document.getElementById('roleSearchInput')?.value || '';
+            const categoryId = document.getElementById('roleCategoryFilter')?.value || 'ALL';
+            const status = document.getElementById('roleStatusFilter')?.value || 'ALL';
+
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--color-secondary-text);">
+                  Loading system roles from Neon database...
+                </td>
+              </tr>
+            `;
+
+            try {
+              const queryParams = new URLSearchParams({
+                action: 'list',
+                search: search,
+                category_id: categoryId,
+                status: status
+              });
+
+              const res = await fetch(getRoleApiUrl('?' + queryParams.toString()));
+              const data = await res.json();
+
+              if (!data.success) {
+                tbody.innerHTML = `
+                  <tr>
+                    <td colspan="6" style="text-align: center; padding: 2rem; color: #DC2626;">
+                      Error loading roles: ${escapeHtml(data.error || 'Failed to fetch roles.')}
+                    </td>
+                  </tr>
+                `;
+                return;
+              }
+
+              // Update KPI cards from database response
+              if (data.kpis) {
+                document.getElementById('kpiTotalRoles').textContent = data.kpis.total;
+                document.getElementById('kpiActiveRoles').textContent = data.kpis.active;
+                document.getElementById('kpiInactiveRoles').textContent = data.kpis.inactive;
+              }
+
+              if (!data.roles || data.roles.length === 0) {
+                tbody.innerHTML = `
+                  <tr>
+                    <td colspan="6" style="text-align: center; padding: 3rem 1rem;">
+                      <div class="empty-state" style="font-size: 1rem; color: var(--color-secondary-text);">
+                        No system roles found matching the current filters.
+                      </div>
+                    </td>
+                  </tr>
+                `;
+                return;
+              }
+
+              tbody.innerHTML = data.roles.map(r => {
+                const isActive = (r.status || '').toLowerCase() === 'active';
+                const statusLabel = isActive ? 'ACTIVE' : 'INACTIVE';
+                const isPlatformAdmin = (r.role_code || '').toUpperCase() === 'PLATFORM_ADMIN';
+
+                return `
+                  <tr id="roleRow-${r.role_id}">
+                    <td>
+                      <code style="font-weight: 700; color: var(--color-primary-blue); font-size: 0.85rem;">
+                        ${escapeHtml(r.role_code)}
+                      </code>
+                    </td>
+                    <td>
+                      <strong style="color: var(--color-primary-text);">${escapeHtml(r.role_name)}</strong>
+                      ${isPlatformAdmin ? '<span style="margin-left: 6px; font-size: 0.7rem; background: #FEF3C7; color: #92400E; padding: 2px 6px; border-radius: 4px; font-weight: 700;">System</span>' : ''}
+                    </td>
+                    <td>
+                      <span class="role-badge" style="font-size: 0.75rem;">
+                        ${escapeHtml(r.category_name || 'Unassigned')}
+                      </span>
+                    </td>
+                    <td style="color: var(--color-secondary-text); font-size: 0.84rem; max-width: 280px; word-break: break-word;">
+                      ${escapeHtml(r.description || '—')}
+                    </td>
+                    <td>
+                      <div class="cost360-toggle-switch" onclick="promptRoleStatusToggle(${r.role_id}, '${escapeJs(r.role_code)}', '${escapeJs(r.status)}')" title="Click to ${isActive ? 'Deactivate' : 'Activate'} ${escapeHtml(r.role_code)}">
+                        <div class="cost360-toggle-track ${isActive ? 'active' : ''}" id="toggleTrack-${r.role_id}">
+                          <div class="cost360-toggle-thumb"></div>
+                        </div>
+                        <span class="cost360-toggle-label ${isActive ? 'active' : 'inactive'}" id="toggleLabel-${r.role_id}">
+                          ${statusLabel}
+                        </span>
+                      </div>
+                    </td>
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="viewRole(${r.role_id})">
+                        View
+                      </button>
+                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditRoleModal(${r.role_id})">
+                        Edit
+                      </button>
+                      <button type="button" class="btn-primary" style="padding: 0.35rem 0.75rem; font-size: 0.78rem;" onclick="openRolePermissions(${r.role_id})">
+                        Manage Permissions
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('');
+
+            } catch (err) {
+              console.error('Error fetching roles:', err);
+              tbody.innerHTML = `
+                <tr>
+                  <td colspan="6" style="text-align: center; padding: 2rem; color: #DC2626;">
+                    Server communication failure. Please check your network connection.
+                  </td>
+                </tr>
+              `;
+            }
+          }
+
+          // --- Add Role Modal ---
+          function openAddRoleModal() {
+            const form = document.getElementById('addRoleForm');
+            if (form) form.reset();
+            const errBox = document.getElementById('addRoleError');
+            if (errBox) errBox.style.display = 'none';
+
+            if (availableCategoriesCache.length > 0) {
+              populateRoleCategoryDropdowns(availableCategoriesCache);
+            }
+
+            document.getElementById('addRoleModal').style.display = 'flex';
+          }
+
+          async function submitAddRole(e) {
+            e.preventDefault();
+            const form = e.target;
+            const errBox = document.getElementById('addRoleError');
+            errBox.style.display = 'none';
+
+            const submitBtn = document.getElementById('btnSubmitAddRole');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating...';
+
+            const formData = new FormData(form);
+            formData.append('action', 'create');
+
+            try {
+              const res = await fetch(getRoleApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeModal('addRoleModal');
+                showRoleToast(data.message || 'Role created successfully.', true);
+                loadRolesTable();
+              } else {
+                errBox.textContent = data.error || 'Failed to create role.';
+                errBox.style.display = 'block';
+              }
+            } catch (err) {
+              errBox.textContent = 'Server connection error.';
+              errBox.style.display = 'block';
+            } finally {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Create Role';
+            }
+          }
+
+          // --- Edit Role Modal ---
+          async function openEditRoleModal(roleId) {
+            const errBox = document.getElementById('editRoleError');
+            if (errBox) errBox.style.display = 'none';
+
+            try {
+              const res = await fetch(getRoleApiUrl(`action=get&role_id=${roleId}`));
+              const data = await res.json();
+
+              if (data.success && data.role) {
+                const r = data.role;
+                document.getElementById('editRoleId').value = r.role_id;
+                document.getElementById('editRoleCode').value = r.role_code;
+                document.getElementById('editRoleName').value = r.role_name;
+                document.getElementById('editRoleDescription').value = r.description || '';
+                document.getElementById('editRoleCategorySelect').value = r.category_id || '';
+
+                closeModal('viewRoleModal');
+                document.getElementById('editRoleModal').style.display = 'flex';
+              } else {
+                showRoleToast(data.error || 'Failed to load role details.', false);
+              }
+            } catch (err) {
+              showRoleToast('Error connecting to database.', false);
+            }
+          }
+
+          async function submitEditRole(e) {
+            e.preventDefault();
+            const form = e.target;
+            const errBox = document.getElementById('editRoleError');
+            errBox.style.display = 'none';
+
+            const submitBtn = document.getElementById('btnSubmitEditRole');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Saving...';
+
+            const formData = new FormData(form);
+            formData.append('action', 'update');
+
+            try {
+              const res = await fetch(getRoleApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeModal('editRoleModal');
+                showRoleToast(data.message || 'Role updated successfully.', true);
+                loadRolesTable();
+              } else {
+                errBox.textContent = data.error || 'Failed to update role.';
+                errBox.style.display = 'block';
+              }
+            } catch (err) {
+              errBox.textContent = 'Server connection error.';
+              errBox.style.display = 'block';
+            } finally {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Save Changes';
+            }
+          }
+
+          // --- View Role Modal ---
+          async function viewRole(roleId) {
+            try {
+              const res = await fetch(getRoleApiUrl(`action=get&role_id=${roleId}`));
+              const data = await res.json();
+
+              if (data.success && data.role) {
+                const r = data.role;
+                currentViewRoleId = r.role_id;
+
+                document.getElementById('viewRoleCode').textContent = r.role_code;
+                document.getElementById('viewRoleName').textContent = r.role_name;
+                document.getElementById('viewRoleCategory').textContent = r.category_name || 'Unassigned';
+                document.getElementById('viewRoleDescription').textContent = r.description || 'No description provided.';
+                document.getElementById('viewRoleUsers').textContent = `${r.assigned_users_count || 0} active users`;
+                document.getElementById('viewRoleCreatedAt').textContent = r.created_at_formatted || r.created_at || '—';
+                document.getElementById('viewRoleUpdatedAt').textContent = r.updated_at_formatted || r.updated_at || '—';
+
+                const isActive = (r.status || '').toLowerCase() === 'active';
+                const statusBadge = document.getElementById('viewRoleStatusBadge');
+                if (statusBadge) {
+                  statusBadge.className = 'status-badge';
+                  statusBadge.style.background = isActive ? '#E6F9F6' : '#F1F5F9';
+                  statusBadge.style.color = isActive ? '#00A88F' : '#64748B';
+                  statusBadge.textContent = isActive ? 'ACTIVE' : 'INACTIVE';
+                }
+
+                document.getElementById('btnViewModalEdit').onclick = () => openEditRoleModal(r.role_id);
+                document.getElementById('btnViewModalPerms').onclick = () => {
+                  closeModal('viewRoleModal');
+                  openRolePermissions(r.role_id);
+                };
+
+                document.getElementById('viewRoleModal').style.display = 'flex';
+              } else {
+                showRoleToast(data.error || 'Failed to load role details.', false);
+              }
+            } catch (err) {
+              showRoleToast('Error connecting to database.', false);
+            }
+          }
+
+          // --- Active/Inactive Confirmation Flow ---
+          function promptRoleStatusToggle(roleId, roleCode, currentStatus) {
+            const isCurrentlyActive = (currentStatus || '').toLowerCase() === 'active';
+            const newStatus = isCurrentlyActive ? 'Inactive' : 'Active';
+
+            pendingToggleRoleId = roleId;
+            pendingToggleNewStatus = newStatus;
+
+            const modalTitle = document.getElementById('roleConfirmStatusTitle');
+            const modalMsg = document.getElementById('roleConfirmStatusMessage');
+            const submitBtn = document.getElementById('roleConfirmSubmitBtn');
+
+            if (isCurrentlyActive) {
+              modalTitle.textContent = 'Deactivate Role?';
+              modalMsg.innerHTML = `Are you sure you want to deactivate <strong style="color: #DC2626;">${escapeHtml(roleCode)}</strong>?<br><span style="font-size: 0.8rem; color: var(--color-secondary-text); margin-top: 0.35rem; display: block;">Users assigned to this role will temporarily lose associated permissions until re-activated.</span>`;
+              submitBtn.textContent = 'Deactivate';
+              submitBtn.style.background = '#DC2626';
+              submitBtn.style.borderColor = '#DC2626';
+            } else {
+              modalTitle.textContent = 'Activate Role?';
+              modalMsg.innerHTML = `Are you sure you want to activate <strong style="color: #00A88F;">${escapeHtml(roleCode)}</strong>?<br><span style="font-size: 0.8rem; color: var(--color-secondary-text); margin-top: 0.35rem; display: block;">Users assigned to this role will immediately gain access according to configured permissions.</span>`;
+              submitBtn.textContent = 'Activate';
+              submitBtn.style.background = '#00A88F';
+              submitBtn.style.borderColor = '#00A88F';
+            }
+
+            document.getElementById('roleConfirmStatusModal').style.display = 'flex';
+          }
+
+          async function executeRoleStatusToggle() {
+            if (!pendingToggleRoleId || !pendingToggleNewStatus) return;
+
+            const roleId = pendingToggleRoleId;
+            const newStatus = pendingToggleNewStatus;
+
+            const submitBtn = document.getElementById('roleConfirmSubmitBtn');
+            submitBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('action', 'status');
+            formData.append('role_id', roleId);
+            formData.append('status', newStatus);
+
+            try {
+              const res = await fetch(getRoleApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              closeModal('roleConfirmStatusModal');
+
+              if (data.success) {
+                showRoleToast(data.message || 'Status updated.', true);
+
+                // Update only the affected switch and label dynamically
+                const track = document.getElementById(`toggleTrack-${roleId}`);
+                const label = document.getElementById(`toggleLabel-${roleId}`);
+                const isActive = newStatus.toLowerCase() === 'active';
+
+                if (track) {
+                  if (isActive) {
+                    track.classList.add('active');
+                  } else {
+                    track.classList.remove('active');
+                  }
+                }
+                if (label) {
+                  label.textContent = isActive ? 'ACTIVE' : 'INACTIVE';
+                  label.className = `cost360-toggle-label ${isActive ? 'active' : 'inactive'}`;
+                }
+
+                // Update switch onclick attribute
+                const row = document.getElementById(`roleRow-${roleId}`);
+                if (row) {
+                  const switchEl = row.querySelector('.cost360-toggle-switch');
+                  if (switchEl) {
+                    switchEl.setAttribute('onclick', `promptRoleStatusToggle(${roleId}, '${escapeJs(data.role_code || '')}', '${newStatus}')`);
+                  }
+                }
+
+                // Refresh KPIs without reloading the whole page
+                refreshRoleKpis();
+              } else {
+                showRoleToast(data.error || 'Failed to update role status.', false);
+              }
+            } catch (err) {
+              closeModal('roleConfirmStatusModal');
+              showRoleToast('Server communication failure.', false);
+            } finally {
+              submitBtn.disabled = false;
+              pendingToggleRoleId = null;
+              pendingToggleNewStatus = null;
+            }
+          }
+
+          async function refreshRoleKpis() {
+            try {
+              const res = await fetch(getRoleApiUrl('action=list'));
+              const data = await res.json();
+              if (data.success && data.kpis) {
+                document.getElementById('kpiTotalRoles').textContent = data.kpis.total;
+                document.getElementById('kpiActiveRoles').textContent = data.kpis.active;
+                document.getElementById('kpiInactiveRoles').textContent = data.kpis.inactive;
+              }
+            } catch (err) {
+              console.warn('KPI refresh error:', err);
+            }
+          }
+
+          // --- Manage Permissions Matrix ---
+          async function openRolePermissions(roleId) {
+            currentPermsRoleId = roleId;
+
+            const loading = document.getElementById('permModalLoading');
+            const errBox = document.getElementById('permModalError');
+            const wrapper = document.getElementById('permMatrixWrapper');
+            const searchInput = document.getElementById('permSearchInput');
+
+            if (searchInput) searchInput.value = '';
+            if (errBox) errBox.style.display = 'none';
+            if (loading) loading.style.display = 'block';
+            if (wrapper) wrapper.style.display = 'none';
+
+            document.getElementById('rolePermissionsModal').style.display = 'flex';
+
+            try {
+              const res = await fetch(getRoleApiUrl(`action=permissions&role_id=${roleId}`));
+              const data = await res.json();
+
+              if (!data.success) {
+                loading.style.display = 'none';
+                errBox.textContent = data.error || 'Failed to load permissions.';
+                errBox.style.display = 'block';
+                return;
+              }
+
+              const r = data.role;
+              document.getElementById('permModalRoleCode').textContent = r.role_code;
+              document.getElementById('permModalRoleName').textContent = r.role_name;
+
+              currentPermsList = data.menus || [];
+              renderPermissionsMatrix(currentPermsList);
+
+              loading.style.display = 'none';
+              wrapper.style.display = 'block';
+            } catch (err) {
+              loading.style.display = 'none';
+              errBox.textContent = 'Failed to connect to database for permissions.';
+              errBox.style.display = 'block';
+            }
+          }
+
+          function renderPermissionsMatrix(menus) {
+            const tbody = document.getElementById('permMatrixTbody');
+            if (!tbody) return;
+
+            const permCols = [
+              'can_view', 'can_create', 'can_edit', 'can_delete',
+              'can_upload', 'can_download', 'can_approve',
+              'can_export', 'can_print', 'can_configure'
+            ];
+
+            tbody.innerHTML = menus.map(m => {
+              const isModule = (m.menu_type || '').toLowerCase() === 'module';
+              const indent = m.parent_menu_id ? 'padding-left: 1.75rem;' : 'font-weight: 700;';
+              const typeBadgeClass = isModule ? 'style="background: #E0E7FF; color: #3730A3;"' : 'style="background: #F1F5F9; color: #475569;"';
+
+              const checkboxesHtml = permCols.map(col => `
+                <td class="perm-check-cell">
+                  <input type="checkbox" class="perm-checkbox col-${col}" data-menu-id="${m.menu_id}" data-col="${col}" ${m[col] ? 'checked' : ''} onchange="handlePermCellChange(${m.menu_id})">
+                </td>
+              `).join('');
+
+              return `
+                <tr class="perm-row" data-menu-id="${m.menu_id}" data-menu-code="${escapeHtml(m.menu_code)}" data-menu-name="${escapeHtml(m.menu_name)}" data-parent-name="${escapeHtml(m.parent_menu_name || '')}">
+                  <td style="${indent}">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                      ${m.parent_menu_id ? '<span style="color: var(--color-secondary-text);">↳</span>' : ''}
+                      <div>
+                        <div style="color: var(--color-primary-text);">${escapeHtml(m.menu_name)}</div>
+                        <div style="font-size: 0.72rem; color: var(--color-secondary-text);"><code>${escapeHtml(m.menu_code)}</code></div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style="text-align: center;">
+                    <span class="role-badge" ${typeBadgeClass} style="font-size: 0.7rem; padding: 2px 6px;">
+                      ${escapeHtml(m.menu_type || 'Menu')}
+                    </span>
+                  </td>
+                  ${checkboxesHtml}
+                  <td style="text-align: center;">
+                    <button type="button" class="btn-secondary" style="font-size: 0.72rem; padding: 2px 6px;" onclick="toggleRowPerms(${m.menu_id})" title="Toggle All in this Row">
+                      All
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('');
+          }
+
+          function handlePermCellChange(menuId) {
+            // Auto check can_view if any mutation permission is checked
+            const row = document.querySelector(`.perm-row[data-menu-id="${menuId}"]`);
+            if (!row) return;
+
+            const viewCheck = row.querySelector(`input[data-col="can_view"]`);
+            const otherChecks = row.querySelectorAll(`input[type="checkbox"]:not([data-col="can_view"])`);
+
+            let hasAnyMutation = false;
+            otherChecks.forEach(ch => {
+              if (ch.checked) hasAnyMutation = true;
+            });
+
+            // If user checks edit/create/delete/etc., automatically ensure view is checked
+            if (hasAnyMutation && viewCheck && !viewCheck.checked) {
+              viewCheck.checked = true;
+            }
+          }
+
+          function toggleRowPerms(menuId) {
+            const row = document.querySelector(`.perm-row[data-menu-id="${menuId}"]`);
+            if (!row) return;
+
+            const checkboxes = row.querySelectorAll('.perm-checkbox');
+            const anyUnchecked = Array.from(checkboxes).some(cb => !cb.checked);
+
+            checkboxes.forEach(cb => {
+              cb.checked = anyUnchecked;
+            });
+          }
+
+          function toggleColumnPerm(colName) {
+            const checkboxes = document.querySelectorAll(`.perm-checkbox.col-${colName}`);
+            const visibleCheckboxes = Array.from(checkboxes).filter(cb => {
+              const row = cb.closest('tr');
+              return row && row.style.display !== 'none';
+            });
+
+            const anyUnchecked = visibleCheckboxes.some(cb => !cb.checked);
+            visibleCheckboxes.forEach(cb => {
+              cb.checked = anyUnchecked;
+              if (anyUnchecked && colName !== 'can_view') {
+                const row = cb.closest('tr');
+                const viewCb = row ? row.querySelector('.col-can_view') : null;
+                if (viewCb) viewCb.checked = true;
+              }
+            });
+          }
+
+          function toggleAllMatrixPerms(checkAll) {
+            const rows = document.querySelectorAll('.perm-row');
+            rows.forEach(row => {
+              if (row.style.display !== 'none') {
+                row.querySelectorAll('.perm-checkbox').forEach(cb => {
+                  cb.checked = checkAll;
+                });
+              }
+            });
+          }
+
+          function filterPermissionsMatrix() {
+            const query = (document.getElementById('permSearchInput')?.value || '').toLowerCase().trim();
+            const rows = document.querySelectorAll('.perm-row');
+
+            rows.forEach(row => {
+              const code = (row.getAttribute('data-menu-code') || '').toLowerCase();
+              const name = (row.getAttribute('data-menu-name') || '').toLowerCase();
+              const parent = (row.getAttribute('data-parent-name') || '').toLowerCase();
+
+              if (!query || code.includes(query) || name.includes(query) || parent.includes(query)) {
+                row.style.display = '';
+              } else {
+                row.style.display = 'none';
+              }
+            });
+          }
+
+          async function saveRolePermissions() {
+            if (!currentPermsRoleId) return;
+
+            const saveBtn = document.getElementById('btnSavePermissions');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving Permissions...';
+
+            const permCols = [
+              'can_view', 'can_create', 'can_edit', 'can_delete',
+              'can_upload', 'can_download', 'can_approve',
+              'can_export', 'can_print', 'can_configure'
+            ];
+
+            const rows = document.querySelectorAll('.perm-row');
+            const permissionsPayload = [];
+
+            rows.forEach(row => {
+              const menuId = parseInt(row.getAttribute('data-menu-id'), 10);
+              if (!menuId) return;
+
+              const item = { menu_id: menuId };
+              let hasAny = false;
+
+              permCols.forEach(col => {
+                const cb = row.querySelector(`input[data-col="${col}"]`);
+                const val = cb ? cb.checked : false;
+                item[col] = val ? 1 : 0;
+                if (val) hasAny = true;
+              });
+
+              item.is_active = hasAny ? 1 : 0;
+              permissionsPayload.push(item);
+            });
+
+            const formData = new FormData();
+            formData.append('action', 'save_permissions');
+            formData.append('role_id', currentPermsRoleId);
+            formData.append('permissions', JSON.stringify(permissionsPayload));
+
+            try {
+              const res = await fetch(getRoleApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeModal('rolePermissionsModal');
+                showRoleToast(data.message || 'Permissions updated successfully.', true);
+              } else {
+                alert(data.error || 'Failed to save permissions.');
+              }
+            } catch (err) {
+              alert('Server communication failure while saving permissions.');
+            } finally {
+              saveBtn.disabled = false;
+              saveBtn.textContent = 'Save Permissions';
+            }
+          }
+
+          // Module Auto-Init
+          if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            if (document.getElementById('rolesTable')) {
+              initRoleMasterPage();
+            }
+          } else {
+            document.addEventListener('DOMContentLoaded', function() {
+              if (document.getElementById('rolesTable')) {
+                initRoleMasterPage();
+              }
+            });
           }
         </script>
 
@@ -3195,7 +5130,7 @@ if (!function_exists('formatMenuRouteUrl')) {
               // Actions
               const toggleBtnText = isActive ? 'Deactivate' : 'Activate';
               const toggleBtnClass = isActive ? 'color: #D97706; border-color: #FCD34D;' : 'color: #059669; border-color: #A7F3D0;';
-              
+
               // Deactivate button disabled for system Free plan
               const toggleActionHtml = isFree && isActive
                 ? `<button type="button" class="btn-secondary" style="padding: 0.32rem 0.6rem; font-size: 0.78rem; opacity: 0.45; cursor: not-allowed;" title="The system-required Free Plan cannot be deactivated." disabled>Active</button>`
@@ -4333,8 +6268,8 @@ if (!function_exists('formatMenuRouteUrl')) {
               bar.style.width = pct + '%';
               bar.style.background = (maxUsers > 0 && curUsers >= maxUsers) ? '#DC2626' : (pct >= 80 ? '#D97706' : '#00A88F');
 
-              document.getElementById('detailsUsageNote').textContent = maxUsers === 0 
-                ? 'FREE Plan: 0 users allowed.' 
+              document.getElementById('detailsUsageNote').textContent = maxUsers === 0
+                ? 'FREE Plan: 0 users allowed.'
                 : `${pct}% capacity utilized (${availUsers} slots available).`;
 
               modal.style.display = 'flex';
@@ -4551,6 +6486,7 @@ if (!function_exists('formatMenuRouteUrl')) {
           }
         </script>
 
+      
       <?php elseif ($currentPage === 'menus'): ?>
         <!-- ============================================================
              MENU MASTER PAGE MODULE (DYNAMIC FROM NEON DB)
@@ -4567,7 +6503,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                <span>+ Add Menu</span>
+                <span>Add Menu</span>
               </button>
               <button type="button" class="btn-secondary" onclick="loadMenusTable()">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
@@ -4885,7 +6821,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                 const isChild = (m.parent_menu_id !== null);
                 const parentName = escapeHtml(m.parent_menu_name);
                 const nameIndent = isChild ? `<span style="color: var(--color-accent); margin-right: 4px;">↳</span> ` : '';
-                const typeBadge = m.menu_type === 'GROUP' 
+                const typeBadge = m.menu_type === 'GROUP'
                   ? `<span style="padding: 2px 8px; background: rgba(59,130,246,0.15); color: #60A5FA; border-radius: 4px; font-weight: 700; font-size: 0.75rem;">GROUP</span>`
                   : `<span style="padding: 2px 8px; background: rgba(16,185,129,0.15); color: #34D399; border-radius: 4px; font-weight: 700; font-size: 0.75rem;">PAGE</span>`;
 
@@ -5129,7 +7065,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                <span>+ Add Company</span>
+                <span>Add Company</span>
               </button>
               <button type="button" class="btn-secondary" onclick="loadCompaniesTable()">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
@@ -5582,7 +7518,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                 const filterCompSelect = document.getElementById('divisionCompanyFilter');
                 const formCompSelect = document.getElementById('formDivisionCompanyId');
                 const selectedFilterComp = filterCompSelect.value;
-                
+
                 if (data.companies && data.companies.length > 0) {
                   filterCompSelect.innerHTML = '<option value="">All Companies</option>' + data.companies.map(c => `<option value="${c.company_id}">${escapeHtml(c.company_name)} (${escapeHtml(c.company_code)})</option>`).join('');
                   filterCompSelect.value = selectedFilterComp;
@@ -6652,7 +8588,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   const isLocked = Boolean(p.is_locked);
                   const statusBadge = isActive ? '<span class="status-badge">Active</span>' : '<span class="status-badge" style="background:#FEE2E2;color:#DC2626;">Inactive</span>';
                   const lockBadge = isLocked ? '<span class="role-badge" style="background:#FEF3C7;color:#92400E;">Locked</span>' : '<span class="role-badge" style="background:#D1FAE5;color:#065F46;">Open</span>';
-                  
+
                   const toggleBtnText = isActive ? 'Deactivate' : 'Activate';
                   const toggleBtnClass = isActive ? 'btn-logout' : 'btn-primary';
                   const lockBtnText = isLocked ? 'Unlock' : 'Lock';
@@ -6919,8 +8855,8 @@ if (!function_exists('formatMenuRouteUrl')) {
       let html = '';
       data.forEach((c, idx) => {
         const isActive = String(c.status).toUpperCase() === 'ACTIVE';
-        const statusBadge = isActive 
-          ? '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">Active</span>' 
+        const statusBadge = isActive
+          ? '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">Active</span>'
           : '<span class="status-badge" style="background: #FEE2E2; color: #DC2626;">Inactive</span>';
 
         // Derive plan or fallback
@@ -6944,7 +8880,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path></svg>
                 </button>
                 <button type="button" class="btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.78rem;" onclick="toggleCustomerStatus(${c.customer_id}, '${escapeJs(c.status)}')" title="${isActive ? 'Deactivate' : 'Activate'}">
-                  ${isActive 
+                  ${isActive
                     ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#DC2626" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>'
                     : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#059669" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>'}
                 </button>
@@ -6963,7 +8899,7 @@ if (!function_exists('formatMenuRouteUrl')) {
       const subF = document.getElementById('custSubscriptionFilter')?.value || 'ALL';
 
       const filtered = allCustomersData.filter((c, idx) => {
-        const matchesSearch = !q || 
+        const matchesSearch = !q ||
           (c.customer_code || '').toLowerCase().includes(q) ||
           (c.customer_name || '').toLowerCase().includes(q) ||
           (c.contact_person || '').toLowerCase().includes(q) ||
@@ -7144,8 +9080,8 @@ if (!function_exists('formatMenuRouteUrl')) {
         document.getElementById('dtlCustCode').innerText = c.customer_code;
         document.getElementById('dtlCustName').innerText = c.customer_name;
         document.getElementById('dtlCustContact').innerText = `Contact: ${c.contact_person || 'N/A'} | Email: ${c.contact_email || 'N/A'} | Phone: ${c.contact_phone || 'N/A'}`;
-        document.getElementById('dtlCustStatusBadge').innerHTML = c.status.toUpperCase() === 'ACTIVE' 
-          ? '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">Active</span>' 
+        document.getElementById('dtlCustStatusBadge').innerHTML = c.status.toUpperCase() === 'ACTIVE'
+          ? '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">Active</span>'
           : '<span class="status-badge" style="background: #FEE2E2; color: #DC2626;">Inactive</span>';
 
         // Overview KPIs
@@ -7294,9 +9230,8 @@ if (!function_exists('formatMenuRouteUrl')) {
     }
 
     function toggleSubmenu(btnEl) {
-      const parentItem = btnEl.closest('.nav-parent-item');
       const group = btnEl.closest('.nav-parent-group');
-      const container = parentItem ? parentItem.nextElementSibling : (group ? group.querySelector('.submenu-container') : null);
+      const container = group ? group.querySelector('.submenu-container') : null;
       if (!container) return;
 
       const isShow = container.classList.contains('show');
@@ -7310,10 +9245,111 @@ if (!function_exists('formatMenuRouteUrl')) {
         btnEl.setAttribute('aria-expanded', 'true');
       }
     }
+    function switchActivePeriod(periodId) {
+      if (!periodId) return;
+      fetch(window.cost360BaseUrlPrefix + 'api/context_api.php?action=switch_period', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'period_id=' + encodeURIComponent(periodId)
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          window.location.reload();
+        } else {
+          alert('Failed to switch period: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(err => {
+        alert('Error communicating with server when switching period.');
+      });
+    }
+
+    function toggleContextPopover(e) {
+      if (e) e.stopPropagation();
+      const popover = document.getElementById('contextPopover');
+      const toggleBtn = document.getElementById('contextPopoverToggle');
+      if (!popover) return;
+      const isOpen = popover.classList.contains('active');
+      if (isOpen) {
+        popover.classList.remove('active');
+        if (toggleBtn) toggleBtn.classList.remove('active');
+      } else {
+        popover.classList.add('active');
+        if (toggleBtn) toggleBtn.classList.add('active');
+      }
+    }
+
+    function toggleAddPeriodForm() {
+      const f = document.getElementById('popoverAddPeriodForm');
+      if (!f) return;
+      f.classList.toggle('active');
+      const err = document.getElementById('addPeriodErrorMsg');
+      if (err) { err.style.display = 'none'; err.textContent = ''; }
+      if (f.classList.contains('active')) {
+        const input = document.getElementById('newPeriodName');
+        if (input) input.focus();
+      }
+    }
+
+    function submitPopoverNewPeriod(e) {
+      e.preventDefault();
+      const form = e.target;
+      const btn = document.getElementById('btnSaveNewPeriod');
+      const err = document.getElementById('addPeriodErrorMsg');
+      if (err) { err.style.display = 'none'; err.textContent = ''; }
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+      const formData = new FormData(form);
+      formData.append('action', 'create_and_select_period');
+      formData.append('is_ajax', '1');
+
+      fetch(window.location.href, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          window.location.reload();
+        } else {
+          if (err) {
+            err.textContent = data.error || 'Failed to create period.';
+            err.style.display = 'block';
+          } else {
+            alert(data.error || 'Failed to create period.');
+          }
+          if (btn) { btn.disabled = false; btn.textContent = 'Save & Activate'; }
+        }
+      })
+      .catch(errObj => {
+        if (err) {
+          err.textContent = 'Server error occurred while creating period.';
+          err.style.display = 'block';
+        }
+        if (btn) { btn.disabled = false; btn.textContent = 'Save & Activate'; }
+      });
+    }
+
+    document.addEventListener('click', function(e) {
+      const popover = document.getElementById('contextPopover');
+      const toggleBtn = document.getElementById('contextPopoverToggle');
+      if (!popover || !popover.classList.contains('active')) return;
+      if (!popover.contains(e.target) && (!toggleBtn || !toggleBtn.contains(e.target))) {
+        popover.classList.remove('active');
+        if (toggleBtn) toggleBtn.classList.remove('active');
+      }
+    });
+
     window.toggleSubmenu = toggleSubmenu;
     window.escapeHtml = escapeHtml;
     window.escapeJs = escapeJs;
     window.closeModal = closeModal;
+    window.switchActivePeriod = switchActivePeriod;
+    window.toggleContextPopover = toggleContextPopover;
+    window.toggleAddPeriodForm = toggleAddPeriodForm;
+    window.submitPopoverNewPeriod = submitPopoverNewPeriod;
   </script>
   <script src="<?php echo $baseUrlPrefix; ?>assets/js/upload_centre.js"></script>
 </body>

@@ -66,6 +66,12 @@ try {
             $params[':active_cust'] = $activeCustomerId;
         }
 
+        $customerFilter = (int)($_GET['customer_id'] ?? 0);
+        if ($customerFilter > 0) {
+            $sql .= " AND c.customer_id = :cust_filter";
+            $params[':cust_filter'] = $customerFilter;
+        }
+
         if ($search !== '') {
             $sql .= " AND (d.division_code ILIKE :search OR d.division_name ILIKE :search OR c.company_name ILIKE :search)";
             $params[':search'] = '%' . $search . '%';
@@ -93,10 +99,25 @@ try {
             }
         }
 
-        // Database-driven companies list for filter & modal dropdown
-        $compSql = "SELECT company_id, company_code, company_name FROM companies WHERE UPPER(status) = 'ACTIVE'";
-        $compParams = [];
+        // Customers list for top dependent filter
+        $custSql = "SELECT customer_id, customer_code, customer_name FROM customers WHERE UPPER(status) = 'ACTIVE'";
+        $custParams = [];
         if (!$isPlatform && $activeCustomerId) {
+            $custSql .= " AND customer_id = :cid";
+            $custParams[':cid'] = $activeCustomerId;
+        }
+        $custSql .= " ORDER BY customer_name ASC";
+        $custStmt = $pdo->prepare($custSql);
+        $custStmt->execute($custParams);
+        $customersList = $custStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Database-driven companies list for filter & modal dropdown
+        $compSql = "SELECT company_id, customer_id, company_code, company_name FROM companies WHERE UPPER(status) = 'ACTIVE'";
+        $compParams = [];
+        if ($customerFilter > 0) {
+            $compSql .= " AND customer_id = :cid";
+            $compParams[':cid'] = $customerFilter;
+        } elseif (!$isPlatform && $activeCustomerId) {
             $compSql .= " AND customer_id = :cid";
             $compParams[':cid'] = $activeCustomerId;
         }
@@ -108,6 +129,7 @@ try {
         echo json_encode([
             'success' => true,
             'divisions' => $divisions,
+            'customers' => $customersList,
             'companies' => $companiesList,
             'kpis' => [
                 'total' => $total,

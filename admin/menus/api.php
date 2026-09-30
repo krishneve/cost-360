@@ -1,8 +1,8 @@
 <?php
 /**
  * Cost360 - Menu Master API Endpoint
- * Handles CRUD operations, hierarchy validation, and status toggles for auth.menus.
- * Database: Central Neon PostgreSQL (code-360-v1).
+ * Handles CRUD operations, hierarchy validation, and status toggles for menus.
+ * Database: Central Neon PostgreSQL (menus base table & auth.menus view).
  */
 
 ob_start();
@@ -17,7 +17,7 @@ function sendJsonResponse($data, $statusCode = 200) {
         ob_clean();
     }
     http_response_code($statusCode);
-    echo json_encode($data);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -26,29 +26,90 @@ if (!isLoggedIn()) {
     sendJsonResponse(['success' => false, 'error' => 'Unauthorized session. Please log in.'], 401);
 }
 
-// Security check: Authorized logged-in session check
-$hasAccess = isLoggedIn();
+// Security check: Authorized access check (Platform Admin, Menu Master access, or active session)
+$currentUserId = $_SESSION['user_id'] ?? null;
+$hasAccess = (function_exists('isPlatformAdmin') && isPlatformAdmin($currentUserId)) ||
+             (function_exists('userHasMenuAccess') && (userHasMenuAccess('MENU_MASTER', $currentUserId) || userHasMenuAccess('ADMIN_MENUS', $currentUserId) || userHasMenuAccess('/admin/menus', $currentUserId) || userHasMenuAccess('/administration/menus', $currentUserId))) ||
+             (function_exists('userHasPermission') && userHasPermission('can_view', 'MENU_MASTER', $currentUserId)) ||
+             isLoggedIn();
 
 if (!$hasAccess) {
     sendJsonResponse(['success' => false, 'error' => 'Access denied. You do not have permission to manage menus.'], 403);
 }
 
-$action = 'list';
-$reqMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-if ($reqMethod === 'POST' && isset($_POST['action'])) {
-    $action = $_POST['action'];
-} elseif (isset($_GET['action'])) {
-    $action = $_GET['action'];
+// Helper: Inspect actual columns existing on the menus table to prevent undefined column errors
+function getMenusTableColumns(PDO $pdo): array {
+    static $cols = null;
+    if ($cols !== null) {
+        return $cols;
+    }
+    try {
+        $stmt = $pdo->query("
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'menus' AND table_schema = 'public'
+        ");
+        $cols = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Throwable $e) {
+        $cols = ['menu_id', 'parent_menu_id', 'menu_code', 'menu_name', 'route', 'icon', 'display_order', 'menu_type', 'status', 'created_at', 'updated_at'];
+    }
+    return $cols;
+}
+
+// Helper: Synchronize sequence with current max(menu_id) to avoid duplicate key errors
+function syncMenusSequence(PDO $pdo): void {
+    try {
+        $pdo->query("SELECT setval('menus_menu_id_seq', (SELECT COALESCE(MAX(menu_id), 0) FROM menus))");
+    } catch (Throwable $e) {
+        // Silently continue if sequence name differs or insufficient privileges
+    }
+}
+
+// Helper: Clear authentication and menu caches stored in session
+function clearAuthSessionCache(): void {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        unset($_SESSION['auth_cache']);
+        unset($_SESSION['authorized_menus']);
+        unset($_SESSION['user_menus']);
+    }
+}
+
+// Helper: Normalize menu type to DB-allowed CHECK constraint values ('Module', 'Menu', 'Submenu', 'Action')
+function normalizeMenuType(string $type): string {
+    $clean = strtoupper(trim($type));
+    switch ($clean) {
+        case 'MODULE':
+            return 'Module';
+        case 'SUBMENU':
+            return 'Submenu';
+        case 'ACTION':
+            return 'Action';
+        case 'PAGE':
+        case 'MENU':
+        default:
+            return 'Menu';
+    }
+}
+
+// Helper: Normalize status value to DB-allowed CHECK constraint values ('Active', 'Inactive')
+function normalizeStatus($val): string {
+    if (is_bool($val)) {
+        return $val ? 'Active' : 'Inactive';
+    }
+    $str = strtoupper(trim((string)$val));
+    if ($str === 'ACTIVE' || $str === '1' || $str === 'TRUE') {
+        return 'Active';
+    }
+    return 'Inactive';
 }
 
 /**
  * Recursive Helper: Check if $menuId is an ancestor of $targetParentId to prevent circular dependency
  */
-function isParentAncestor($pdo, $menuId, $targetParentId) {
-    if (!$targetParentId || $menuId <= 0 || $targetParentId <= 0) {
+function isParentAncestor(PDO $pdo, int $menuId, int $targetParentId): bool {
+    if ($menuId <= 0 || $targetParentId <= 0) {
         return false;
     }
-
     if ($menuId === $targetParentId) {
         return true;
     }
@@ -66,9 +127,9 @@ function isParentAncestor($pdo, $menuId, $targetParentId) {
         }
         $visited[] = $currParentId;
 
-        $stmt = $pdo->prepare("SELECT parent_menu_id FROM auth.menus WHERE menu_id = :id LIMIT 1");
+        $stmt = $pdo->prepare("SELECT parent_menu_id FROM menus WHERE menu_id = :id LIMIT 1");
         $stmt->execute([':id' => $currParentId]);
-        $row = $stmt->fetch();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row || empty($row['parent_menu_id'])) {
             break;
@@ -82,7 +143,7 @@ function isParentAncestor($pdo, $menuId, $targetParentId) {
 /**
  * Helper: Validate route security (prevent dangerous schemes)
  */
-function sanitizeRouteScheme($route) {
+function sanitizeRouteScheme(?string $route): string {
     if (empty($route)) {
         return '';
     }
@@ -98,10 +159,24 @@ function sanitizeRouteScheme($route) {
     return $trimmed;
 }
 
+$action = 'list';
+$reqMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+if ($reqMethod === 'POST' && isset($_POST['action'])) {
+    $action = trim($_POST['action']);
+} elseif (isset($_GET['action'])) {
+    $action = trim($_GET['action']);
+}
+
 try {
     $pdo = getDbConnection();
+    $existingColumns = getMenusTableColumns($pdo);
+    $hasIsVisible = in_array('is_visible', $existingColumns, true);
+    $hasDescription = in_array('description', $existingColumns, true);
 
     switch ($action) {
+        /* ========================================================
+           1. LIST MENUS (WITH FILTERS & HIERARCHY DETAILS)
+           ======================================================== */
         case 'list':
             $search = trim($_GET['search'] ?? '');
             $typeFilter = trim($_GET['menu_type'] ?? 'ALL');
@@ -109,14 +184,27 @@ try {
             $visibilityFilter = trim($_GET['visibility'] ?? 'ALL');
             $parentFilter = trim($_GET['parent_id'] ?? 'ALL');
 
+            $selectVisible = $hasIsVisible ? "m.is_visible," : "";
+            $selectDesc    = $hasDescription ? "m.description," : "";
+
             $query = "
-                SELECT m.menu_id, m.parent_menu_id, m.menu_code, m.menu_name,
-                       m.menu_type, m.route, m.icon, m.display_order, m.is_visible,
-                       m.is_active, m.description,
-                       p.menu_name AS parent_menu_name,
-                       p.menu_code AS parent_menu_code
-                FROM auth.menus m
-                LEFT JOIN auth.menus p ON m.parent_menu_id = p.menu_id
+                SELECT 
+                    m.menu_id, 
+                    m.parent_menu_id, 
+                    m.menu_code, 
+                    m.menu_name,
+                    m.menu_type, 
+                    m.route, 
+                    m.icon, 
+                    m.display_order,
+                    m.status,
+                    {$selectVisible}
+                    {$selectDesc}
+                    p.menu_name AS parent_menu_name,
+                    p.menu_code AS parent_menu_code,
+                    (SELECT COUNT(*) FROM menus c WHERE c.parent_menu_id = m.menu_id) AS children_count
+                FROM menus m
+                LEFT JOIN menus p ON m.parent_menu_id = p.menu_id
                 WHERE 1=1
             ";
 
@@ -128,175 +216,295 @@ try {
             }
 
             if ($typeFilter !== '' && $typeFilter !== 'ALL') {
-                $query .= " AND UPPER(m.menu_type) = :menu_type";
-                $params[':menu_type'] = strtoupper($typeFilter);
-            }
-
-            if ($statusFilter !== '' && $statusFilter !== 'ALL') {
-                if (strtoupper($statusFilter) === 'ACTIVE') {
-                    $query .= " AND m.is_active = true";
-                } elseif (strtoupper($statusFilter) === 'INACTIVE') {
-                    $query .= " AND m.is_active = false";
+                $normType = normalizeMenuType($typeFilter);
+                if (strtoupper($typeFilter) === 'PAGE') {
+                    // Match either Menu, Submenu or Action for PAGE filter
+                    $query .= " AND UPPER(m.menu_type) IN ('MENU', 'SUBMENU', 'ACTION', 'PAGE')";
+                } else {
+                    $query .= " AND UPPER(m.menu_type) = :menu_type";
+                    $params[':menu_type'] = strtoupper($normType);
                 }
             }
 
+            if ($statusFilter !== '' && $statusFilter !== 'ALL') {
+                $normStatus = normalizeStatus($statusFilter);
+                $query .= " AND LOWER(m.status) = LOWER(:status)";
+                $params[':status'] = $normStatus;
+            }
+
             if ($visibilityFilter !== '' && $visibilityFilter !== 'ALL') {
-                if (strtoupper($visibilityFilter) === 'VISIBLE') {
-                    $query .= " AND m.is_visible = true";
-                } elseif (strtoupper($visibilityFilter) === 'HIDDEN') {
-                    $query .= " AND m.is_visible = false";
+                $isVis = (strtoupper($visibilityFilter) === 'VISIBLE');
+                if ($hasIsVisible) {
+                    $query .= " AND m.is_visible = " . ($isVis ? "true" : "false");
+                } else {
+                    // Graceful fallback: Active menus are Visible, Inactive are Hidden
+                    $query .= " AND LOWER(m.status) = " . ($isVis ? "'active'" : "'inactive'");
                 }
             }
 
             if ($parentFilter !== '' && $parentFilter !== 'ALL') {
                 if ($parentFilter === 'ROOT') {
                     $query .= " AND m.parent_menu_id IS NULL";
-                } else {
+                } elseif (is_numeric($parentFilter)) {
                     $query .= " AND m.parent_menu_id = :parent_id";
                     $params[':parent_id'] = (int)$parentFilter;
                 }
             }
 
+            // Hierarchy-aligned ordering: groups parents and children predictably
             $query .= " ORDER BY COALESCE(m.parent_menu_id, m.menu_id) ASC, m.parent_menu_id NULLS FIRST, m.display_order ASC, m.menu_id ASC";
 
             $stmt = $pdo->prepare($query);
             $stmt->execute($params);
-            $menus = $stmt->fetchAll();
+            $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            $formattedMenus = array_map(function($m) {
+            $formattedMenus = array_map(function($m) use ($hasIsVisible, $hasDescription) {
+                $statusStr = $m['status'] ?? 'Active';
+                $isActive  = (strcasecmp($statusStr, 'Active') === 0);
+
+                if ($hasIsVisible && isset($m['is_visible'])) {
+                    $isVisible = (bool)$m['is_visible'];
+                } else {
+                    $isVisible = $isActive;
+                }
+
+                $desc = '';
+                if ($hasDescription && isset($m['description'])) {
+                    $desc = (string)$m['description'];
+                }
+
                 return [
                     'menu_id'          => (int)$m['menu_id'],
-                    'parent_menu_id'   => $m['parent_menu_id'] ? (int)$m['parent_menu_id'] : null,
-                    'parent_menu_name' => $m['parent_menu_name'] ?? 'Root Menu / None',
+                    'parent_menu_id'   => $m['parent_menu_id'] !== null ? (int)$m['parent_menu_id'] : null,
+                    'parent_menu_name' => $m['parent_menu_name'] ?: 'None (Root Menu)',
                     'parent_menu_code' => $m['parent_menu_code'] ?? null,
                     'menu_code'        => $m['menu_code'],
                     'menu_name'        => $m['menu_name'],
-                    'menu_type'        => strtoupper($m['menu_type']),
+                    'menu_type'        => $m['menu_type'],
                     'route'            => $m['route'] ?? '',
                     'icon'             => $m['icon'] ?? '',
                     'display_order'    => (int)($m['display_order'] ?? 0),
-                    'is_visible'       => (bool)($m['is_visible'] ?? true),
-                    'is_active'        => (bool)($m['is_active'] ?? true),
-                    'description'      => $m['description'] ?? ''
+                    'visibility'       => $isVisible ? 'Visible' : 'Hidden',
+                    'is_visible'       => $isVisible,
+                    'status'           => $statusStr,
+                    'is_active'        => $isActive,
+                    'description'      => $desc,
+                    'children_count'   => (int)($m['children_count'] ?? 0),
+                    'has_children'     => ((int)($m['children_count'] ?? 0)) > 0
                 ];
             }, $menus);
 
+            // Compute summary KPIs
+            $totalCount    = count($formattedMenus);
+            $activeCount   = 0;
+            $inactiveCount = 0;
+            foreach ($formattedMenus as $item) {
+                if ($item['is_active']) {
+                    $activeCount++;
+                } else {
+                    $inactiveCount++;
+                }
+            }
+
             sendJsonResponse([
                 'success' => true,
-                'count'   => count($formattedMenus),
+                'count'   => $totalCount,
+                'kpis'    => [
+                    'total'    => $totalCount,
+                    'active'   => $activeCount,
+                    'inactive' => $inactiveCount
+                ],
                 'menus'   => $formattedMenus
             ]);
             break;
 
+        /* ========================================================
+           2. GET PARENT MENU DROPDOWN OPTIONS (PREVENTS CYCLES)
+           ======================================================== */
         case 'parents':
             $excludeId = (int)($_GET['exclude_id'] ?? 0);
-            $sql = "SELECT menu_id, menu_code, menu_name, menu_type FROM auth.menus WHERE is_active = true";
-            $params = [];
 
+            // If an exclude_id is provided, recursively exclude it and all of its descendants
             if ($excludeId > 0) {
-                $sql .= " AND menu_id != :exclude_id";
-                $params[':exclude_id'] = $excludeId;
+                $sql = "
+                    WITH RECURSIVE descendants AS (
+                        SELECT menu_id FROM menus WHERE menu_id = :exclude_id
+                        UNION ALL
+                        SELECT m.menu_id FROM menus m JOIN descendants d ON m.parent_menu_id = d.menu_id
+                    )
+                    SELECT menu_id, menu_code, menu_name, menu_type, display_order
+                    FROM menus
+                    WHERE LOWER(status) = 'active'
+                      AND menu_id NOT IN (SELECT menu_id FROM descendants)
+                    ORDER BY display_order ASC, menu_name ASC
+                ";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([':exclude_id' => $excludeId]);
+            } else {
+                $sql = "
+                    SELECT menu_id, menu_code, menu_name, menu_type, display_order
+                    FROM menus
+                    WHERE LOWER(status) = 'active'
+                    ORDER BY display_order ASC, menu_name ASC
+                ";
+                $stmt = $pdo->query($sql);
             }
-            $sql .= " ORDER BY display_order ASC, menu_name ASC";
 
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
-            $parents = $stmt->fetchAll();
+            $parents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             sendJsonResponse([
                 'success' => true,
-                'parents' => $parents
+                'parents' => array_map(function($p) {
+                    return [
+                        'menu_id'       => (int)$p['menu_id'],
+                        'menu_code'     => $p['menu_code'],
+                        'menu_name'     => $p['menu_name'],
+                        'menu_type'     => $p['menu_type'],
+                        'display_order' => (int)$p['display_order']
+                    ];
+                }, $parents)
             ]);
             break;
 
+        /* ========================================================
+           3. GET SINGLE MENU DETAILS
+           ======================================================== */
         case 'get_menu':
             $menuId = (int)($_GET['menu_id'] ?? 0);
             if ($menuId <= 0) {
                 throw new Exception("Invalid Menu ID.");
             }
 
+            $selectVisible = $hasIsVisible ? "m.is_visible," : "";
+            $selectDesc    = $hasDescription ? "m.description," : "";
+
             $stmt = $pdo->prepare("
-                SELECT menu_id, parent_menu_id, menu_code, menu_name,
-                       menu_type, route, icon, display_order, is_visible,
-                       is_active, description
-                FROM auth.menus
-                WHERE menu_id = :menu_id
+                SELECT 
+                    m.menu_id, 
+                    m.parent_menu_id, 
+                    m.menu_code, 
+                    m.menu_name,
+                    m.menu_type, 
+                    m.route, 
+                    m.icon, 
+                    m.display_order,
+                    m.status,
+                    {$selectVisible}
+                    {$selectDesc}
+                    p.menu_name AS parent_menu_name
+                FROM menus m
+                LEFT JOIN menus p ON m.parent_menu_id = p.menu_id
+                WHERE m.menu_id = :menu_id
                 LIMIT 1
             ");
             $stmt->execute([':menu_id' => $menuId]);
-            $menuData = $stmt->fetch();
+            $menuData = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if (!$menuData) {
                 throw new Exception("Menu not found.");
             }
 
-            $menuData['menu_id']        = (int)$menuData['menu_id'];
-            $menuData['parent_menu_id'] = $menuData['parent_menu_id'] ? (int)$menuData['parent_menu_id'] : null;
-            $menuData['display_order']  = (int)$menuData['display_order'];
-            $menuData['is_visible']     = (bool)$menuData['is_visible'];
-            $menuData['is_active']      = (bool)$menuData['is_active'];
+            $statusStr = $menuData['status'] ?? 'Active';
+            $isActive  = (strcasecmp($statusStr, 'Active') === 0);
+
+            if ($hasIsVisible && isset($menuData['is_visible'])) {
+                $isVisible = (bool)$menuData['is_visible'];
+            } else {
+                $isVisible = $isActive;
+            }
+
+            $desc = '';
+            if ($hasDescription && isset($menuData['description'])) {
+                $desc = (string)$menuData['description'];
+            }
 
             sendJsonResponse([
                 'success' => true,
-                'menu'    => $menuData
+                'menu'    => [
+                    'menu_id'          => (int)$menuData['menu_id'],
+                    'parent_menu_id'   => $menuData['parent_menu_id'] !== null ? (int)$menuData['parent_menu_id'] : null,
+                    'parent_menu_name' => $menuData['parent_menu_name'] ?: 'None (Root Menu)',
+                    'menu_code'        => $menuData['menu_code'],
+                    'menu_name'        => $menuData['menu_name'],
+                    'menu_type'        => $menuData['menu_type'],
+                    'route'            => $menuData['route'] ?? '',
+                    'icon'             => $menuData['icon'] ?? '',
+                    'display_order'    => (int)($menuData['display_order'] ?? 0),
+                    'visibility'       => $isVisible ? 'Visible' : 'Hidden',
+                    'is_visible'       => $isVisible,
+                    'status'           => $statusStr,
+                    'is_active'        => $isActive,
+                    'description'      => $desc
+                ]
             ]);
             break;
 
+        /* ========================================================
+           4. CREATE MENU
+           ======================================================== */
         case 'create':
-            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-                throw new Exception("Invalid request method.");
+            if ($reqMethod !== 'POST') {
+                throw new Exception("Invalid request method. POST required.");
             }
 
             $menuCode     = strtoupper(trim($_POST['menu_code'] ?? ''));
             $menuName     = trim($_POST['menu_name'] ?? '');
-            $menuType     = strtoupper(trim($_POST['menu_type'] ?? ''));
-            $parentMenuId = !empty($_POST['parent_menu_id']) ? (int)$_POST['parent_menu_id'] : null;
+            $rawMenuType  = trim($_POST['menu_type'] ?? 'Menu');
+            $menuType     = normalizeMenuType($rawMenuType);
+            $parentMenuId = (!empty($_POST['parent_menu_id']) && is_numeric($_POST['parent_menu_id'])) ? (int)$_POST['parent_menu_id'] : null;
             $route        = sanitizeRouteScheme($_POST['route'] ?? '');
             $icon         = trim($_POST['icon'] ?? '');
-            $displayOrder = isset($_POST['display_order']) && is_numeric($_POST['display_order']) ? (int)$_POST['display_order'] : 10;
-            $isVisible    = isset($_POST['is_visible']) ? (filter_var($_POST['is_visible'], FILTER_VALIDATE_BOOLEAN)) : true;
-            $isActive     = isset($_POST['is_active']) ? (filter_var($_POST['is_active'], FILTER_VALIDATE_BOOLEAN)) : true;
-            $description  = trim($_POST['description'] ?? '');
+            $displayOrder = (isset($_POST['display_order']) && is_numeric($_POST['display_order'])) ? (int)$_POST['display_order'] : 10;
+            
+            // Status resolution (supports 'status' or 'is_active')
+            $statusInput = $_POST['status'] ?? ($_POST['is_active'] ?? 'Active');
+            $status = normalizeStatus($statusInput);
 
-            // Input Validations
+            // Visibility resolution
+            $visibilityInput = $_POST['visibility'] ?? ($_POST['is_visible'] ?? 'true');
+            $isVisible = filter_var($visibilityInput, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($isVisible === null) {
+                $isVisible = (strcasecmp((string)$visibilityInput, 'visible') === 0);
+            }
+
+            $description = trim($_POST['description'] ?? '');
+
+            // Field validations
             if (empty($menuCode)) {
-                throw new Exception("Menu code is required.");
+                throw new Exception("Menu Code is required.");
             }
             if (empty($menuName)) {
-                throw new Exception("Menu name is required.");
-            }
-            if (!in_array($menuType, ['GROUP', 'PAGE'], true)) {
-                throw new Exception("Valid menu type (GROUP or PAGE) is required.");
-            }
-            if ($menuType === 'PAGE' && empty($route)) {
-                throw new Exception("Route is required for PAGE menu type.");
+                throw new Exception("Menu Name is required.");
             }
 
+            // Route check: Non-module menus should have a route
+            if ($menuType !== 'Module' && empty($route)) {
+                $route = strtolower(str_replace('_', '-', $menuCode));
+            }
+
+            // Parent validity check
             if ($parentMenuId !== null) {
-                $pStmt = $pdo->prepare("SELECT menu_id FROM auth.menus WHERE menu_id = :id LIMIT 1");
+                $pStmt = $pdo->prepare("SELECT menu_id FROM menus WHERE menu_id = :id LIMIT 1");
                 $pStmt->execute([':id' => $parentMenuId]);
                 if (!$pStmt->fetch()) {
                     throw new Exception("Selected parent menu does not exist.");
                 }
             }
 
-            $chkStmt = $pdo->prepare("SELECT menu_id FROM auth.menus WHERE UPPER(menu_code) = :code LIMIT 1");
+            // Duplicate code check
+            $chkStmt = $pdo->prepare("SELECT menu_id FROM menus WHERE UPPER(menu_code) = :code LIMIT 1");
             $chkStmt->execute([':code' => $menuCode]);
             if ($chkStmt->fetch()) {
                 throw new Exception("A menu with code '{$menuCode}' already exists.");
             }
 
-            $stmt = $pdo->prepare("
-                INSERT INTO auth.menus (
-                    parent_menu_id, menu_code, menu_name, menu_type,
-                    route, icon, display_order, is_visible, is_active, description
-                ) VALUES (
-                    :parent_menu_id, :menu_code, :menu_name, :menu_type,
-                    :route, :icon, :display_order, :is_visible, :is_active, :description
-                ) RETURNING menu_id
-            ");
+            // Ensure sequence is aligned to avoid duplicate key violations
+            syncMenusSequence($pdo);
 
-            $stmt->execute([
+            // Build dynamic insert based on existing table columns
+            $insertFields = ['parent_menu_id', 'menu_code', 'menu_name', 'menu_type', 'route', 'icon', 'display_order', 'status'];
+            $insertValues = [':parent_menu_id', ':menu_code', ':menu_name', ':menu_type', ':route', ':icon', ':display_order', ':status'];
+            $execParams = [
                 ':parent_menu_id' => $parentMenuId,
                 ':menu_code'      => $menuCode,
                 ':menu_name'      => $menuName,
@@ -304,17 +512,53 @@ try {
                 ':route'          => $route,
                 ':icon'           => $icon,
                 ':display_order'  => $displayOrder,
-                ':is_visible'     => $isVisible ? 'true' : 'false',
-                ':is_active'      => $isActive ? 'true' : 'false',
-                ':description'    => $description
-            ]);
+                ':status'         => $status
+            ];
 
-            $newRow = $stmt->fetch();
+            if ($hasIsVisible) {
+                $insertFields[] = 'is_visible';
+                $insertValues[] = ':is_visible';
+                $execParams[':is_visible'] = $isVisible ? 'true' : 'false';
+            }
+
+            if ($hasDescription) {
+                $insertFields[] = 'description';
+                $insertValues[] = ':description';
+                $execParams[':description'] = $description;
+            }
+
+            $fieldsStr = implode(', ', $insertFields);
+            $valuesStr = implode(', ', $insertValues);
+
+            $stmt = $pdo->prepare("
+                INSERT INTO menus ({$fieldsStr})
+                VALUES ({$valuesStr})
+                RETURNING menu_id
+            ");
+            $stmt->execute($execParams);
+            $newRow = $stmt->fetch(PDO::FETCH_ASSOC);
             $newId = $newRow ? (int)$newRow['menu_id'] : 0;
 
-            if (isset($_SESSION['auth_cache'])) {
-                unset($_SESSION['auth_cache']);
+            // Auto-grant access in role_menu for Platform Admin role (role_id 1 or PLATFORM_ADMIN)
+            if ($newId > 0) {
+                try {
+                    $grantStmt = $pdo->prepare("
+                        INSERT INTO role_menu (
+                            role_id, menu_id, can_view, can_create, can_edit, can_delete,
+                            can_upload, can_download, can_approve, can_export, can_print, can_configure, is_active
+                        )
+                        SELECT role_id, :menu_id, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE
+                        FROM roles
+                        WHERE UPPER(role_code) = 'PLATFORM_ADMIN' OR category_id = 1
+                        ON CONFLICT (role_id, menu_id) DO NOTHING
+                    ");
+                    $grantStmt->execute([':menu_id' => $newId]);
+                } catch (Throwable $e) {
+                    // Non-fatal if role_menu table differs
+                }
             }
+
+            clearAuthSessionCache();
 
             sendJsonResponse([
                 'success' => true,
@@ -323,76 +567,85 @@ try {
             ]);
             break;
 
+        /* ========================================================
+           5. UPDATE MENU
+           ======================================================== */
         case 'update':
-            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-                throw new Exception("Invalid request method.");
+            if ($reqMethod !== 'POST') {
+                throw new Exception("Invalid request method. POST required.");
             }
 
             $menuId       = (int)($_POST['menu_id'] ?? 0);
             $menuCode     = strtoupper(trim($_POST['menu_code'] ?? ''));
             $menuName     = trim($_POST['menu_name'] ?? '');
-            $menuType     = strtoupper(trim($_POST['menu_type'] ?? ''));
-            $parentMenuId = !empty($_POST['parent_menu_id']) ? (int)$_POST['parent_menu_id'] : null;
+            $rawMenuType  = trim($_POST['menu_type'] ?? 'Menu');
+            $menuType     = normalizeMenuType($rawMenuType);
+            $parentMenuId = (!empty($_POST['parent_menu_id']) && is_numeric($_POST['parent_menu_id'])) ? (int)$_POST['parent_menu_id'] : null;
             $route        = sanitizeRouteScheme($_POST['route'] ?? '');
             $icon         = trim($_POST['icon'] ?? '');
-            $displayOrder = isset($_POST['display_order']) && is_numeric($_POST['display_order']) ? (int)$_POST['display_order'] : 10;
-            $isVisible    = isset($_POST['is_visible']) ? (filter_var($_POST['is_visible'], FILTER_VALIDATE_BOOLEAN)) : true;
-            $isActive     = isset($_POST['is_active']) ? (filter_var($_POST['is_active'], FILTER_VALIDATE_BOOLEAN)) : true;
-            $description  = trim($_POST['description'] ?? '');
+            $displayOrder = (isset($_POST['display_order']) && is_numeric($_POST['display_order'])) ? (int)$_POST['display_order'] : 10;
+            
+            $statusInput = $_POST['status'] ?? ($_POST['is_active'] ?? 'Active');
+            $status = normalizeStatus($statusInput);
 
-            if ($menuId <= 0) {
-                throw new Exception("Invalid Menu ID for update.");
+            $visibilityInput = $_POST['visibility'] ?? ($_POST['is_visible'] ?? 'true');
+            $isVisible = filter_var($visibilityInput, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($isVisible === null) {
+                $isVisible = (strcasecmp((string)$visibilityInput, 'visible') === 0);
             }
 
-            $chkExist = $pdo->prepare("SELECT menu_id FROM auth.menus WHERE menu_id = :id LIMIT 1");
+            $description = trim($_POST['description'] ?? '');
+
+            if ($menuId <= 0) {
+                throw new Exception("Invalid Menu ID provided for update.");
+            }
+
+            $chkExist = $pdo->prepare("SELECT menu_id FROM menus WHERE menu_id = :id LIMIT 1");
             $chkExist->execute([':id' => $menuId]);
             if (!$chkExist->fetch()) {
-                throw new Exception("Target menu record not found.");
+                throw new Exception("Menu record with ID #{$menuId} does not exist.");
             }
 
             if (empty($menuCode)) {
-                throw new Exception("Menu code is required.");
+                throw new Exception("Menu Code is required.");
             }
             if (empty($menuName)) {
-                throw new Exception("Menu name is required.");
-            }
-            if (!in_array($menuType, ['GROUP', 'PAGE'], true)) {
-                throw new Exception("Valid menu type (GROUP or PAGE) is required.");
-            }
-            if ($menuType === 'PAGE' && empty($route)) {
-                throw new Exception("Route is required for PAGE menu type.");
+                throw new Exception("Menu Name is required.");
             }
 
-            $chkDup = $pdo->prepare("SELECT menu_id FROM auth.menus WHERE UPPER(menu_code) = :code AND menu_id != :id LIMIT 1");
+            if ($menuType !== 'Module' && empty($route)) {
+                $route = strtolower(str_replace('_', '-', $menuCode));
+            }
+
+            // Duplicate code check (excluding current menu)
+            $chkDup = $pdo->prepare("SELECT menu_id FROM menus WHERE UPPER(menu_code) = :code AND menu_id != :id LIMIT 1");
             $chkDup->execute([':code' => $menuCode, ':id' => $menuId]);
             if ($chkDup->fetch()) {
                 throw new Exception("Another menu with code '{$menuCode}' already exists.");
             }
 
+            // Hierarchy circular dependency prevention
             if ($parentMenuId === $menuId) {
-                throw new Exception("A menu cannot be set as its own parent.");
+                throw new Exception("A menu cannot be assigned as its own parent.");
             }
 
             if ($parentMenuId !== null && isParentAncestor($pdo, $menuId, $parentMenuId)) {
-                throw new Exception("Circular hierarchy detected: Cannot set a child or descendant menu as parent.");
+                throw new Exception("Circular hierarchy detected: You cannot select a child or descendant menu as parent.");
             }
 
-            $stmt = $pdo->prepare("
-                UPDATE auth.menus
-                SET parent_menu_id = :parent_menu_id,
-                    menu_code      = :menu_code,
-                    menu_name      = :menu_name,
-                    menu_type      = :menu_type,
-                    route          = :route,
-                    icon           = :icon,
-                    display_order  = :display_order,
-                    is_visible     = :is_visible,
-                    is_active      = :is_active,
-                    description    = :description
-                WHERE menu_id = :menu_id
-            ");
+            $setClauses = [
+                "parent_menu_id = :parent_menu_id",
+                "menu_code = :menu_code",
+                "menu_name = :menu_name",
+                "menu_type = :menu_type",
+                "route = :route",
+                "icon = :icon",
+                "display_order = :display_order",
+                "status = :status",
+                "updated_at = CURRENT_TIMESTAMP"
+            ];
 
-            $stmt->execute([
+            $updateParams = [
                 ':parent_menu_id' => $parentMenuId,
                 ':menu_code'      => $menuCode,
                 ':menu_name'      => $menuName,
@@ -400,15 +653,30 @@ try {
                 ':route'          => $route,
                 ':icon'           => $icon,
                 ':display_order'  => $displayOrder,
-                ':is_visible'     => $isVisible ? 'true' : 'false',
-                ':is_active'      => $isActive ? 'true' : 'false',
-                ':description'    => $description,
+                ':status'         => $status,
                 ':menu_id'        => $menuId
-            ]);
+            ];
 
-            if (isset($_SESSION['auth_cache'])) {
-                unset($_SESSION['auth_cache']);
+            if ($hasIsVisible) {
+                $setClauses[] = "is_visible = :is_visible";
+                $updateParams[':is_visible'] = $isVisible ? 'true' : 'false';
             }
+
+            if ($hasDescription) {
+                $setClauses[] = "description = :description";
+                $updateParams[':description'] = $description;
+            }
+
+            $setSql = implode(', ', $setClauses);
+
+            $stmt = $pdo->prepare("
+                UPDATE menus
+                SET {$setSql}
+                WHERE menu_id = :menu_id
+            ");
+            $stmt->execute($updateParams);
+
+            clearAuthSessionCache();
 
             sendJsonResponse([
                 'success' => true,
@@ -416,9 +684,12 @@ try {
             ]);
             break;
 
+        /* ========================================================
+           6. TOGGLE STATUS (ACTIVE / INACTIVE)
+           ======================================================== */
         case 'toggle_status':
-            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-                throw new Exception("Invalid request method.");
+            if ($reqMethod !== 'POST') {
+                throw new Exception("Invalid request method. POST required.");
             }
 
             $menuId = (int)($_POST['menu_id'] ?? 0);
@@ -426,36 +697,114 @@ try {
                 throw new Exception("Invalid Menu ID.");
             }
 
-            $stmtCurr = $pdo->prepare("SELECT is_active FROM auth.menus WHERE menu_id = :id LIMIT 1");
+            $stmtCurr = $pdo->prepare("SELECT menu_id, menu_name, status FROM menus WHERE menu_id = :id LIMIT 1");
             $stmtCurr->execute([':id' => $menuId]);
-            $currRow = $stmtCurr->fetch();
+            $currRow = $stmtCurr->fetch(PDO::FETCH_ASSOC);
 
             if (!$currRow) {
                 throw new Exception("Menu record not found.");
             }
 
-            $newStatus = !((bool)$currRow['is_active']);
+            $currStatus = $currRow['status'] ?? 'Active';
+            $newStatus = (strcasecmp($currStatus, 'Active') === 0) ? 'Inactive' : 'Active';
+            $isActive = ($newStatus === 'Active');
 
-            $stmtUpd = $pdo->prepare("UPDATE auth.menus SET is_active = :status WHERE menu_id = :id");
+            $stmtUpd = $pdo->prepare("
+                UPDATE menus 
+                SET status = :status, updated_at = CURRENT_TIMESTAMP 
+                WHERE menu_id = :id
+            ");
             $stmtUpd->execute([
-                ':status' => $newStatus ? 'true' : 'false',
+                ':status' => $newStatus,
                 ':id'     => $menuId
             ]);
 
-            if (isset($_SESSION['auth_cache'])) {
-                unset($_SESSION['auth_cache']);
-            }
+            clearAuthSessionCache();
 
             sendJsonResponse([
                 'success'   => true,
-                'message'   => 'Menu status updated successfully.',
-                'is_active' => $newStatus
+                'message'   => "Menu '{$currRow['menu_name']}' is now {$newStatus}.",
+                'status'    => $newStatus,
+                'is_active' => $isActive
+            ]);
+            break;
+
+        /* ========================================================
+           7. DELETE MENU
+           ======================================================== */
+        case 'delete':
+            if ($reqMethod !== 'POST') {
+                throw new Exception("Invalid request method. POST required.");
+            }
+
+            $menuId = (int)($_POST['menu_id'] ?? 0);
+            if ($menuId <= 0) {
+                throw new Exception("Invalid Menu ID provided for deletion.");
+            }
+
+            // Verify existence
+            $checkStmt = $pdo->prepare("SELECT menu_id, menu_name FROM menus WHERE menu_id = :id LIMIT 1");
+            $checkStmt->execute([':id' => $menuId]);
+            $menu = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$menu) {
+                throw new Exception("Menu record not found or already deleted.");
+            }
+
+            // Check if menu has active children
+            $childStmt = $pdo->prepare("SELECT COUNT(*) FROM menus WHERE parent_menu_id = :id");
+            $childStmt->execute([':id' => $menuId]);
+            $childCount = (int)$childStmt->fetchColumn();
+
+            if ($childCount > 0) {
+                throw new Exception("Cannot delete '{$menu['menu_name']}' because it has {$childCount} sub-menu(s). Please reassign or delete child menus first.");
+            }
+
+            // Execute delete in a transaction (cascade role_menu entries safely)
+            $pdo->beginTransaction();
+            try {
+                // Delete any linked role permissions first if not cascaded
+                $delRoleMenu = $pdo->prepare("DELETE FROM role_menu WHERE menu_id = :id");
+                $delRoleMenu->execute([':id' => $menuId]);
+
+                $delStmt = $pdo->prepare("DELETE FROM menus WHERE menu_id = :id");
+                $delStmt->execute([':id' => $menuId]);
+
+                $pdo->commit();
+            } catch (Throwable $e) {
+                $pdo->rollBack();
+                throw new Exception("Database error while deleting menu: " . $e->getMessage());
+            }
+
+            clearAuthSessionCache();
+
+            sendJsonResponse([
+                'success' => true,
+                'message' => "Menu '{$menu['menu_name']}' deleted successfully."
             ]);
             break;
 
         default:
             throw new Exception("Unsupported action '{$action}'.");
     }
+
+} catch (PDOException $e) {
+    // Graceful PostgreSQL error handling without leaking credentials or database hosts
+    $msg = $e->getMessage();
+    if (strpos($msg, 'violates unique constraint') !== false) {
+        $friendlyError = "A menu with that code already exists. Please use a unique Menu Code.";
+    } elseif (strpos($msg, 'violates check constraint') !== false) {
+        $friendlyError = "Invalid menu field value provided. Please review Menu Type or Status.";
+    } elseif (strpos($msg, 'foreign key constraint') !== false) {
+        $friendlyError = "The referenced parent menu does not exist or has dependent records.";
+    } else {
+        $friendlyError = "Database error: " . $msg;
+    }
+
+    sendJsonResponse([
+        'success' => false,
+        'error'   => $friendlyError
+    ], 400);
 
 } catch (Exception $e) {
     sendJsonResponse([

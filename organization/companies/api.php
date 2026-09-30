@@ -58,6 +58,12 @@ try {
             $params[':cust_id'] = $activeCustomerId;
         }
 
+        $filterCustomerId = isset($_GET['customer_id']) && $_GET['customer_id'] !== '' ? (int)$_GET['customer_id'] : null;
+        if ($filterCustomerId) {
+            $sql .= " AND c.customer_id = :filter_cust_id";
+            $params[':filter_cust_id'] = $filterCustomerId;
+        }
+
         if ($search !== '') {
             $sql .= " AND (c.company_code ILIKE :search OR c.company_name ILIKE :search OR c.address ILIKE :search)";
             $params[':search'] = '%' . $search . '%';
