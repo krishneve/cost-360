@@ -21,6 +21,13 @@ $activeCompany = getActiveCompany();
 $activeCompanyId = $activeCompany['company_id'] ?? null;
 $activeCustomerId = $activeCompany['customer_id'] ?? null;
 $isPlatform = isPlatformAdmin();
+$isCma = isCmaAdmin();
+
+if ($isCma && !$activeCustomerId) {
+    $activeCustomerId = getCmaAdminCustomerId();
+} elseif (!$activeCustomerId && isset($_SESSION['active_customer_id']) && is_numeric($_SESSION['active_customer_id'])) {
+    $activeCustomerId = (int)$_SESSION['active_customer_id'];
+}
 
 $action = $_GET['action'] ?? $_POST['action'] ?? 'list';
 
@@ -256,6 +263,16 @@ try {
             ':ip' => $ip
         ]);
 
+        $pdo->prepare("
+            INSERT INTO audit_log (user_id, entity_name, entity_id, action, new_value, timestamp, ip_address)
+            VALUES (:uid, 'plants', :eid, 'PLANT_CREATED', :nval, CURRENT_TIMESTAMP, :ip)
+        ")->execute([
+            ':uid' => $currentUser['user_id'],
+            ':eid' => $newId,
+            ':nval' => json_encode(['plant_id' => $newId, 'division_id' => $divisionId, 'plant_code' => $plantCode, 'plant_name' => $plantName, 'location' => $location]),
+            ':ip' => $ip
+        ]);
+
         echo json_encode(['success' => true, 'message' => 'Plant created successfully.', 'plant_id' => $newId]);
         exit;
     }
@@ -308,6 +325,17 @@ try {
             ':uname' => $currentUser['email'] ?? $currentUser['username'],
             ':eid' => $id,
             ':details' => json_encode(['old' => $oldPlant, 'new' => ['division_id' => $divisionId, 'name' => $plantName, 'location' => $location, 'status' => $status]]),
+            ':ip' => $ip
+        ]);
+
+        $pdo->prepare("
+            INSERT INTO audit_log (user_id, entity_name, entity_id, action, old_value, new_value, timestamp, ip_address)
+            VALUES (:uid, 'plants', :eid, 'PLANT_UPDATED', :oval, :nval, CURRENT_TIMESTAMP, :ip)
+        ")->execute([
+            ':uid' => $currentUser['user_id'],
+            ':eid' => $id,
+            ':oval' => json_encode($oldPlant),
+            ':nval' => json_encode(['plant_id' => $id, 'division_id' => $divisionId, 'plant_name' => $plantName, 'location' => $location, 'status' => $status]),
             ':ip' => $ip
         ]);
 

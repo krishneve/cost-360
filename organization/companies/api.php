@@ -20,6 +20,13 @@ $activeCompany = getActiveCompany();
 $activeCompanyId = $activeCompany['company_id'] ?? null;
 $activeCustomerId = $activeCompany['customer_id'] ?? null;
 $isPlatform = isPlatformAdmin();
+$isCma = isCmaAdmin();
+
+if ($isCma && !$activeCustomerId) {
+    $activeCustomerId = getCmaAdminCustomerId();
+} elseif (!$activeCustomerId && isset($_SESSION['active_customer_id']) && is_numeric($_SESSION['active_customer_id'])) {
+    $activeCustomerId = (int)$_SESSION['active_customer_id'];
+}
 
 $action = $_GET['action'] ?? $_POST['action'] ?? 'list';
 
@@ -191,6 +198,16 @@ try {
             ':ip' => $ip
         ]);
 
+        $pdo->prepare("
+            INSERT INTO audit_log (user_id, entity_name, entity_id, action, new_value, timestamp, ip_address)
+            VALUES (:uid, 'companies', :eid, 'COMPANY_CREATED', :nval, CURRENT_TIMESTAMP, :ip)
+        ")->execute([
+            ':uid' => $currentUser['user_id'],
+            ':eid' => $newId,
+            ':nval' => json_encode(['company_id' => $newId, 'company_code' => $companyCode, 'company_name' => $companyName, 'customer_id' => $customerId]),
+            ':ip' => $ip
+        ]);
+
         echo json_encode(['success' => true, 'message' => 'Company created successfully.', 'company_id' => $newId]);
         exit;
     }
@@ -240,6 +257,17 @@ try {
             ':uname' => $currentUser['email'] ?? $currentUser['username'],
             ':eid' => $id,
             ':details' => json_encode(['old' => $oldComp, 'new' => ['name' => $companyName, 'status' => $status]]),
+            ':ip' => $ip
+        ]);
+
+        $pdo->prepare("
+            INSERT INTO audit_log (user_id, entity_name, entity_id, action, old_value, new_value, timestamp, ip_address)
+            VALUES (:uid, 'companies', :eid, 'COMPANY_UPDATED', :oval, :nval, CURRENT_TIMESTAMP, :ip)
+        ")->execute([
+            ':uid' => $currentUser['user_id'],
+            ':eid' => $id,
+            ':oval' => json_encode($oldComp),
+            ':nval' => json_encode(['company_name' => $companyName, 'status' => $status]),
             ':ip' => $ip
         ]);
 

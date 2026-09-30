@@ -107,7 +107,7 @@ $currentUserId =
    USER MASTER MENU ACCESS
    ============================================================ */
 
-if (!userHasMenuAccess('USER_MASTER')) {
+if (!isPlatformAdmin($currentUserId) && !isCmaAdmin($currentUserId) && !userHasMenuAccess('USER_MASTER') && !userHasMenuAccess('CMA_USER_MASTER')) {
 
     jsonResponse(
         false,
@@ -144,10 +144,18 @@ function requireUserMasterPermission(
     string $permission
 ): void {
 
+    if (isPlatformAdmin() || isCmaAdmin()) {
+        return;
+    }
+
     if (
         !userHasPermission(
             $permission,
             'USER_MASTER'
+        ) &&
+        !userHasPermission(
+            $permission,
+            'CMA_USER_MASTER'
         )
     ) {
 
@@ -342,6 +350,18 @@ function writeAuditLog(
     ?array $newValue
 ): void {
 
+    // Map standard audit actions (Phase 17)
+    $mappedAction = $action;
+    if ($action === 'INSERT') {
+        $mappedAction = 'USER_CREATED';
+    } elseif ($action === 'UPDATE') {
+        if (isset($newValue['status']) && isset($oldValue['status']) && $newValue['status'] !== $oldValue['status']) {
+            $mappedAction = (strtoupper($newValue['status']) === 'ACTIVE') ? 'USER_ACTIVATED' : 'USER_DEACTIVATED';
+        } else {
+            $mappedAction = 'USER_UPDATED';
+        }
+    }
+
     $stmt = $pdo->prepare("
         INSERT INTO audit_log
         (
@@ -382,7 +402,7 @@ function writeAuditLog(
             $entityId,
 
         ':action' =>
-            $action,
+            $mappedAction,
 
         ':old_value' =>
             $oldValue !== null
@@ -499,6 +519,24 @@ try {
             ";
 
             $params = [];
+
+            if (isCmaAdmin($currentUserId)) {
+                $cmaCustId = getCmaAdminCustomerId($currentUserId);
+                $sql .= " AND (
+                    u.user_id = :cma_user_id 
+                    OR (
+                        EXISTS (
+                            SELECT 1 FROM user_organization_access uoa 
+                            WHERE uoa.user_id = u.user_id 
+                              AND uoa.customer_id = :cma_cust_id 
+                              AND UPPER(uoa.status) = 'ACTIVE'
+                        )
+                        AND COALESCE(r.role_code, '') NOT IN ('PLATFORM_ADMIN', 'SUPER_ADMIN', 'CMA_ADMIN')
+                    )
+                )";
+                $params[':cma_user_id'] = $currentUserId;
+                $params[':cma_cust_id'] = $cmaCustId ?: 0;
+            }
 
 
             /* --------------------------------------------------
@@ -727,7 +765,7 @@ try {
              * active roles belonging to active categories.
              */
 
-            $stmt = $pdo->query("
+            $sql = "
                 SELECT
 
                     r.role_id,
@@ -749,15 +787,19 @@ try {
 
                 WHERE r.status = 'Active'
                   AND c.status = 'Active'
+            ";
 
+            if (isCmaAdmin($currentUserId)) {
+                $sql .= " AND r.role_code NOT IN ('PLATFORM_ADMIN', 'SUPER_ADMIN', 'CMA_ADMIN')";
+            }
+
+            $sql .= "
                 ORDER BY
                     r.role_name ASC
-            ");
+            ";
 
-            $roles =
-                $stmt->fetchAll(
-                    PDO::FETCH_ASSOC
-                );
+            $stmt = $pdo->query($sql);
+            $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
             jsonResponse(
@@ -1006,7 +1048,15 @@ try {
                CUSTOMER / TENANT & SUBSCRIPTION USER LIMIT ENFORCEMENT
                -------------------------------------------------- */
             $targetCustomerId = 0;
-            if (!empty($_POST['customer_id'])) {
+            if (isCmaAdmin($currentUserId)) {
+                $targetCustomerId = getCmaAdminCustomerId($currentUserId);
+                if (!$targetCustomerId) {
+                    throw new Exception('No customer organization assigned to this CMA Admin.');
+                }
+                if (in_array(strtoupper($role['role_code'] ?? ''), ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'CMA_ADMIN'], true)) {
+                    throw new Exception('CMA Admins can only assign operational customer roles.');
+                }
+            } elseif (!empty($_POST['customer_id'])) {
                 $targetCustomerId = (int)$_POST['customer_id'];
             } elseif (!empty($_SESSION['active_customer_id'])) {
                 $targetCustomerId = (int)$_SESSION['active_customer_id'];

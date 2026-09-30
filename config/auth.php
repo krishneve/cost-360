@@ -196,6 +196,84 @@ if (!function_exists('requireActiveOrganizationContext')) {
             return true;
         }
 
+        /*
+         * CMA Admin customer context support.
+         * Scoped to their tenant/customer. If companies are not yet created or selected,
+         * initialize customer context so CMA Admin is never locked out of administration.
+         */
+        if (isCmaAdmin($userId)) {
+            $pdo = getDbConnection();
+            $cid = getCmaAdminCustomerId($userId);
+            if ($cid) {
+                if (empty($_SESSION['active_customer_id']) || (string)$_SESSION['active_customer_id'] !== (string)$cid) {
+                    $cStmt = $pdo->prepare("SELECT customer_id, customer_code, customer_name FROM customers WHERE customer_id = :cid");
+                    $cStmt->execute([':cid' => $cid]);
+                    $cust = $cStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($cust) {
+                        $_SESSION['active_customer_id'] = $cust['customer_id'];
+                        $_SESSION['active_customer_code'] = $cust['customer_code'];
+                        $_SESSION['active_customer_name'] = $cust['customer_name'];
+                    }
+                }
+            }
+
+            // Check if companies exist for this customer
+            $companies = getUserAccessibleCompanies($userId);
+            if (empty($companies)) {
+                // Customer has no companies yet - allow CMA Admin to manage customer & organization
+                if (!isset($_SESSION['active_company_id']) || empty($_SESSION['active_company_id'])) {
+                    $_SESSION['active_company_id'] = 'ALL';
+                    $_SESSION['active_company_code'] = 'ALL';
+                    $_SESSION['active_company_name'] = $_SESSION['active_customer_name'] ?? 'Customer Organization';
+                    $_SESSION['active_division_id'] = 'ALL';
+                    $_SESSION['active_division_code'] = 'ALL';
+                    $_SESSION['active_division_name'] = 'All Divisions';
+                    $_SESSION['active_plant_id'] = 'ALL';
+                    $_SESSION['active_plant_code'] = 'ALL';
+                    $_SESSION['active_plant_name'] = 'All Plants';
+                    $_SESSION['active_warehouse_id'] = 'ALL';
+                    $_SESSION['active_warehouse_code'] = 'ALL';
+                    $_SESSION['active_warehouse_name'] = 'All Warehouses';
+                    $_SESSION['active_period_id'] = 'ALL';
+                    $_SESSION['active_period_name'] = 'All Periods';
+                }
+                return true;
+            } else if (!empty($companies) && empty($_SESSION['active_company_id'])) {
+                setActiveCompany($companies[0]['company_id']);
+            }
+            if (!empty($_SESSION['active_company_id'])) {
+                // Set division / plant defaults if not set
+                if (empty($_SESSION['active_division_id'])) {
+                    $divs = getUserAccessibleDivisions($userId, $_SESSION['active_company_id']);
+                    if (!empty($divs)) {
+                        setActiveDivision($divs[0]['division_id']);
+                    } else {
+                        $_SESSION['active_division_id'] = 'ALL';
+                        $_SESSION['active_division_name'] = 'All Divisions';
+                    }
+                }
+                if (empty($_SESSION['active_plant_id'])) {
+                    $plants = getUserAccessiblePlants($userId, $_SESSION['active_company_id'], $_SESSION['active_division_id'] ?? null);
+                    if (!empty($plants)) {
+                        setActivePlant($plants[0]['plant_id']);
+                    } else {
+                        $_SESSION['active_plant_id'] = 'ALL';
+                        $_SESSION['active_plant_name'] = 'All Plants';
+                    }
+                }
+                if (empty($_SESSION['active_period_id'])) {
+                    $periods = getUserAccessiblePeriods($_SESSION['active_company_id']);
+                    if (!empty($periods)) {
+                        setActivePeriod($periods[0]['period_id']);
+                    } else {
+                        $_SESSION['active_period_id'] = 'ALL';
+                        $_SESSION['active_period_name'] = 'All Periods';
+                    }
+                }
+                return true;
+            }
+        }
+
         $script = $_SERVER['SCRIPT_NAME'] ?? '';
         $prefix = '';
         if (
@@ -498,6 +576,91 @@ if (!function_exists('isPlatformAdmin')) {
 }
 
 /* ============================================================
+   CMA ADMIN CHECK
+   ============================================================ */
+
+if (!function_exists('isCmaAdmin')) {
+
+    function isCmaAdmin($userId = null)
+    {
+        if ($userId === null) {
+            $userId = $_SESSION['user_id'] ?? null;
+        }
+
+        if (!$userId) {
+            return false;
+        }
+
+        $role = getCurrentUserRole($userId);
+
+        if (!$role) {
+            return false;
+        }
+
+        $roleCode = strtoupper(
+            trim($role['role_code'] ?? '')
+        );
+
+        $roleName = strtoupper(
+            trim($role['role_name'] ?? '')
+        );
+
+        return in_array(
+            $roleCode,
+            [
+                'CMA_ADMIN',
+                'CMA'
+            ],
+            true
+        )
+        ||
+        in_array(
+            $roleName,
+            [
+                'CMA ADMIN',
+                'CMA / COST ADMINISTRATORS',
+                'COST ADMINISTRATOR'
+            ],
+            true
+        );
+    }
+}
+
+if (!function_exists('getCmaAdminCustomerId')) {
+
+    function getCmaAdminCustomerId($userId = null)
+    {
+        if ($userId === null) {
+            $userId = $_SESSION['user_id'] ?? null;
+        }
+        if (!$userId) return null;
+
+        if (isset($_SESSION['active_customer_id']) && is_numeric($_SESSION['active_customer_id'])) {
+            return (int)$_SESSION['active_customer_id'];
+        }
+
+        try {
+            $pdo = getDbConnection();
+            $stmt = $pdo->prepare("
+                SELECT customer_id 
+                FROM user_organization_access 
+                WHERE user_id = :uid 
+                  AND customer_id IS NOT NULL 
+                  AND UPPER(status) = 'ACTIVE'
+                ORDER BY access_id ASC 
+                LIMIT 1
+            ");
+            $stmt->execute([':uid' => $userId]);
+            $cid = $stmt->fetchColumn();
+            return $cid ? (int)$cid : null;
+        } catch (Throwable $e) {
+            error_log('Error getting CMA Admin customer ID: ' . $e->getMessage());
+            return null;
+        }
+    }
+}
+
+/* ============================================================
    ORGANIZATION ACCESS
    ============================================================ */
 
@@ -543,13 +706,27 @@ if (!function_exists('getUserAccessibleCustomers')) {
                 return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             }
 
+            // Direct customer scope assigned in user_organization_access
+            $stmtDirect = $pdo->prepare("
+                SELECT DISTINCT uoa.customer_id
+                FROM user_organization_access uoa
+                WHERE uoa.user_id = :user_id
+                  AND UPPER(uoa.status) = 'ACTIVE'
+                  AND uoa.customer_id IS NOT NULL
+                  AND CURRENT_DATE >= uoa.valid_from
+                  AND (uoa.valid_to IS NULL OR CURRENT_DATE <= uoa.valid_to)
+            ");
+            $stmtDirect->execute([':user_id' => $userId]);
+            $directCustIds = $stmtDirect->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+            // Indirect customer scope from accessible companies
             $companies = getUserAccessibleCompanies($userId);
-            if (empty($companies)) return [];
+            $compCustIds = !empty($companies) ? array_filter(array_unique(array_column($companies, 'customer_id'))) : [];
 
-            $custIds = array_filter(array_unique(array_column($companies, 'customer_id')));
-            if (empty($custIds)) return [];
+            $allCustIds = array_unique(array_merge($directCustIds, $compCustIds));
+            if (empty($allCustIds)) return [];
 
-            $inClause = implode(',', array_map('intval', $custIds));
+            $inClause = implode(',', array_map('intval', $allCustIds));
             $stmt = $pdo->prepare("
                 SELECT customer_id, customer_code, customer_name, status
                 FROM customers
@@ -1037,20 +1214,30 @@ if (!function_exists('getUserAccessiblePlants')) {
     {
         if ($userId === null) $userId = $_SESSION['user_id'] ?? null;
         if ($companyId === null) $companyId = $_SESSION['active_company_id'] ?? null;
-        if ($divisionId === null) $divisionId = $_SESSION['active_division_id'] ?? null;
-        if (!$userId || !$companyId || !$divisionId) return [];
+        if ($divisionId === null && isset($_SESSION['active_division_id'])) {
+            $divisionId = $_SESSION['active_division_id'];
+        }
+        if (!$userId || !$companyId) return [];
 
         try {
             $pdo = getDbConnection();
+            $hasDiv = ($divisionId !== null && $divisionId !== '' && (string)$divisionId !== 'ALL');
+
             if (isPlatformAdmin($userId)) {
-                $stmt = $pdo->prepare('
+                $sql = '
                     SELECT p.plant_id, p.division_id, p.plant_code, p.plant_name, p.location, p.status
                     FROM plants p
                     INNER JOIN divisions d ON d.division_id = p.division_id
-                    WHERE p.division_id = :division_id AND d.company_id = :company_id AND UPPER(p.status) = \'ACTIVE\'
-                    ORDER BY p.plant_name ASC, p.plant_id ASC
-                ');
-                $stmt->execute([':division_id' => $divisionId, ':company_id' => $companyId]);
+                    WHERE d.company_id = :company_id AND UPPER(p.status) = \'ACTIVE\'
+                ';
+                $params = [':company_id' => $companyId];
+                if ($hasDiv) {
+                    $sql .= ' AND p.division_id = :division_id';
+                    $params[':division_id'] = $divisionId;
+                }
+                $sql .= ' ORDER BY p.plant_name ASC, p.plant_id ASC';
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
                 return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             }
 
@@ -1072,17 +1259,22 @@ if (!function_exists('getUserAccessiblePlants')) {
                     OR (uoa.plant_id = p.plant_id)
                     OR (uoa.warehouse_id IS NOT NULL AND EXISTS (SELECT 1 FROM warehouses w WHERE w.warehouse_id = uoa.warehouse_id AND w.plant_id = p.plant_id))
                 )
-                WHERE p.division_id = :division_id
-                  AND d.company_id = :company_id
+                WHERE d.company_id = :company_id
                   AND uoa.user_id = :user_id
                   AND UPPER(uoa.status) = \'ACTIVE\'
                   AND CURRENT_DATE >= uoa.valid_from
                   AND (uoa.valid_to IS NULL OR CURRENT_DATE <= uoa.valid_to)
                   AND UPPER(p.status) = \'ACTIVE\'
-                ORDER BY p.plant_name ASC, p.plant_id ASC
             ';
+            $params = [':company_id' => $companyId, ':user_id' => $userId];
+            if ($hasDiv) {
+                $sql .= ' AND p.division_id = :division_id';
+                $params[':division_id'] = $divisionId;
+            }
+            $sql .= ' ORDER BY p.plant_name ASC, p.plant_id ASC';
+
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([':division_id' => $divisionId, ':company_id' => $companyId, ':user_id' => $userId]);
+            $stmt->execute($params);
             return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (Throwable $e) {
             error_log('Error fetching plants: ' . $e->getMessage());

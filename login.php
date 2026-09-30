@@ -62,6 +62,20 @@ $isAjax =
 
 if (isLoggedIn()) {
 
+    if (isPlatformAdmin() || isCmaAdmin()) {
+        requireActiveOrganizationContext();
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => true,
+                'redirect' => 'dashboard.php'
+            ]);
+            exit;
+        }
+        header('Location: dashboard.php');
+        exit;
+    }
+
     $ctx = getActiveOrganizationContext();
 
     if (
@@ -494,10 +508,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                            GET USER'S ACCESSIBLE COMPANIES
                            ===================================== */
 /* ============================================================
-   PLATFORM ADMIN
+   PLATFORM ADMIN & CMA ADMIN
    ============================================================ */
 
-if (isPlatformAdmin($user['user_id'])) {
+if (isPlatformAdmin($user['user_id']) || isCmaAdmin($user['user_id'])) {
 
     requireActiveOrganizationContext();
 

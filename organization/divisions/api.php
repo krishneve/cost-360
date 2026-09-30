@@ -21,6 +21,13 @@ $activeCompany = getActiveCompany();
 $activeCompanyId = $activeCompany['company_id'] ?? null;
 $activeCustomerId = $activeCompany['customer_id'] ?? null;
 $isPlatform = isPlatformAdmin();
+$isCma = isCmaAdmin();
+
+if ($isCma && !$activeCustomerId) {
+    $activeCustomerId = getCmaAdminCustomerId();
+} elseif (!$activeCustomerId && isset($_SESSION['active_customer_id']) && is_numeric($_SESSION['active_customer_id'])) {
+    $activeCustomerId = (int)$_SESSION['active_customer_id'];
+}
 
 $action = $_GET['action'] ?? $_POST['action'] ?? 'list';
 
@@ -223,6 +230,16 @@ try {
             ':ip' => $ip
         ]);
 
+        $pdo->prepare("
+            INSERT INTO audit_log (user_id, entity_name, entity_id, action, new_value, timestamp, ip_address)
+            VALUES (:uid, 'divisions', :eid, 'DIVISION_CREATED', :nval, CURRENT_TIMESTAMP, :ip)
+        ")->execute([
+            ':uid' => $currentUser['user_id'],
+            ':eid' => $newId,
+            ':nval' => json_encode(['division_id' => $newId, 'company_id' => $companyId, 'division_code' => $divisionCode, 'division_name' => $divisionName]),
+            ':ip' => $ip
+        ]);
+
         echo json_encode(['success' => true, 'message' => 'Division created successfully.', 'division_id' => $newId]);
         exit;
     }
@@ -272,6 +289,17 @@ try {
             ':uname' => $currentUser['email'] ?? $currentUser['username'],
             ':eid' => $id,
             ':details' => json_encode(['old' => $oldDiv, 'new' => ['company_id' => $companyId, 'name' => $divisionName, 'status' => $status]]),
+            ':ip' => $ip
+        ]);
+
+        $pdo->prepare("
+            INSERT INTO audit_log (user_id, entity_name, entity_id, action, old_value, new_value, timestamp, ip_address)
+            VALUES (:uid, 'divisions', :eid, 'DIVISION_UPDATED', :oval, :nval, CURRENT_TIMESTAMP, :ip)
+        ")->execute([
+            ':uid' => $currentUser['user_id'],
+            ':eid' => $id,
+            ':oval' => json_encode($oldDiv),
+            ':nval' => json_encode(['division_id' => $id, 'company_id' => $companyId, 'division_name' => $divisionName, 'status' => $status]),
             ':ip' => $ip
         ]);
 
