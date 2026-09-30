@@ -102,13 +102,15 @@ if (!function_exists('getMenuIconSvg')) {
     }
 }
 
-$scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
-$baseUrlPrefix = '';
-if (preg_match('#/(?:admin|administration|organization)/[^/]+/#i', $scriptName) ||
-    preg_match('#/(?:admin|administration|organization)/[^/]+/index\.php#i', $scriptName)) {
-    $baseUrlPrefix = '../../';
-} else if (strpos($scriptName, '/admin/') !== false || strpos($scriptName, '/administration/') !== false || strpos($scriptName, '/organization/') !== false) {
-    $baseUrlPrefix = '../';
+$appRootDir = realpath(__DIR__);
+$currentScriptDir = realpath(dirname($_SERVER['SCRIPT_FILENAME'] ?? __FILE__));
+$relative = str_replace('\\', '/', substr($currentScriptDir, strlen($appRootDir)));
+$relative = trim($relative, '/');
+if ($relative === '') {
+    $baseUrlPrefix = '';
+} else {
+    $depth = count(explode('/', $relative));
+    $baseUrlPrefix = str_repeat('../', $depth);
 }
 
 if (!function_exists('formatMenuRouteUrl')) {

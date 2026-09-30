@@ -274,22 +274,11 @@ if (!function_exists('requireActiveOrganizationContext')) {
             }
         }
 
-        $script = $_SERVER['SCRIPT_NAME'] ?? '';
-        $prefix = '';
-        if (
-            strpos($script, '/admin/') !== false ||
-            strpos($script, '/administration/') !== false ||
-            strpos($script, '/organization/') !== false
-        ) {
-            if (
-                preg_match('#/(?:admin|administration|organization)/[^/]+/#i', $script) ||
-                preg_match('#/(?:admin|administration|organization)/[^/]+/index\.php#i', $script)
-            ) {
-                $prefix = '../../';
-            } else {
-                $prefix = '../';
-            }
-        }
+        $appRootDir = realpath(dirname(__DIR__));
+        $currentScriptDir = realpath(dirname($_SERVER['SCRIPT_FILENAME'] ?? __FILE__));
+        $relative = str_replace('\\', '/', substr($currentScriptDir, strlen($appRootDir)));
+        $relative = trim($relative, '/');
+        $prefix = $relative === '' ? '' : str_repeat('../', count(explode('/', $relative)));
 
         if (empty($_SESSION['active_company_id'])) {
             header('Location: ' . $prefix . 'company-selection.php');
@@ -1848,7 +1837,10 @@ if (!function_exists('getUserAuthorizedMenus')) {
                         TRUE AS can_print,
                         TRUE AS can_configure
                     FROM menus m
-                    WHERE m.status = 'Active'
+                    INNER JOIN role_menu rm ON rm.menu_id = m.menu_id
+                    INNER JOIN roles r ON r.role_id = rm.role_id
+                    WHERE r.role_code = 'PLATFORM_ADMIN'
+                      AND m.status = 'Active'
                     ORDER BY m.display_order ASC, m.menu_id ASC
                 ");
                 $stmt->execute();
