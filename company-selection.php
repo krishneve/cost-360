@@ -3,855 +3,342 @@
  * Cost360
  * Company Selection
  *
- * Users reach this page after successful authentication
- * when they have access to more than one company.
+ * Users reach this page after selecting a Customer or during initial organization selection.
  */
 
 require_once __DIR__ . '/config/auth.php';
 
 requireAuth();
 
-$userId =
-    $_SESSION['user_id'] ?? null;
-
+$userId = $_SESSION['user_id'] ?? null;
 if (!$userId) {
     header('Location: login.php');
     exit;
 }
 
+$activeCustomer = getActiveCustomer();
+$customerId = $activeCustomer['customer_id'] ?? null;
+$isAdmin = isPlatformAdmin($userId);
+$errorMessage = '';
 
 /* ============================================================
    HANDLE COMPANY SELECTION
    ============================================================ */
 
-$errorMessage = '';
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-    $companyId =
-        trim($_POST['company_id'] ?? '');
+    $companyId = trim($_POST['company_id'] ?? '');
 
     if ($companyId === '') {
-
-        $errorMessage =
-            'Please select a company.';
-
+        $errorMessage = 'Please select a company.';
     } else {
-
-        /*
-         * IMPORTANT:
-         *
-         * setActiveCompany() validates that the selected
-         * company is actually accessible to the logged-in user.
-         */
-
-        if (
-            setActiveCompany(
-                $companyId
-            )
-        ) {
-
-            header(
-                'Location: dashboard.php'
-            );
-
+        if ($companyId === 'ALL' && $isAdmin) {
+            $_SESSION['active_company_id'] = 'ALL';
+            $_SESSION['active_company_code'] = 'ALL';
+            $_SESSION['active_company_name'] = 'All Companies';
+            clearActiveDivision();
+            header('Location: division-selection.php');
             exit;
+        }
 
+        if (setActiveCompany($companyId)) {
+            header('Location: division-selection.php');
+            exit;
         } else {
-
-            $errorMessage =
-                'You do not have access to the selected company.';
+            $errorMessage = 'You do not have access to the selected company.';
         }
     }
 }
 
-
 /* ============================================================
-   FETCH ACCESSIBLE COMPANIES
+   FETCH ACCESSIBLE COMPANIES FOR SELECTED CUSTOMER
    ============================================================ */
 
-$companies =
-    getUserAccessibleCompanies(
-        $userId
-    );
-
+$companies = getUserAccessibleCompanies($userId, $customerId);
 
 /* ============================================================
-   NO COMPANY ACCESS
+   AUTO-SELECT SINGLE COMPANY (For non-admin)
    ============================================================ */
 
-if (empty($companies)) {
-
-    clearActiveCompany();
-
-    ?>
-    <!DOCTYPE html>
-    <html lang="en">
-
-    <head>
-
-        <meta charset="UTF-8">
-
-        <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1.0"
-        >
-
-        <title>
-            Cost360 - No Company Access
-        </title>
-
-        <link
-            rel="preconnect"
-            href="https://fonts.googleapis.com"
-        >
-
-        <link
-            rel="preconnect"
-            href="https://fonts.gstatic.com"
-            crossorigin
-        >
-
-        <link
-            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-            rel="stylesheet"
-        >
-
-        <style>
-
-            * {
-                box-sizing: border-box;
-            }
-
-            body {
-
-                margin: 0;
-
-                min-height: 100vh;
-
-                font-family:
-                    'Inter',
-                    -apple-system,
-                    BlinkMacSystemFont,
-                    'Segoe UI',
-                    sans-serif;
-
-                background:
-                    linear-gradient(
-                        135deg,
-                        #F5FAFE 0%,
-                        #EAF5FC 100%
-                    );
-
-                display: flex;
-
-                align-items: center;
-
-                justify-content: center;
-
-                color: #17324D;
-            }
-
-            .card {
-
-                width: 90%;
-
-                max-width: 520px;
-
-                background: #FFFFFF;
-
-                border-radius: 18px;
-
-                padding: 42px;
-
-                text-align: center;
-
-                box-shadow:
-                    0 20px 50px
-                    rgba(3, 54, 101, 0.12);
-            }
-
-            .icon {
-
-                width: 72px;
-
-                height: 72px;
-
-                margin: 0 auto 24px;
-
-                border-radius: 50%;
-
-                display: flex;
-
-                align-items: center;
-
-                justify-content: center;
-
-                background: #FEF2F2;
-
-                color: #DC2626;
-
-                font-size: 32px;
-            }
-
-            h1 {
-
-                margin: 0 0 12px;
-
-                font-size: 24px;
-            }
-
-            p {
-
-                margin: 0 0 28px;
-
-                color: #6B7F91;
-
-                line-height: 1.6;
-            }
-
-            .logout {
-
-                display: inline-block;
-
-                padding: 12px 24px;
-
-                border-radius: 8px;
-
-                background: #0878D1;
-
-                color: #FFFFFF;
-
-                text-decoration: none;
-
-                font-weight: 600;
-            }
-
-            .logout:hover {
-
-                background: #063D70;
-            }
-
-        </style>
-
-    </head>
-
-    <body>
-
-        <div class="card">
-
-            <div class="icon">
-                !
-            </div>
-
-            <h1>
-                No Company Access
-            </h1>
-
-            <p>
-                Your account is authenticated, but no active
-                company has been assigned to your user profile.
-                Please contact your administrator.
-            </p>
-
-            <a
-                href="logout.php"
-                class="logout"
-            >
-                Logout
-            </a>
-
-        </div>
-
-    </body>
-
-    </html>
-
-    <?php
-
-    exit;
-}
-
-
-/* ============================================================
-   ONE COMPANY
-   ============================================================ */
-
-if (
-    count($companies) === 1 &&
-    empty($_POST)
-) {
-
-    $singleCompany =
-        $companies[0];
-
-    if (
-        setActiveCompany(
-            $singleCompany['company_id']
-        )
-    ) {
-
-        header(
-            'Location: dashboard.php'
-        );
-
+if (!$isAdmin && count($companies) === 1 && empty($_POST)) {
+    $singleCompany = $companies[0];
+    if (setActiveCompany($singleCompany['company_id'])) {
+        header('Location: division-selection.php');
         exit;
     }
 }
 
-
-/* ============================================================
-   HTML
-   ============================================================ */
-
-$user =
-    getAuthUser();
-
-$userName =
-    trim(
-        ($user['first_name'] ?? '') .
-        ' ' .
-        ($user['last_name'] ?? '')
-    );
-
+$user = getAuthUser();
+$userName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
 if ($userName === '') {
-
-    $userName =
-        $user['username'] ??
-        $user['email'] ??
-        'User';
+    $userName = $user['username'] ?? $user['email'] ?? 'User';
 }
-
 ?>
 
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>
-        Cost360 - Select Company
-    </title>
-
-    <link
-        rel="preconnect"
-        href="https://fonts.googleapis.com"
-    >
-
-    <link
-        rel="preconnect"
-        href="https://fonts.gstatic.com"
-        crossorigin
-    >
-
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-        rel="stylesheet"
-    >
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cost360 - Select Company</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-
-        * {
-            box-sizing: border-box;
-        }
-
+        * { box-sizing: border-box; }
         body {
-
             margin: 0;
-
             min-height: 100vh;
-
-            font-family:
-                'Inter',
-                -apple-system,
-                BlinkMacSystemFont,
-                'Segoe UI',
-                sans-serif;
-
-            background:
-                linear-gradient(
-                    135deg,
-                    #F5FAFE 0%,
-                    #EAF5FC 100%
-                );
-
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #F5FAFE 0%, #EAF5FC 100%);
             color: #17324D;
         }
-
         .page {
-
             min-height: 100vh;
-
             display: flex;
-
             align-items: center;
-
             justify-content: center;
-
             padding: 32px 20px;
         }
-
         .container {
-
             width: 100%;
-
             max-width: 900px;
         }
-
         .brand {
-
             text-align: center;
-
-            margin-bottom: 30px;
+            margin-bottom: 24px;
         }
-
         .brand h1 {
-
             margin: 0;
-
             color: #033665;
-
             font-size: 32px;
-
             font-weight: 800;
         }
-
         .brand p {
-
             margin: 8px 0 0;
-
             color: #6B7F91;
-
             font-size: 15px;
         }
-
-        .welcome {
-
+        .context-summary {
             background: #FFFFFF;
-
             border-radius: 16px;
-
-            padding: 22px 26px;
-
+            padding: 18px 24px;
             margin-bottom: 20px;
-
-            box-shadow:
-                0 8px 25px
-                rgba(3, 54, 101, 0.07);
-
+            box-shadow: 0 8px 25px rgba(3, 54, 101, 0.07);
             border: 1px solid #E1EAF0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
-
-        .welcome-label {
-
-            font-size: 13px;
-
+        .context-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .context-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
             color: #6B7F91;
-
-            margin-bottom: 5px;
+            font-weight: 600;
         }
-
-        .welcome-name {
-
-            font-size: 20px;
-
+        .context-value {
+            font-size: 16px;
             font-weight: 700;
-
-            color: #17324D;
+            color: #033665;
         }
-
+        .change-link {
+            color: #0878D1;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .change-link:hover { text-decoration: underline; }
         .section-title {
-
             margin: 0 0 16px;
-
             font-size: 20px;
-
             font-weight: 700;
-
             color: #17324D;
         }
-
-        .companies {
-
+        .grid-list {
             display: grid;
-
-            grid-template-columns:
-                repeat(
-                    auto-fit,
-                    minmax(280px, 1fr)
-                );
-
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 18px;
         }
-
-        .company-card {
-
+        .card-item {
             background: #FFFFFF;
-
             border: 1px solid #E1EAF0;
-
             border-radius: 16px;
-
             padding: 24px;
-
             cursor: pointer;
-
-            transition:
-                transform 0.2s ease,
-                box-shadow 0.2s ease,
-                border-color 0.2s ease;
-
-            box-shadow:
-                0 8px 25px
-                rgba(3, 54, 101, 0.06);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+            box-shadow: 0 8px 25px rgba(3, 54, 101, 0.06);
         }
-
-        .company-card:hover {
-
-            transform:
-                translateY(-3px);
-
-            border-color:
-                #0878D1;
-
-            box-shadow:
-                0 14px 35px
-                rgba(3, 54, 101, 0.12);
+        .card-item:hover {
+            transform: translateY(-3px);
+            border-color: #0878D1;
+            box-shadow: 0 14px 35px rgba(3, 54, 101, 0.12);
         }
-
-        .company-icon {
-
+        .card-item.global-card {
+            border: 2px dashed #0878D1;
+            background: #F0F7FF;
+        }
+        .card-icon {
             width: 50px;
-
             height: 50px;
-
             border-radius: 12px;
-
             background: #EAF5FC;
-
             color: #0878D1;
-
             display: flex;
-
             align-items: center;
-
             justify-content: center;
-
             margin-bottom: 18px;
         }
-
-        .company-icon svg {
-
-            width: 25px;
-
-            height: 25px;
-        }
-
-        .company-name {
-
+        .card-icon svg { width: 25px; height: 25px; }
+        .card-name {
             font-size: 18px;
-
             font-weight: 700;
-
             color: #17324D;
-
             margin-bottom: 7px;
         }
-
-        .company-code {
-
+        .card-code {
             font-size: 13px;
-
             color: #6B7F91;
-
             margin-bottom: 18px;
         }
-
         .select-text {
-
             display: flex;
-
             align-items: center;
-
             justify-content: space-between;
-
             color: #0878D1;
-
             font-size: 14px;
-
             font-weight: 700;
         }
-
         .error {
-
             background: #FEF2F2;
-
             border: 1px solid #FECACA;
-
             color: #991B1B;
-
             padding: 13px 16px;
-
             border-radius: 8px;
-
             margin-bottom: 18px;
-
             font-size: 14px;
         }
-
-        .logout-container {
-
-            text-align: center;
-
-            margin-top: 30px;
-        }
-
-        .logout {
-
-            color: #6B7F91;
-
-            font-size: 14px;
-
-            text-decoration: none;
-        }
-
-        .logout:hover {
-
-            color: #0878D1;
-        }
-
-        .company-form {
-
-            margin: 0;
-        }
-
-        .company-button {
-
+        .card-form { margin: 0; }
+        .card-button {
             width: 100%;
-
             border: 0;
-
             background: transparent;
-
             padding: 0;
-
             text-align: left;
-
             cursor: pointer;
-
             font-family: inherit;
-
             color: inherit;
         }
-
-        @media (max-width: 600px) {
-
-            .page {
-                padding: 20px 14px;
-            }
-
-            .brand h1 {
-                font-size: 27px;
-            }
-
-            .welcome {
-                padding: 18px;
-            }
-
-            .company-card {
-                padding: 20px;
-            }
-
+        .empty-card {
+            background: #FFFFFF;
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 8px 25px rgba(3, 54, 101, 0.07);
         }
-
+        .empty-card p {
+            color: #6B7F91;
+            margin-bottom: 20px;
+        }
+        .nav-back {
+            text-align: center;
+            margin-top: 24px;
+        }
+        .nav-back a {
+            color: #6B7F91;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .nav-back a:hover { color: #0878D1; }
     </style>
-
 </head>
-
 <body>
-
 <div class="page">
-
     <div class="container">
-
         <div class="brand">
-
-            <h1>
-                Cost360
-            </h1>
-
-            <p>
-                Select the company you want to work with
-            </p>
-
+            <h1>Cost360</h1>
+            <p>Select Company Context</p>
         </div>
 
-
-        <div class="welcome">
-
-            <div class="welcome-label">
-                Welcome
+        <?php if (!empty($activeCustomer) && !empty($activeCustomer['customer_name'])): ?>
+            <div class="context-summary">
+                <div class="context-item">
+                    <span class="context-label">Customer Scope</span>
+                    <span class="context-value"><?php echo htmlspecialchars($activeCustomer['customer_name']); ?></span>
+                </div>
+                <a href="customer-selection.php" class="change-link">Change Customer</a>
             </div>
-
-            <div class="welcome-name">
-                <?php
-                echo htmlspecialchars(
-                    $userName
-                );
-                ?>
-            </div>
-
-        </div>
-
-
-        <?php if (!empty($errorMessage)): ?>
-
-            <div class="error">
-
-                <?php
-                echo htmlspecialchars(
-                    $errorMessage
-                );
-                ?>
-
-            </div>
-
         <?php endif; ?>
 
+        <?php if (!empty($errorMessage)): ?>
+            <div class="error"><?php echo htmlspecialchars($errorMessage); ?></div>
+        <?php endif; ?>
 
-        <h2 class="section-title">
-            Your Companies
-        </h2>
+        <h2 class="section-title">Available Companies</h2>
 
-
-        <div class="companies">
-
-            <?php foreach ($companies as $company): ?>
-
-                <form
-                    method="POST"
-                    class="company-form"
-                >
-
-                    <input
-                        type="hidden"
-                        name="company_id"
-                        value="<?php
-                            echo htmlspecialchars(
-                                $company['company_id']
-                            );
-                        ?>"
-                    >
-
-                    <button
-                        type="submit"
-                        class="company-button"
-                    >
-
-                        <div class="company-card">
-
-                            <div class="company-icon">
-
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
-
-                                    <rect
-                                        x="3"
-                                        y="7"
-                                        width="18"
-                                        height="14"
-                                        rx="2"
-                                    />
-
-                                    <path
-                                        d="M8 21V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v16"
-                                    />
-
-                                </svg>
-
+        <?php if (empty($companies) && !$isAdmin): ?>
+            <div class="empty-card">
+                <h3>No Company Access</h3>
+                <p>Your account is authenticated, but no active company has been assigned under this customer context. Please contact your administrator.</p>
+                <a href="customer-selection.php" class="change-link">Change Customer Scope</a>
+            </div>
+        <?php else: ?>
+            <div class="grid-list">
+                <?php if ($isAdmin): ?>
+                    <form method="POST" class="card-form">
+                        <input type="hidden" name="company_id" value="ALL">
+                        <button type="submit" class="card-button">
+                            <div class="card-item global-card">
+                                <div class="card-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <line x1="2" y1="12" x2="22" y2="12"/>
+                                    </svg>
+                                </div>
+                                <div class="card-name">All Companies (Global)</div>
+                                <div class="card-code">Cross-Company Admin Scope</div>
+                                <div class="select-text">
+                                    <span>Select All Companies</span>
+                                    <span>&rarr;</span>
+                                </div>
                             </div>
+                        </button>
+                    </form>
+                <?php endif; ?>
 
-
-                            <div class="company-name">
-
-                                <?php
-                                echo htmlspecialchars(
-                                    $company['company_name']
-                                );
-                                ?>
-
+                <?php foreach ($companies as $c): ?>
+                    <form method="POST" class="card-form">
+                        <input type="hidden" name="company_id" value="<?php echo htmlspecialchars($c['company_id']); ?>">
+                        <button type="submit" class="card-button">
+                            <div class="card-item">
+                                <div class="card-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="7" width="18" height="14" rx="2"/>
+                                        <path d="M8 21V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v16"/>
+                                    </svg>
+                                </div>
+                                <div class="card-name"><?php echo htmlspecialchars($c['company_name']); ?></div>
+                                <div class="card-code">Code: <?php echo htmlspecialchars($c['company_code']); ?></div>
+                                <div class="select-text">
+                                    <span>Select Company</span>
+                                    <span>&rarr;</span>
+                                </div>
                             </div>
+                        </button>
+                    </form>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
 
-
-                            <div class="company-code">
-
-                                Company Code:
-
-                                <strong>
-
-                                    <?php
-                                    echo htmlspecialchars(
-                                        $company['company_code']
-                                    );
-                                    ?>
-
-                                </strong>
-
-                            </div>
-
-
-                            <div class="select-text">
-
-                                <span>
-                                    Select Company
-                                </span>
-
-                                <span>
-                                    →
-                                </span>
-
-                            </div>
-
-                        </div>
-
-                    </button>
-
-                </form>
-
-            <?php endforeach; ?>
-
+        <div class="nav-back">
+            <a href="customer-selection.php">&larr; Back to Customer Selection</a>
         </div>
-
-
-        <div class="logout-container">
-
-            <a
-                href="logout.php"
-                class="logout"
-            >
-                Logout
-            </a>
-
-        </div>
-
     </div>
-
 </div>
-
 </body>
-
 </html>

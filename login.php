@@ -62,14 +62,15 @@ $isAjax =
 
 if (isLoggedIn()) {
 
-    /*
-     * If the user already has an active company,
-     * send them directly to the dashboard.
-     */
+    $ctx = getActiveOrganizationContext();
 
     if (
-        isset($_SESSION['active_company_id']) &&
-        !empty($_SESSION['active_company_id'])
+        $ctx &&
+        !empty($ctx['company_id']) &&
+        !empty($ctx['division_id']) &&
+        !empty($ctx['plant_id']) &&
+        !empty($ctx['warehouse_id']) &&
+        !empty($ctx['period_id'])
     ) {
 
         if ($isAjax) {
@@ -129,6 +130,15 @@ if (isLoggedIn()) {
    ============================================================ */
 
 $errorMessage = '';
+
+/*
+ * requireAuth() sends users whose role was deactivated back to login.php
+ * with this code. Show the security message after the session is destroyed.
+ */
+if (($_GET['error'] ?? '') === 'role_inactive') {
+    $errorMessage =
+        'Your role has been deactivated. Please contact your administrator.';
+}
 
 $submittedEmail = '';
 
@@ -372,6 +382,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($isPasswordValid) {
 
+                        /* =====================================
+                           CHECK ASSIGNED ROLE STATUS
+                           ===================================== */
+
+                        /*
+                         * Do not create an authenticated session unless the
+                         * user has at least one ACTIVE role assignment.
+                         * getCurrentUserRole() checks both roles.status and
+                         * user_roles.status.
+                         */
+                        $currentRole = getCurrentUserRole($user['user_id']);
+
+                        if (!$currentRole) {
+
+                            $errorMessage =
+                                'Your assigned role is currently inactive. Please contact your administrator.';
+
+                        } else {
 
                         /* =====================================
                            RESET LOGIN FAILURE INFORMATION
@@ -438,6 +466,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_SESSION['last_name'] =
                             $user['last_name'] ?? '';
 
+                        $_SESSION['role_id'] =
+                            $currentRole['role_id'] ?? null;
+
+                        $_SESSION['role_code'] =
+                            $currentRole['role_code'] ?? '';
+
+                        $_SESSION['role_name'] =
+                            $currentRole['role_name'] ?? '';
+
+                        $_SESSION['role_status'] =
+                            $currentRole['status'] ?? 'Active';
+
 
                         /*
                          * Clear any active company from
@@ -457,20 +497,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
    PLATFORM ADMIN
    ============================================================ */
 
-if (
-    isPlatformAdmin(
-        $user['user_id']
-    )
-) {
+if (isPlatformAdmin($user['user_id'])) {
 
-    /*
-     * Platform Admin does not need company selection.
-     *
-     * Remove any company left over from a previous session.
-     */
-
-    clearActiveCompany();
-
+    requireActiveOrganizationContext();
 
     if ($isAjax) {
 
@@ -485,7 +514,6 @@ if (
 
         exit;
     }
-
 
     header(
         'Location: dashboard.php'
@@ -597,7 +625,7 @@ if (
                                                 true,
 
                                             'redirect' =>
-                                                'dashboard.php'
+                                                'division-selection.php'
                                         ]);
 
                                         exit;
@@ -609,7 +637,7 @@ if (
                                        ========================= */
 
                                     header(
-                                        'Location: dashboard.php'
+                                        'Location: division-selection.php'
                                     );
 
                                     exit;
@@ -658,6 +686,7 @@ if (
                         }
                     }
 
+                    }
 
                     /* =========================================
                        INVALID PASSWORD

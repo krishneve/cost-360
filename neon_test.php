@@ -12,11 +12,13 @@ try {
     $pdo = getDbConnection();
 
     // Mask host for safety
-    $rawHost = getenv('PGHOST') ?: 'ep-super-rain-a5zoqjy7-pooler.us-east-2.aws.neon.tech';
+    $rawHost = getenv('PGHOST') ?: getenv('DB_HOST') ?: 'ep-super-rain-a5zoqjy7-pooler.us-east-2.aws.neon.tech';
     $hostParts = explode('.', $rawHost);
-    $maskedHost = $hostParts[0] . '.***.' . implode('.', array_slice($hostParts, 2));
+    $maskedHost = count($hostParts) > 1 
+        ? $hostParts[0] . '.***.' . implode('.', array_slice($hostParts, 2))
+        : $rawHost;
 
-    $dbname = getenv('PGDATABASE') ?: 'code-360-v1';
+    $dbname = getenv('PGDATABASE') ?: getenv('DB_NAME') ?: 'code-360-v1';
 
     // Verify auth.users table accessibility
     $tableStmt = $pdo->query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'auth' AND table_name = 'users')");
