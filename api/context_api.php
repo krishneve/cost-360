@@ -72,10 +72,27 @@ switch ($action) {
         if (setActiveDivision($divisionId)) {
             echo json_encode([
                 'success' => true,
-                'redirect' => 'plant-selection.php'
+                'redirect' => 'organization-selection.php'
             ]);
         } else {
             echo json_encode(['success' => false, 'error' => 'Unauthorized division selection']);
+        }
+        break;
+
+    case 'switch_location':
+        $locationType = $_POST['location_type'] ?? $_GET['location_type'] ?? null;
+        $locationId   = $_POST['location_id'] ?? $_GET['location_id'] ?? null;
+        if (!$locationType || !$locationId) {
+            echo json_encode(['success' => false, 'error' => 'Location type and ID are required']);
+            exit;
+        }
+        if (setActiveLocation($locationType, $locationId)) {
+            echo json_encode([
+                'success' => true,
+                'redirect' => 'period-selection.php'
+            ]);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Unauthorized location selection']);
         }
         break;
 
@@ -84,7 +101,7 @@ switch ($action) {
         if (setActivePlant($plantId)) {
             echo json_encode([
                 'success' => true,
-                'redirect' => 'warehouse-selection.php'
+                'redirect' => 'period-selection.php'
             ]);
         } else {
             echo json_encode(['success' => false, 'error' => 'Unauthorized plant selection']);

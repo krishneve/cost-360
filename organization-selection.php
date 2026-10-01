@@ -1,7 +1,8 @@
 <?php
 /**
- * Cost360 - Operational Location Selection (Unified Plant OR Warehouse)
- * Allows the user to select either a Plant OR a Warehouse as their operational context.
+ * Cost360 - Operational Location Selection
+ * Unified organizational level for Plants and Warehouses.
+ * Hierarchy: Customer → Company → Division → Location → Period
  */
 
 require_once __DIR__ . '/config/auth.php';
@@ -34,6 +35,24 @@ $divisionId = $activeDivision['division_id'];
 $errorMessage = '';
 
 /* ============================================================
+   FETCH UNIFIED ACCESSIBLE LOCATIONS UNDER DIVISION
+   ============================================================ */
+$locations = getUserAccessibleLocations($userId, $companyId, $divisionId);
+
+/* ============================================================
+   AUTO-SKIP LOGIC (MANDATORY REQUIREMENT)
+   IF exactly ONE Location exists under this scope:
+   Automatically select it and proceed to Period selection.
+   ============================================================ */
+if (!$isAdmin && count($locations) === 1 && empty($_POST)) {
+    $singleLocation = $locations[0];
+    if (setActiveLocation($singleLocation['type'], $singleLocation['id'])) {
+        header('Location: period-selection.php');
+        exit;
+    }
+}
+
+/* ============================================================
    HANDLE LOCATION SELECTION (POST)
    ============================================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -41,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $locationId   = trim($_POST['location_id'] ?? '');
 
     if ($locationId === '') {
-        $errorMessage = 'Please select either a Plant or a Warehouse.';
+        $errorMessage = 'Please select a Location to proceed.';
     } else {
         if ($locationId === 'ALL' && $isAdmin) {
             $_SESSION['active_location_type'] = $locationType ?: 'plant';
@@ -57,31 +76,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        if ($locationType === 'plant') {
-            if (setActivePlant($locationId)) {
-                header('Location: period-selection.php');
-                exit;
-            } else {
-                $errorMessage = 'You do not have access to the selected Plant.';
-            }
-        } elseif ($locationType === 'warehouse') {
-            if (setActiveWarehouse($locationId)) {
-                header('Location: period-selection.php');
-                exit;
-            } else {
-                $errorMessage = 'You do not have access to the selected Warehouse.';
-            }
+        if (setActiveLocation($locationType, $locationId)) {
+            header('Location: period-selection.php');
+            exit;
         } else {
-            $errorMessage = 'Invalid operational location type selected.';
+            $errorMessage = 'You do not have access to the selected Location.';
         }
     }
 }
-
-/* ============================================================
-   FETCH ACCESSIBLE PLANTS AND WAREHOUSES UNDER DIVISION
-   ============================================================ */
-$plants     = getUserAccessiblePlants($userId, $companyId, $divisionId);
-$warehouses = getUserAccessibleWarehouses($userId, $companyId, $divisionId, null);
 
 $user = getAuthUser();
 $userName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
@@ -89,17 +91,16 @@ if ($userName === '') {
     $userName = $user['username'] ?? $user['email'] ?? 'User';
 }
 
-$currentlySelectedType = $_SESSION['active_location_type'] ?? '';
-$currentlySelectedId   = ($currentlySelectedType === 'plant') 
-    ? ($_SESSION['active_plant_id'] ?? '') 
-    : (($currentlySelectedType === 'warehouse') ? ($_SESSION['active_warehouse_id'] ?? '') : '');
+$activeLoc = getActiveOperationalLocation();
+$currentlySelectedType = $activeLoc['type_code'] ?? ($_SESSION['active_location_type'] ?? '');
+$currentlySelectedId   = $activeLoc['id'] ?? (($currentlySelectedType === 'plant') ? ($_SESSION['active_plant_id'] ?? '') : ($_SESSION['active_warehouse_id'] ?? ''));
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cost360 - Select Operational Location</title>
+    <title>Cost360 - Select Location</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -239,7 +240,7 @@ $currentlySelectedId   = ($currentlySelectedType === 'plant')
             color: #033665;
         }
 
-        /* SELECTION CHOICE BANNER */
+        /* BANNER */
         .choice-indicator {
             background: #F0F7FD;
             border: 1px solid #B3D8F5;
@@ -250,99 +251,103 @@ $currentlySelectedId   = ($currentlySelectedType === 'plant')
         }
         .choice-title {
             margin: 0;
-            font-size: 17px;
+            font-size: 18px;
             font-weight: 700;
             color: #033665;
         }
         .choice-subtitle {
-            margin: 4px 0 0;
+            margin: 6px 0 0;
             font-size: 13px;
-            color: #5A7184;
+            color: #475569;
         }
 
-        /* SECTION STYLING */
+        /* LOCATION LIST / GRID */
         .location-section {
-            margin-bottom: 32px;
+            background: #FFFFFF;
+            border: 1px solid #D8E6F0;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 8px 24px rgba(3, 54, 101, 0.05);
+            margin-bottom: 20px;
         }
         .section-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 14px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #E2E8F0;
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid #EDF2F7;
         }
         .section-title {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+            color: #033665;
             display: flex;
             align-items: center;
             gap: 8px;
-            margin: 0;
-            font-size: 17px;
-            font-weight: 700;
-            color: #033665;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
         .section-badge {
+            background: #E8F4FD;
+            color: #0070BA;
             font-size: 12px;
-            padding: 3px 8px;
+            font-weight: 700;
+            padding: 3px 10px;
             border-radius: 12px;
-            font-weight: 600;
-            background: #E2E8F0;
-            color: #475569;
         }
 
-        /* GRID & CARDS */
         .grid-list {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-            gap: 18px;
+            gap: 16px;
         }
+
         .location-card {
-            background: #FFFFFF;
-            border: 2px solid #E1EAF0;
-            border-radius: 14px;
-            padding: 20px;
+            border: 2px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 18px;
             cursor: pointer;
-            transition: all 0.22s ease;
-            box-shadow: 0 4px 16px rgba(3, 54, 101, 0.04);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            background: #FFFFFF;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            position: relative;
         }
         .location-card:hover {
-            transform: translateY(-3px);
             border-color: #0070BA;
-            box-shadow: 0 10px 28px rgba(3, 54, 101, 0.1);
+            box-shadow: 0 6px 18px rgba(0, 112, 186, 0.12);
+            transform: translateY(-2px);
         }
         .location-card.selected {
             border-color: #0070BA;
-            background: #F4FAFF;
-            box-shadow: 0 8px 24px rgba(0, 112, 186, 0.16);
+            background: #F7FBFE;
+            box-shadow: 0 6px 20px rgba(0, 112, 186, 0.15);
         }
+
         .selected-ribbon {
             display: none;
             position: absolute;
-            top: 14px;
-            right: 14px;
+            top: 12px;
+            right: 12px;
             background: #0070BA;
             color: #FFFFFF;
-            font-size: 11px;
-            font-weight: 700;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
             padding: 3px 8px;
-            border-radius: 6px;
-            letter-spacing: 0.3px;
+            border-radius: 4px;
+            text-transform: uppercase;
         }
         .location-card.selected .selected-ribbon {
-            display: inline-block;
+            display: block;
         }
 
         .card-top {
             display: flex;
             align-items: flex-start;
-            gap: 14px;
-            margin-bottom: 14px;
+            gap: 12px;
+            margin-bottom: 12px;
         }
         .card-icon {
             width: 44px;
@@ -375,6 +380,27 @@ $currentlySelectedId   = ($currentlySelectedType === 'plant')
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        .type-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .type-badge.badge-plant {
+            background: #E0F2FE;
+            color: #0369A1;
+            border: 1px solid #BAE6FD;
+        }
+        .type-badge.badge-warehouse {
+            background: #FEF3C7;
+            color: #B45309;
+            border: 1px solid #FDE68A;
+        }
+
         .card-meta {
             font-size: 12px;
             color: #64748B;
@@ -396,7 +422,7 @@ $currentlySelectedId   = ($currentlySelectedType === 'plant')
             background: transparent;
             border: 1px solid #0070BA;
             color: #0070BA;
-            padding: 6px 14px;
+            padding: 7px 14px;
             border-radius: 6px;
             font-weight: 700;
             font-size: 12px;
@@ -411,7 +437,7 @@ $currentlySelectedId   = ($currentlySelectedType === 'plant')
             color: #FFFFFF;
         }
 
-        /* STICKY CONTINUE ACTION BAR */
+        /* ACTION BAR */
         .action-bar {
             margin-top: 24px;
             display: flex;
@@ -453,6 +479,33 @@ $currentlySelectedId   = ($currentlySelectedType === 'plant')
             font-size: 14px;
             font-weight: 600;
         }
+
+        .empty-location-box {
+            text-align: center;
+            padding: 48px 24px;
+            background: #FFFFFF;
+            border: 1px dashed #CBD5E1;
+            border-radius: 16px;
+            margin-bottom: 24px;
+        }
+        .empty-location-icon {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 16px;
+            color: #94A3B8;
+        }
+        .empty-location-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #033665;
+            margin: 0 0 8px;
+        }
+        .empty-location-desc {
+            font-size: 14px;
+            color: #64748B;
+            max-width: 480px;
+            margin: 0 auto 20px;
+        }
     </style>
 </head>
 <body>
@@ -464,7 +517,7 @@ $currentlySelectedId   = ($currentlySelectedType === 'plant')
             <p>Select Operational Location Context</p>
         </div>
 
-        <!-- PROGRESS BREADCRUMB -->
+        <!-- PROGRESS BREADCRUMB (UNIFIED HIERARCHY) -->
         <div class="progress-bar-container">
             <div class="progress-steps">
                 <span class="step completed">Customer ✓</span>
@@ -504,192 +557,139 @@ $currentlySelectedId   = ($currentlySelectedType === 'plant')
             <div class="alert-error"><?php echo htmlspecialchars($errorMessage); ?></div>
         <?php endif; ?>
 
-        <!-- SELECTION CHOICE BANNER -->
+        <!-- BANNER -->
         <div class="choice-indicator">
             <h2 class="choice-title">Select Operational Location</h2>
-            <p class="choice-subtitle">Choose either a <strong>Plant</strong> or a <strong>Warehouse</strong> as your operating location.</p>
+            <p class="choice-subtitle">Plant and Warehouse are unified as Locations. Choose your operational location to continue to Period context.</p>
         </div>
 
-        <form id="locationForm" method="POST" action="organization-selection.php">
-            <input type="hidden" name="location_type" id="selectedLocationType" value="<?php echo htmlspecialchars($currentlySelectedType); ?>">
-            <input type="hidden" name="location_id" id="selectedLocationId" value="<?php echo htmlspecialchars($currentlySelectedId); ?>">
+        <?php if (empty($locations)): ?>
+            <!-- CASE 3: ZERO LOCATIONS -->
+            <div class="empty-location-box">
+                <svg class="empty-location-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                </svg>
+                <h3 class="empty-location-title">No Plant or Warehouse is configured for this Division.</h3>
+                <p class="empty-location-desc">No active operational locations are configured or accessible under <strong><?php echo htmlspecialchars($activeDivision['division_name']); ?></strong>. Please select another division or contact your administrator.</p>
+                <a href="division-selection.php" class="btn-continue" style="text-decoration: none;">
+                    ← Select Another Division
+                </a>
+            </div>
+        <?php else: ?>
+            <!-- CASE 2: MULTIPLE LOCATIONS (ONE COMBINED LIST) -->
+            <form id="locationForm" method="POST" action="organization-selection.php">
+                <input type="hidden" name="location_type" id="selectedLocationType" value="<?php echo htmlspecialchars($currentlySelectedType); ?>">
+                <input type="hidden" name="location_id" id="selectedLocationId" value="<?php echo htmlspecialchars($currentlySelectedId); ?>">
 
-            <!-- SECTION 1: PLANTS -->
-            <div class="location-section">
-                <div class="section-header">
-                    <h3 class="section-title">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-                        </svg>
-                        Available Plants
-                    </h3>
-                    <span class="section-badge"><?php echo count($plants); ?> Plants</span>
-                </div>
+                <div class="location-section">
+                    <div class="section-header">
+                        <h3 class="section-title">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                <circle cx="12" cy="10" r="3"></circle>
+                            </svg>
+                            Available Locations
+                        </h3>
+                        <span class="section-badge"><?php echo count($locations); ?> Location(s)</span>
+                    </div>
 
-                <?php if (empty($plants)): ?>
-                    <p style="color: #64748B; font-size: 14px; margin: 0 0 16px;">No plants found under this division.</p>
-                <?php else: ?>
                     <div class="grid-list">
-                        <?php foreach ($plants as $p): 
-                            $isSel = ($currentlySelectedType === 'plant' && (string)$currentlySelectedId === (string)$p['plant_id']);
+                        <?php foreach ($locations as $loc): 
+                            $isPlant = ($loc['type_code'] === 'plant');
+                            $isSel = ($currentlySelectedType === $loc['type_code'] && (string)$currentlySelectedId === (string)$loc['id']);
                         ?>
-                            <div class="location-card plant-card <?php echo $isSel ? 'selected' : ''; ?>"
-                                 data-type="plant"
-                                 data-id="<?php echo htmlspecialchars($p['plant_id']); ?>"
-                                 data-name="<?php echo htmlspecialchars($p['plant_name']); ?>"
-                                 onclick="selectLocation('plant', '<?php echo htmlspecialchars($p['plant_id']); ?>', this)">
+                            <div class="location-card <?php echo $isSel ? 'selected' : ''; ?>"
+                                 data-type="<?php echo htmlspecialchars($loc['type_code']); ?>"
+                                 data-id="<?php echo htmlspecialchars($loc['id']); ?>"
+                                 data-name="<?php echo htmlspecialchars($loc['name']); ?>"
+                                 onclick="selectLocation('<?php echo htmlspecialchars($loc['type_code']); ?>', '<?php echo htmlspecialchars($loc['id']); ?>', this)">
                                 <span class="selected-ribbon">✓ SELECTED</span>
+                                
                                 <div class="card-top">
-                                    <div class="card-icon icon-plant">
-                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M3 21h18"></path>
-                                            <path d="M19 21v-8l-5 4V9l-5 4V3H3v18"></path>
-                                        </svg>
+                                    <div class="card-icon <?php echo $isPlant ? 'icon-plant' : 'icon-warehouse'; ?>">
+                                        <?php if ($isPlant): ?>
+                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M3 21h18"></path>
+                                                <path d="M19 21v-8l-5 4V9l-5 4V3H3v18"></path>
+                                            </svg>
+                                        <?php else: ?>
+                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                            </svg>
+                                        <?php endif; ?>
                                     </div>
+
                                     <div class="card-info">
-                                        <div class="card-name" title="<?php echo htmlspecialchars($p['plant_name']); ?>">
-                                            <?php echo htmlspecialchars($p['plant_name']); ?>
+                                        <span class="type-badge <?php echo $isPlant ? 'badge-plant' : 'badge-warehouse'; ?>">
+                                            Type: <?php echo htmlspecialchars($loc['type']); ?>
+                                        </span>
+                                        <div class="card-name" title="<?php echo htmlspecialchars($loc['name']); ?>">
+                                            <?php echo htmlspecialchars($loc['name']); ?>
                                         </div>
-                                        <div class="card-meta">Code: <strong><?php echo htmlspecialchars($p['plant_code']); ?></strong></div>
-                                        <div class="card-meta">Location: <strong><?php echo htmlspecialchars($p['location'] ?: '—'); ?></strong></div>
+                                        <div class="card-meta">
+                                            Code: <strong><?php echo htmlspecialchars($loc['code']); ?></strong>
+                                        </div>
+                                        <?php if (!empty($loc['parent_plant_name'])): ?>
+                                            <div class="card-meta">
+                                                Attached Plant: <strong><?php echo htmlspecialchars($loc['parent_plant_name']); ?></strong>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($loc['location_address'])): ?>
+                                            <div class="card-meta" style="font-size: 11px; color: #94A3B8;">
+                                                Midc/Area: <?php echo htmlspecialchars($loc['location_address']); ?>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
+
                                 <div class="card-footer">
                                     <button type="button" class="select-btn">
-                                        <?php echo $isSel ? 'Selected Plant ✓' : 'Select Plant →'; ?>
+                                        <?php echo $isSel ? 'Selected Location' : 'Select Location'; ?>
                                     </button>
                                 </div>
                             </div>
                         <?php endforeach; ?>
                     </div>
-                <?php endif; ?>
-            </div>
+                </div>
 
-            <!-- SECTION 2: WAREHOUSES -->
-            <div class="location-section">
-                <div class="section-header">
-                    <h3 class="section-title">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                <div class="action-bar">
+                    <button type="submit" id="submitBtn" class="btn-continue" <?php echo empty($currentlySelectedId) ? 'disabled' : ''; ?>>
+                        <span>Continue to Period Context</span>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
                         </svg>
-                        Available Warehouses
-                    </h3>
-                    <span class="section-badge"><?php echo count($warehouses); ?> Warehouses</span>
+                    </button>
                 </div>
-
-                <?php if (empty($warehouses)): ?>
-                    <p style="color: #64748B; font-size: 14px; margin: 0 0 16px;">No warehouses found under this division.</p>
-                <?php else: ?>
-                    <div class="grid-list">
-                        <?php foreach ($warehouses as $w): 
-                            $isSel = ($currentlySelectedType === 'warehouse' && (string)$currentlySelectedId === (string)$w['warehouse_id']);
-                        ?>
-                            <div class="location-card warehouse-card <?php echo $isSel ? 'selected' : ''; ?>"
-                                 data-type="warehouse"
-                                 data-id="<?php echo htmlspecialchars($w['warehouse_id']); ?>"
-                                 data-name="<?php echo htmlspecialchars($w['warehouse_name']); ?>"
-                                 onclick="selectLocation('warehouse', '<?php echo htmlspecialchars($w['warehouse_id']); ?>', this)">
-                                <span class="selected-ribbon">✓ SELECTED</span>
-                                <div class="card-top">
-                                    <div class="card-icon icon-warehouse">
-                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <rect x="1" y="3" width="22" height="18" rx="2" ry="2"></rect>
-                                            <line x1="3" y1="9" x2="21" y2="9"></line>
-                                            <line x1="9" y1="21" x2="9" y2="9"></line>
-                                        </svg>
-                                    </div>
-                                    <div class="card-info">
-                                        <div class="card-name" title="<?php echo htmlspecialchars($w['warehouse_name']); ?>">
-                                            <?php echo htmlspecialchars($w['warehouse_name']); ?>
-                                        </div>
-                                        <div class="card-meta">Code: <strong><?php echo htmlspecialchars($w['warehouse_code']); ?></strong></div>
-                                        <?php if (!empty($w['plant_name'])): ?>
-                                            <div class="card-meta">Plant: <strong><?php echo htmlspecialchars($w['plant_name']); ?></strong></div>
-                                        <?php endif; ?>
-                                        <?php if (!empty($w['plant_location'])): ?>
-                                            <div class="card-meta">Location: <strong><?php echo htmlspecialchars($w['plant_location']); ?></strong></div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                                <div class="card-footer">
-                                    <button type="button" class="select-btn">
-                                        <?php echo $isSel ? 'Selected Warehouse ✓' : 'Select Warehouse →'; ?>
-                                    </button>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- GLOBAL ADMIN SCOPE CARD -->
-            <?php if ($isAdmin): ?>
-                <div style="margin-top: 10px; margin-bottom: 24px;">
-                    <div class="location-card" style="border-style: dashed; background: #FAFDFE;" onclick="selectLocation('plant', 'ALL', this)">
-                        <div class="card-top" style="margin-bottom: 0;">
-                            <div class="card-icon" style="background: #E2E8F0; color: #475569;">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="2" y1="12" x2="22" y2="12"></line>
-                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                                </svg>
-                            </div>
-                            <div class="card-info">
-                                <div class="card-name">All Operational Locations (Global Admin Scope)</div>
-                                <div class="card-meta">Access all plants and warehouses without restricting to a single facility.</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <!-- ACTION BAR -->
-            <div class="action-bar">
-                <button type="submit" id="continueBtn" class="btn-continue" <?php echo empty($currentlySelectedId) ? 'disabled' : ''; ?>>
-                    <span>Continue to Period Selection</span>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                </button>
-            </div>
-        </form>
+            </form>
+        <?php endif; ?>
     </div>
 </div>
 
 <script>
     function selectLocation(type, id, element) {
-        // Enforce single selection: remove selected from all cards
-        document.querySelectorAll('.location-card').forEach(card => {
-            card.classList.remove('selected');
-            const btn = card.querySelector('.select-btn');
-            if (btn) {
-                const cardType = card.getAttribute('data-type');
-                btn.textContent = cardType === 'plant' ? 'Select Plant →' : 'Select Warehouse →';
-            }
+        document.querySelectorAll('.location-card').forEach(c => {
+            c.classList.remove('selected');
+            const btn = c.querySelector('.select-btn');
+            if (btn) btn.textContent = 'Select Location';
         });
 
-        // Set selected on target card
         element.classList.add('selected');
-        const btn = element.querySelector('.select-btn');
-        if (btn) {
-            btn.textContent = (type === 'plant' ? 'Selected Plant ✓' : 'Selected Warehouse ✓');
-        }
+        const activeBtn = element.querySelector('.select-btn');
+        if (activeBtn) activeBtn.textContent = 'Selected Location';
 
-        // Update hidden inputs
         document.getElementById('selectedLocationType').value = type;
         document.getElementById('selectedLocationId').value = id;
 
-        // Enable continue button
-        const continueBtn = document.getElementById('continueBtn');
-        continueBtn.removeAttribute('disabled');
+        const submitBtn = document.getElementById('submitBtn');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+        }
 
-        // Automatically submit after a brief visual confirmation (or allow user to click continue)
-        setTimeout(() => {
-            document.getElementById('locationForm').submit();
-        }, 220);
+        // Auto submit directly on click for frictionless selection
+        document.getElementById('locationForm').submit();
     }
 </script>
 </body>

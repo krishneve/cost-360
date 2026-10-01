@@ -347,7 +347,7 @@ if ($userName === '') {
                 <span class="step-arrow">→</span>
                 <span class="step active">Division ●</span>
                 <span class="step-arrow">→</span>
-                <span class="step">Location (Plant / Warehouse) ○</span>
+                <span class="step">Location ○</span>
                 <span class="step-arrow">→</span>
                 <span class="step">Period ○</span>
             </div>

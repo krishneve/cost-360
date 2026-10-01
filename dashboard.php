@@ -2688,7 +2688,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   <th>Email</th>
                   <th>Status</th>
                   <th>Role</th>
-                  <th>Created At</th>
+                  <th>Created By</th>
                   <th>Last Login</th>
                   <th style="text-align: right;">Actions</th>
                 </tr>
@@ -2888,6 +2888,120 @@ if (!function_exists('formatMenuRouteUrl')) {
           </div>
         </div>
 
+        <!-- USER ACCESS SCOPE — READ-ONLY VIEW MODAL -->
+        <div id="viewScopeModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 680px; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #064E3B 0%, #065F46 100%); color: #FFF; padding: 1.25rem 1.5rem; border-top-left-radius: 12px; border-top-right-radius: 12px;">
+              <div>
+                <h3 style="font-size: 1.1rem; font-weight: 700; color: #FFF; margin: 0;" id="viewScopeModalTitle">Access Scope</h3>
+                <p style="font-size: 0.8rem; color: #A7F3D0; margin: 4px 0 0 0;" id="viewScopeModalSubtitle">Effective hierarchical access for this user</p>
+              </div>
+              <button type="button" class="modal-close-btn" style="color: #FFF;" onclick="closeModal('viewScopeModal')">&times;</button>
+            </div>
+
+            <div style="padding: 1.25rem 1.5rem; overflow-y: auto; flex: 1; background: #FAFBFD;">
+              <!-- Summary Badges -->
+              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                <div style="background: #FFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.65rem 1rem; min-width: 120px; text-align: center;">
+                  <div style="font-size: 0.68rem; color: var(--color-secondary-text); text-transform: uppercase; font-weight: 700;">Companies</div>
+                  <div style="font-size: 1.4rem; font-weight: 800; color: #0878D1;" id="vsCountCompanies">–</div>
+                </div>
+                <div style="background: #FFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.65rem 1rem; min-width: 120px; text-align: center;">
+                  <div style="font-size: 0.68rem; color: var(--color-secondary-text); text-transform: uppercase; font-weight: 700;">Divisions</div>
+                  <div style="font-size: 1.4rem; font-weight: 800; color: #0878D1;" id="vsCountDivisions">–</div>
+                </div>
+                <div style="background: #FFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.65rem 1rem; min-width: 140px; text-align: center;">
+                  <div style="font-size: 0.68rem; color: var(--color-secondary-text); text-transform: uppercase; font-weight: 700;">Locations</div>
+                  <div style="font-size: 1.4rem; font-weight: 800; color: #0878D1;" id="vsCountLocations">–</div>
+                </div>
+                <div style="background: #FFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.65rem 1rem; min-width: 120px; text-align: center;">
+                  <div style="font-size: 0.68rem; color: var(--color-secondary-text); text-transform: uppercase; font-weight: 700;">Periods</div>
+                  <div style="font-size: 1.4rem; font-weight: 800; color: #7C3AED;" id="vsCountPeriods">–</div>
+                </div>
+              </div>
+
+              <!-- Legend -->
+              <div style="display: flex; gap: 1rem; margin-bottom: 1rem; font-size: 0.78rem; flex-wrap: wrap;">
+                <span style="display: inline-flex; align-items: center; gap: 5px;"><span style="width: 10px; height: 10px; background: #0878D1; border-radius: 50%; display: inline-block;"></span> Direct Assignment</span>
+                <span style="display: inline-flex; align-items: center; gap: 5px;"><span style="width: 10px; height: 10px; background: #E6F9F6; border: 2px solid #00A88F; border-radius: 50%; display: inline-block;"></span> Inherited Access</span>
+              </div>
+
+              <!-- Scope Tree -->
+              <div id="viewScopeTree" style="background: #FFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; min-height: 160px; max-height: 42vh; overflow-y: auto;">
+                <div style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">Loading scope...</div>
+              </div>
+
+              <!-- Periods Section -->
+              <div id="viewScopePeriods" style="margin-top: 1rem; background: #FFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; display: none;">
+                <div style="font-size: 0.78rem; font-weight: 700; color: var(--color-secondary-text); text-transform: uppercase; margin-bottom: 0.6rem;">Accessible Periods</div>
+                <div id="viewScopePeriodsContent" style="display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-top: 1px solid var(--color-border); background: #FFF; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;">
+              <span style="font-size: 0.8rem; color: var(--color-secondary-text);">Read-only view — use <strong>Manage Access</strong> to edit.</span>
+              <div style="display: flex; gap: 0.5rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('viewScopeModal')">Close</button>
+                <button type="button" class="btn-primary" style="background: #0878D1;" onclick="switchToManageAccess()">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align: -2px; margin-right: 4px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  Manage Access
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- USER ACCESS / HIERARCHY SCOPE MODAL (MANAGE / EDIT) -->
+        <div id="userAccessModal" class="cost360-modal-overlay" style="display: none;">
+          <div class="cost360-modal-dialog" style="max-width: 720px; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #0A192F 0%, #1E3A8A 100%); color: #FFF; padding: 1.25rem 1.5rem; border-top-left-radius: 12px; border-top-right-radius: 12px;">
+              <div>
+                <h3 style="font-size: 1.15rem; font-weight: 700; color: #FFF; margin: 0;" id="userAccessModalTitle">Manage Organization Access</h3>
+                <p style="font-size: 0.82rem; color: #94A3B8; margin: 4px 0 0 0;" id="userAccessModalSubtitle">Configure customer, company, division, plant &amp; warehouse access</p>
+              </div>
+              <button type="button" class="modal-close-btn" style="color: #FFF;" onclick="closeModal('userAccessModal')">&times;</button>
+            </div>
+            
+            <div style="padding: 1.25rem 1.5rem; overflow-y: auto; flex: 1; background: #FAFBFD;">
+              <div id="userAccessModalError" style="display: none; padding: 0.65rem 0.85rem; background: #FEE2E2; color: #DC2626; border-radius: 6px; font-size: 0.82rem; font-weight: 600; margin-bottom: 1rem;"></div>
+
+              <!-- Scope Live Counter Header -->
+              <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <div>
+                  <span style="font-size: 0.72rem; color: var(--color-secondary-text); text-transform: uppercase; font-weight: 700; display: block;">Effective Scope</span>
+                  <strong id="userAccessScopeBadge" style="font-size: 0.92rem; color: #00A88F;">Calculating...</strong>
+                </div>
+                <div style="display: flex; gap: 1rem; font-size: 0.8rem;">
+                  <div><span style="color: var(--color-secondary-text);">Companies:</span> <strong id="scopeCountCompanies" style="color: #0A192F;">0</strong></div>
+                  <div><span style="color: var(--color-secondary-text);">Divisions:</span> <strong id="scopeCountDivisions" style="color: #0A192F;">0</strong></div>
+                  <div><span style="color: var(--color-secondary-text);">Locations:</span> <strong id="scopeCountLocations" style="color: #0A192F;">0</strong></div>
+                </div>
+              </div>
+
+              <!-- Org Hierarchy Tree Container -->
+              <div id="userAccessTreeContainer" style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; min-height: 180px; max-height: 40vh; overflow-y: auto;">
+                <div style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">Loading organizational hierarchy...</div>
+              </div>
+
+              <!-- Period Assignment Section -->
+              <div style="margin-top: 1rem; background: #FFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem;">
+                <div style="font-size: 0.78rem; font-weight: 700; color: var(--color-secondary-text); text-transform: uppercase; margin-bottom: 0.6rem;">Period Access <span style="font-weight: 400; text-transform: none; font-size: 0.72rem;">(leave all unchecked for unrestricted period access)</span></div>
+                <div id="periodAccessContainer" style="display: flex; flex-wrap: wrap; gap: 0.5rem; min-height: 32px;">
+                  <span style="color: var(--color-secondary-text); font-size: 0.82rem;">Loading periods...</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-top: 1px solid var(--color-border); background: #FFFFFF; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;">
+              <button type="button" class="btn-secondary" onclick="closeModal('userAccessModal')">Cancel</button>
+              <button type="button" class="btn-primary" id="saveUserAccessBtn" onclick="saveUserAccessSettings()">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px; vertical-align: -2px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Save Access Scope
+              </button>
+            </div>
+          </div>
+        </div>
+
         <script>
           // User Master Module JavaScript Integration
           let availableRolesCache = [];
@@ -2969,7 +3083,7 @@ if (!function_exists('formatMenuRouteUrl')) {
 
             tbody.innerHTML = `
               <tr>
-                <td colspan="9" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                <td colspan="10" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
                   Loading users...
                 </td>
               </tr>
@@ -3031,6 +3145,8 @@ if (!function_exists('formatMenuRouteUrl')) {
               document.getElementById('kpiLockedUsers').textContent = lockedCount;
               document.getElementById('kpiUniqueRoles').textContent = uniqueRoles.size;
 
+              const currentSessionUserId = <?php echo (int)($user['user_id'] ?? 0); ?>;
+
               tbody.innerHTML = data.users.map(u => {
                 const statusColor = u.status === 'ACTIVE' ? '#00A88F' : (u.status === 'INACTIVE' ? '#6B7F91' : '#DC2626');
                 const statusBg = u.status === 'ACTIVE' ? '#E6F9F6' : (u.status === 'INACTIVE' ? '#F1F5F9' : '#FEE2E2');
@@ -3047,12 +3163,22 @@ if (!function_exists('formatMenuRouteUrl')) {
                       </span>
                     </td>
                     <td><span class="role-badge">${escapeHtml(u.role_name)}</span></td>
-                    <td>${escapeHtml(u.created_at)}</td>
-                    <td>${escapeHtml(u.last_login_at)}</td>
+                    <td><span style="font-size: 0.82rem; color: var(--color-secondary-text);">${escapeHtml(u.created_by_name || 'System')}</span></td>
+                    <td>${escapeHtml(u.last_login_at || 'Never')}</td>
                     <td style="text-align: right; white-space: nowrap;">
-                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditUserModal(${u.user_id})">Edit</button>
-                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openChangePasswordModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.email)}')">Password</button>
-                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; color: #DC2626; border-color: #FCA5A5;" onclick="openDeleteModal(${u.user_id}, '${escapeJs(u.username)}')">Delete</button>
+                      ${u.can_manage ? `
+                        <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px; border-color: #00A88F; color: #00A88F;" onclick="openViewScopeModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.full_name)}')">
+                          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align: -1px; margin-right: 2px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                          View Scope
+                        </button>
+                        <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditUserModal(${u.user_id})">Edit</button>
+                        <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openChangePasswordModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.email)}')" >Password</button>
+                        ${u.user_id !== currentSessionUserId ? `
+                          <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; color: #DC2626; border-color: #FCA5A5;" onclick="openDeleteModal(${u.user_id}, '${escapeJs(u.username)}')" >Delete</button>
+                        ` : ''}
+                      ` : `
+                        <span style="font-size: 0.78rem; color: var(--color-secondary-text); font-style: italic;">Protected</span>
+                      `}
                     </td>
                   </tr>
                 `;
@@ -3291,6 +3417,670 @@ if (!function_exists('formatMenuRouteUrl')) {
           function escapeJs(str) {
             if (!str) return '';
             return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
+          }
+
+          /* ============================================================
+             ORGANIZATION ACCESS & HIERARCHY SCOPE MANAGEMENT
+             ============================================================ */
+          let currentManagingUserId = 0;
+          let currentManagingUsername = '';
+          let currentManagingFullName = '';
+          let currentHierarchyData = [];
+          let currentAssignmentsData = [];
+
+          // View Scope (read-only) — shows effective scope with Direct/Inherited labels
+          async function openViewScopeModal(userId, username, fullName) {
+            currentManagingUserId = userId;
+            currentManagingUsername = username;
+            currentManagingFullName = fullName;
+            const modal = document.getElementById('viewScopeModal');
+            if (!modal) return;
+
+            document.getElementById('viewScopeModalTitle').textContent = `Access Scope — ${username}`;
+            document.getElementById('viewScopeModalSubtitle').textContent = `Effective organizational access for ${fullName || username}`;
+
+            const tree = document.getElementById('viewScopeTree');
+            const periodsDiv = document.getElementById('viewScopePeriods');
+            tree.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">Loading...</div>';
+            if (periodsDiv) periodsDiv.style.display = 'none';
+            modal.style.display = 'flex';
+
+            try {
+              const res = await fetch(getUserApiUrl(`action=get_user_access&user_id=${userId}`));
+              const data = await res.json();
+
+              if (!data.success) {
+                tree.innerHTML = `<div style="padding: 1.5rem; color: #DC2626; text-align: center;">${escapeHtml(data.error || 'Failed to load scope.')}</div>`;
+                return;
+              }
+
+              const scope = data.effective_scope || {};
+              const directList = data.direct_assignments || [];
+              const periods = data.accessible_periods || [];
+
+              const plantCount = (scope.plant_ids || []).length;
+              const whCount = (scope.warehouse_ids || []).length;
+              const locCountEl = document.getElementById('vsCountLocations');
+              if (locCountEl) locCountEl.textContent = plantCount + whCount;
+              document.getElementById('vsCountCompanies').textContent  = (scope.company_ids || []).length;
+              document.getElementById('vsCountDivisions').textContent  = (scope.division_ids || []).length;
+              document.getElementById('vsCountPeriods').textContent    = (scope.period_ids || periods || []).length;
+
+              renderViewScopeTree(data.hierarchy || [], directList, scope);
+
+              // Show periods section
+              if (periods.length > 0 && periodsDiv) {
+                periodsDiv.style.display = 'block';
+                const perContent = document.getElementById('viewScopePeriodsContent');
+                if (perContent) {
+                  perContent.innerHTML = periods.map(p => {
+                    const isDirect = (directList || []).some(a => parseInt(a.period_id) === parseInt(p.period_id));
+                    return `<span style="display: inline-flex; align-items: center; gap: 4px; background: ${isDirect ? '#EDE9FE' : '#F1F5F9'}; color: ${isDirect ? '#7C3AED' : '#475569'}; border: 1px solid ${isDirect ? '#C4B5FD' : '#E2E8F0'}; padding: 0.25rem 0.65rem; border-radius: 12px; font-size: 0.76rem; font-weight: 600;">
+                      ${isDirect ? '●' : '○'} ${escapeHtml(p.period_name)}
+                    </span>`;
+                  }).join('');
+                }
+              }
+
+            } catch (err) {
+              console.error('Error loading scope:', err);
+              tree.innerHTML = '<div style="padding: 1.5rem; color: #DC2626; text-align: center;">Connection error.</div>';
+            }
+          }
+
+          function renderViewScopeTree(customers, directList, scope) {
+            const tree = document.getElementById('viewScopeTree');
+            if (!customers || customers.length === 0) {
+              tree.innerHTML = scope && scope.is_global_admin
+                ? '<div style="text-align:center;padding:1.5rem;color:#7C3AED;font-weight:700;">🌐 Global Platform Admin — Access to ALL organizations</div>'
+                : '<div style="text-align:center;padding:1.5rem;color:var(--color-secondary-text);">No organizational access assigned.</div>';
+              return;
+            }
+
+            const directCustIds = new Set((directList||[]).filter(a => !a.company_id && !a.division_id && !a.plant_id && !a.warehouse_id && a.customer_id).map(a => parseInt(a.customer_id)));
+            const directCompIds = new Set((directList||[]).filter(a => a.company_id && !a.division_id && !a.plant_id && !a.warehouse_id).map(a => parseInt(a.company_id)));
+            const directDivIds  = new Set((directList||[]).filter(a => a.division_id && !a.plant_id && !a.warehouse_id).map(a => parseInt(a.division_id)));
+            const directPlantIds= new Set((directList||[]).filter(a => a.plant_id && !a.warehouse_id).map(a => parseInt(a.plant_id)));
+            const directWhIds   = new Set((directList||[]).filter(a => a.warehouse_id).map(a => parseInt(a.warehouse_id)));
+
+            const tag = (isDirect) => `<span style="display:inline-block;font-size:0.67rem;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;background:${isDirect?'#DBEAFE':'#E6F9F6'};color:${isDirect?'#1D4ED8':'#008774'};border:1px solid ${isDirect?'#93C5FD':'#6EE7B7'};">${isDirect?'Direct':'Inherited'}</span>`;
+
+            let html = '<div style="display:flex;flex-direction:column;gap:0.85rem;">';
+            customers.forEach(cust => {
+              const custId = parseInt(cust.customer_id);
+              const custDirect = directCustIds.has(custId);
+              html += `<div style="border:1px solid #E2E8F0;border-radius:8px;overflow:hidden;background:#FFF;">
+                <div style="padding:0.7rem 1rem;background:#F8FAFC;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;">
+                  <span style="font-weight:700;color:#0A192F;font-size:0.88rem;">Customer: ${escapeHtml(cust.customer_name)} (${escapeHtml(cust.customer_code)})</span>
+                  ${tag(custDirect)}
+                  <span style="margin-left:auto;font-size:0.72rem;background:#E0E7FF;color:#3730A3;font-weight:700;padding:2px 8px;border-radius:12px;">TENANT</span>
+                </div>
+                <div style="padding:0.75rem 1rem 0.75rem 1.5rem;display:flex;flex-direction:column;gap:0.65rem;">`;
+              (cust.companies || []).forEach(comp => {
+                const compId = parseInt(comp.company_id);
+                const compDirect = directCompIds.has(compId);
+                const compAccess = custDirect || compDirect || (scope.company_ids||[]).includes(compId);
+                if (!compAccess) return;
+                html += `<div style="border-left:3px solid #00A88F;padding-left:0.85rem;">
+                  <div style="display:flex;align-items:center;margin-bottom:5px;">
+                    <span style="font-weight:600;color:#1E293B;font-size:0.84rem;">Company: ${escapeHtml(comp.company_name)} (${escapeHtml(comp.company_code)})</span>
+                    ${tag(compDirect && !custDirect)}
+                  </div>
+                  <div style="padding-left:1.25rem;display:flex;flex-direction:column;gap:0.5rem;margin-top:4px;">`;
+                (comp.divisions || []).forEach(div => {
+                  const divId = parseInt(div.division_id);
+                  const divDirect = directDivIds.has(divId);
+                  const divAccess = custDirect || compDirect || divDirect || (scope.division_ids||[]).includes(divId);
+                  if (!divAccess) return;
+                  html += `<div style="border-left:2px solid #CBD5E1;padding-left:0.75rem;">
+                    <div style="display:flex;align-items:center;margin-bottom:4px;">
+                      <span style="font-weight:600;color:#334155;font-size:0.81rem;">Division: ${escapeHtml(div.division_name)}</span>
+                      ${tag(divDirect && !compDirect && !custDirect)}
+                    </div>
+                    <div style="padding-left:1rem;display:flex;flex-direction:column;gap:0.4rem;">`;
+
+                  // UNIFIED LOCATION LEVEL: Both Plants and Warehouses shown under LOCATION
+                  const accessibleLocations = [];
+
+                  (div.plants || []).forEach(plant => {
+                    const plantId = parseInt(plant.plant_id);
+                    const plantDirect = directPlantIds.has(plantId);
+                    const plantAccess = custDirect || compDirect || divDirect || plantDirect || (scope.plant_ids||[]).includes(plantId);
+                    if (plantAccess) {
+                      accessibleLocations.push({
+                        id: plantId,
+                        name: plant.plant_name,
+                        code: plant.plant_code,
+                        type: 'Plant',
+                        isDirect: plantDirect && !divDirect && !compDirect && !custDirect
+                      });
+                    }
+                    (plant.warehouses || []).forEach(wh => {
+                      const whId = parseInt(wh.warehouse_id);
+                      const whDirect = directWhIds.has(whId);
+                      const whAccess = custDirect || compDirect || divDirect || plantDirect || whDirect || (scope.warehouse_ids||[]).includes(whId);
+                      if (whAccess) {
+                        accessibleLocations.push({
+                          id: whId,
+                          name: wh.warehouse_name,
+                          code: wh.warehouse_code,
+                          type: 'Warehouse',
+                          isDirect: whDirect && !plantDirect && !divDirect && !compDirect && !custDirect
+                        });
+                      }
+                    });
+                  });
+
+                  if (accessibleLocations.length > 0) {
+                    html += `
+                      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:8px 10px;">
+                        <div style="font-size:0.72rem;font-weight:700;color:#033665;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+                          <span>LOCATION</span>
+                          <span style="font-size:0.68rem;background:#E8F4FD;color:#0070BA;padding:1px 6px;border-radius:10px;">${accessibleLocations.length}</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:4px;padding-left:0.5rem;">
+                    `;
+
+                    accessibleLocations.forEach(loc => {
+                      const isPlant = (loc.type === 'Plant');
+                      const badgeBg = isPlant ? '#E0F2FE' : '#FEF3C7';
+                      const badgeCol = isPlant ? '#0369A1' : '#B45309';
+                      html += `
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;">
+                          <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#1E293B;">
+                            <span style="font-weight:600;">${escapeHtml(loc.name)}</span>
+                            <span style="font-size:0.7rem;color:#64748B;">(${escapeHtml(loc.code)})</span>
+                            <span style="font-size:0.65rem;font-weight:700;padding:1px 6px;border-radius:4px;background:${badgeBg};color:${badgeCol};">Type: ${escapeHtml(loc.type)}</span>
+                          </div>
+                          ${tag(loc.isDirect)}
+                        </div>
+                      `;
+                    });
+
+                    html += `</div></div>`;
+                  } else {
+                    html += `<div style="font-size:0.75rem;color:#94A3B8;font-style:italic;">No location access</div>`;
+                  }
+
+                  html += '</div></div>';
+                });
+                html += '</div></div>';
+              });
+              html += '</div></div>';
+            });
+            html += '</div>';
+            tree.innerHTML = html;
+          }
+
+          // Switch from View Scope to Manage Access for same user
+          function switchToManageAccess() {
+            closeModal('viewScopeModal');
+            openUserAccessModal(currentManagingUserId, currentManagingUsername, currentManagingFullName);
+          }
+
+          async function openUserAccessModal(userId, username, fullName) {
+            currentManagingUserId = userId;
+            currentManagingUsername = username || '';
+            currentManagingFullName = fullName || '';
+            const modal = document.getElementById('userAccessModal');
+            if (!modal) return;
+
+            document.getElementById('userAccessModalTitle').textContent = `Manage Organization Access — ${username}`;
+            document.getElementById('userAccessModalSubtitle').textContent = fullName ? `Target user: ${fullName}` : 'Configure organizational hierarchy access';
+            
+            const errDiv = document.getElementById('userAccessModalError');
+            if (errDiv) errDiv.style.display = 'none';
+
+            const container = document.getElementById('userAccessTreeContainer');
+            container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">Loading organizational hierarchy...</div>';
+
+            const periodContainer = document.getElementById('periodAccessContainer');
+            if (periodContainer) periodContainer.innerHTML = '<span style="color: var(--color-secondary-text); font-size: 0.82rem;">Loading periods...</span>';
+
+            modal.style.display = 'flex';
+
+            try {
+              const res = await fetch(getUserApiUrl(`action=get_user_access&user_id=${userId}`));
+              const data = await res.json();
+
+              if (!data.success) {
+                container.innerHTML = `<div style="padding: 1.5rem; color: #DC2626; text-align: center;">${escapeHtml(data.error || 'Failed to load access details.')}</div>`;
+                return;
+              }
+
+              currentHierarchyData = data.hierarchy || data.available_tree || [];
+              currentAssignmentsData = data.assignments || data.direct_assignments || [];
+
+              renderAccessHierarchyTree(currentHierarchyData, currentAssignmentsData);
+              syncAccessTreeState();
+
+              // Populate period checkboxes
+              const accessiblePeriods = data.accessible_periods || [];
+              const directAssignedPeriodIds = new Set(
+                (data.direct_assignments || []).filter(a => a.period_id).map(a => parseInt(a.period_id))
+              );
+
+              if (periodContainer) {
+                if (accessiblePeriods.length === 0) {
+                  periodContainer.innerHTML = '<span style="color: var(--color-secondary-text); font-size: 0.82rem;">No periods available — create periods first.</span>';
+                } else {
+                  periodContainer.innerHTML = accessiblePeriods.map(p => {
+                    const isChecked = directAssignedPeriodIds.has(parseInt(p.period_id));
+                    const isLocked = p.is_locked;
+                    return `<label style="display: inline-flex; align-items: center; gap: 5px; background: ${isChecked ? '#EDE9FE' : '#F8FAFC'}; border: 1px solid ${isChecked ? '#C4B5FD' : '#E2E8F0'}; border-radius: 8px; padding: 0.35rem 0.75rem; cursor: pointer; transition: background 0.15s; font-size: 0.82rem; font-weight: 600; color: ${isChecked ? '#7C3AED' : '#475569'};">
+                      <input type="checkbox" class="scope-cb-period" data-period-id="${p.period_id}" ${isChecked ? 'checked' : ''} ${isLocked ? 'title="Period is locked"' : ''} style="accent-color: #7C3AED;">
+                      ${escapeHtml(p.period_name)}
+                      ${isLocked ? '<span style="font-size: 0.68rem; color: #DC2626; margin-left: 2px;">🔒</span>' : ''}
+                    </label>`;
+                  }).join('');
+                }
+              }
+
+            } catch (err) {
+              console.error('Error loading user access:', err);
+              container.innerHTML = '<div style="padding: 1.5rem; color: #DC2626; text-align: center;">Connection error while fetching hierarchy.</div>';
+            }
+          }
+
+          function renderAccessHierarchyTree(customers, assignments) {
+            const container = document.getElementById('userAccessTreeContainer');
+            if (!container) return;
+
+            if (!customers || customers.length === 0) {
+              container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">No accessible organizational units found for your administrative scope.</div>';
+              return;
+            }
+
+            // Map existing direct assignments
+            const hasCustScope = (cid) => assignments.some(a => parseInt(a.customer_id) === cid && !a.company_id && !a.division_id && !a.plant_id && !a.warehouse_id);
+            const hasCompScope = (compid) => assignments.some(a => parseInt(a.company_id) === compid && !a.division_id && !a.plant_id && !a.warehouse_id);
+            const hasDivScope = (divid) => assignments.some(a => parseInt(a.division_id) === divid && !a.plant_id && !a.warehouse_id);
+            const hasPlantScope = (pid) => assignments.some(a => parseInt(a.plant_id) === pid && !a.warehouse_id);
+            const hasWhScope = (wid) => assignments.some(a => parseInt(a.warehouse_id) === wid);
+
+            let html = '<div style="display: flex; flex-direction: column; gap: 0.85rem;">';
+
+            customers.forEach(cust => {
+              const custId = parseInt(cust.customer_id);
+              const isCustChecked = hasCustScope(custId);
+
+              html += `
+                <div class="tree-node-customer" style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; background: #FFF; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                  <div style="padding: 0.75rem 1rem; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between;">
+                    <label style="display: flex; align-items: center; gap: 0.65rem; font-weight: 700; color: #0A192F; font-size: 0.9rem; cursor: pointer;">
+                      <input type="checkbox" class="scope-cb scope-cb-cust" data-cust-id="${custId}" ${isCustChecked ? 'checked' : ''} onchange="syncAccessTreeState()">
+                      <span>Customer: ${escapeHtml(cust.customer_name)} (${escapeHtml(cust.customer_code)})</span>
+                    </label>
+                    <span style="font-size: 0.72rem; background: #E0E7FF; color: #3730A3; font-weight: 700; padding: 2px 8px; border-radius: 12px;">TENANT</span>
+                  </div>
+
+                  <div class="tree-companies-group" data-parent-cust="${custId}" style="padding: 0.75rem 1rem 0.75rem 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+              `;
+
+              (cust.companies || []).forEach(comp => {
+                const compId = parseInt(comp.company_id);
+                const isCompChecked = hasCompScope(compId);
+
+                html += `
+                  <div class="tree-node-company" style="border-left: 3px solid #00A88F; padding-left: 0.85rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                      <label style="display: flex; align-items: center; gap: 0.55rem; font-weight: 600; color: #1E293B; font-size: 0.86rem; cursor: pointer;">
+                        <input type="checkbox" class="scope-cb scope-cb-comp" data-cust-id="${custId}" data-comp-id="${compId}" ${isCompChecked ? 'checked' : ''} onchange="syncAccessTreeState()">
+                        <span>Company: ${escapeHtml(comp.company_name)} (${escapeHtml(comp.company_code)})</span>
+                      </label>
+                      <span class="inherited-tag inherited-tag-comp" style="display: none; font-size: 0.7rem; color: #008774; background: #E6F9F6; padding: 2px 7px; border-radius: 4px; font-weight: 600;">Inherited from Tenant</span>
+                    </div>
+
+                    <div class="tree-divisions-group" data-parent-comp="${compId}" style="padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.65rem; margin-top: 4px;">
+                `;
+
+                (comp.divisions || []).forEach(div => {
+                  const divId = parseInt(div.division_id);
+                  const isDivChecked = hasDivScope(divId);
+
+                  html += `
+                    <div class="tree-node-division" style="border-left: 2px solid #CBD5E1; padding-left: 0.75rem;">
+                      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #334155; font-size: 0.82rem; cursor: pointer;">
+                          <input type="checkbox" class="scope-cb scope-cb-div" data-cust-id="${custId}" data-comp-id="${compId}" data-div-id="${divId}" ${isDivChecked ? 'checked' : ''} onchange="syncAccessTreeState()">
+                          <span>Division: ${escapeHtml(div.division_name)}</span>
+                        </label>
+                        <span class="inherited-tag inherited-tag-div" style="display: none; font-size: 0.68rem; color: #008774; background: #E6F9F6; padding: 1px 6px; border-radius: 4px; font-weight: 600;">Inherited</span>
+                      </div>
+
+                      <div class="tree-locations-group" data-parent-div="${divId}" style="padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.45rem; margin-top: 4px;">
+                  `;
+
+                  // UNIFIED LOCATION LEVEL: Combined Plants & Warehouses
+                  const locList = [];
+                  (div.plants || []).forEach(p => {
+                    locList.push({
+                      location_id: parseInt(p.plant_id),
+                      location_type: 'Plant',
+                      type_code: 'plant',
+                      location_name: p.plant_name,
+                      location_code: p.plant_code,
+                      plant_id: parseInt(p.plant_id),
+                      warehouse_id: null
+                    });
+                    (p.warehouses || []).forEach(w => {
+                      locList.push({
+                        location_id: parseInt(w.warehouse_id),
+                        location_type: 'Warehouse',
+                        type_code: 'warehouse',
+                        location_name: w.warehouse_name,
+                        location_code: w.warehouse_code,
+                        plant_id: parseInt(p.plant_id),
+                        warehouse_id: parseInt(w.warehouse_id)
+                      });
+                    });
+                  });
+
+                  html += `
+                    <div style="font-size: 0.72rem; font-weight: 700; color: #033665; text-transform: uppercase; margin: 6px 0 4px 0; letter-spacing: 0.04em;">
+                      LOCATION
+                    </div>
+                  `;
+
+                  locList.forEach(loc => {
+                    const isPlant = (loc.type_code === 'plant');
+                    const isLocChecked = isPlant ? hasPlantScope(loc.location_id) : hasWhScope(loc.location_id);
+                    const cbClass = isPlant ? 'scope-cb-plant' : 'scope-cb-wh';
+                    const tagClass = isPlant ? 'inherited-tag-plant' : 'inherited-tag-wh';
+                    const badgeBg = isPlant ? '#E0F2FE' : '#FEF3C7';
+                    const badgeCol = isPlant ? '#0369A1' : '#B45309';
+
+                    html += `
+                      <div class="tree-node-loc" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 6px; padding: 6px 10px; display: flex; align-items: center; justify-content: space-between;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: #1E293B; cursor: pointer; font-weight: 600;">
+                          <input type="checkbox" class="scope-cb ${cbClass}" data-cust-id="${custId}" data-comp-id="${compId}" data-div-id="${divId}" ${isPlant ? `data-plant-id="${loc.location_id}"` : `data-wh-id="${loc.location_id}" data-parent-plant-id="${loc.plant_id || ''}"`} ${isLocChecked ? 'checked' : ''} onchange="syncAccessTreeState()">
+                          <span>${escapeHtml(loc.location_name)} <span style="font-size: 0.72rem; color: #64748B;">(${escapeHtml(loc.location_code)})</span></span>
+                          <span style="font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: ${badgeBg}; color: ${badgeCol};">Type: ${escapeHtml(loc.location_type)}</span>
+                        </label>
+                        <span class="inherited-tag ${tagClass}" style="display: none; font-size: 0.68rem; color: #008774; background: #E6F9F6; padding: 1px 6px; border-radius: 4px; font-weight: 600;">Inherited</span>
+                      </div>
+                    `;
+                  });
+
+                  html += `
+                      </div>
+                    </div>
+                  `;
+                });
+
+                html += `
+                    </div>
+                  </div>
+                `;
+              });
+
+              html += `
+                  </div>
+                </div>
+              `;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+          }
+
+          function syncAccessTreeState() {
+            const container = document.getElementById('userAccessTreeContainer');
+            if (!container) return;
+
+            const selectedCompIds = new Set();
+            const selectedDivIds = new Set();
+            const selectedPlantIds = new Set();
+            const selectedWhIds = new Set();
+
+            // 1. Process Customer Level
+            container.querySelectorAll('.scope-cb-cust').forEach(custCb => {
+              const custId = custCb.dataset.custId;
+              const isCustChecked = custCb.checked;
+              const compGroup = container.querySelector(`.tree-companies-group[data-parent-cust="${custId}"]`);
+              if (!compGroup) return;
+
+              compGroup.querySelectorAll('.scope-cb-comp').forEach(compCb => {
+                const compId = compCb.dataset.compId;
+                const inheritedTagComp = compCb.closest('.tree-node-company').querySelector('.inherited-tag-comp');
+
+                if (isCustChecked) {
+                  compCb.disabled = true;
+                  if (inheritedTagComp) inheritedTagComp.style.display = 'inline-block';
+                  selectedCompIds.add(compId);
+                } else {
+                  compCb.disabled = false;
+                  if (inheritedTagComp) inheritedTagComp.style.display = 'none';
+                  if (compCb.checked) selectedCompIds.add(compId);
+                }
+
+                const isCompEffective = isCustChecked || compCb.checked;
+                const divGroup = compCb.closest('.tree-node-company').querySelector(`.tree-divisions-group[data-parent-comp="${compId}"]`);
+                if (!divGroup) return;
+
+                divGroup.querySelectorAll('.tree-node-division').forEach(divNode => {
+                  const divCb = divNode.querySelector('.scope-cb-div');
+                  if (!divCb) return;
+                  const divId = divCb.dataset.divId;
+                  const inheritedTagDiv = divNode.querySelector('.inherited-tag-div');
+
+                  if (isCompEffective) {
+                    divCb.disabled = true;
+                    if (inheritedTagDiv) {
+                      inheritedTagDiv.style.display = 'inline-block';
+                      inheritedTagDiv.textContent = isCustChecked ? 'Inherited from Tenant' : 'Inherited from Company';
+                    }
+                    selectedDivIds.add(divId);
+                  } else {
+                    divCb.disabled = false;
+                    if (inheritedTagDiv) inheritedTagDiv.style.display = 'none';
+                    if (divCb.checked) selectedDivIds.add(divId);
+                  }
+
+                  const isDivEffective = isCompEffective || divCb.checked;
+
+                  // Update Plant Locations under Division
+                  divNode.querySelectorAll('.scope-cb-plant').forEach(plantCb => {
+                    const plantId = plantCb.dataset.plantId;
+                    const tagPlant = plantCb.closest('.tree-node-loc').querySelector('.inherited-tag-plant');
+                    if (isDivEffective) {
+                      plantCb.disabled = true;
+                      if (tagPlant) {
+                        tagPlant.style.display = 'inline-block';
+                        tagPlant.textContent = isCustChecked ? 'Inherited from Tenant' : (compCb.checked ? 'Inherited from Company' : 'Inherited from Division');
+                      }
+                      selectedPlantIds.add(plantId);
+                    } else {
+                      plantCb.disabled = false;
+                      if (tagPlant) tagPlant.style.display = 'none';
+                      if (plantCb.checked) selectedPlantIds.add(plantId);
+                    }
+                  });
+
+                  // Update Warehouse Locations under Division
+                  divNode.querySelectorAll('.scope-cb-wh').forEach(whCb => {
+                    const whId = whCb.dataset.whId;
+                    const tagWh = whCb.closest('.tree-node-loc').querySelector('.inherited-tag-wh');
+                    if (isDivEffective) {
+                      whCb.disabled = true;
+                      if (tagWh) {
+                        tagWh.style.display = 'inline-block';
+                        tagWh.textContent = isCustChecked ? 'Inherited from Tenant' : (compCb.checked ? 'Inherited from Company' : 'Inherited from Division');
+                      }
+                      selectedWhIds.add(whId);
+                    } else {
+                      whCb.disabled = false;
+                      if (tagWh) tagWh.style.display = 'none';
+                      if (whCb.checked) selectedWhIds.add(whId);
+                    }
+                  });
+                });
+              });
+            });
+
+            // Update live metrics counters
+            document.getElementById('scopeCountCompanies').textContent = selectedCompIds.size;
+            document.getElementById('scopeCountDivisions').textContent = selectedDivIds.size;
+            const scopeLocsEl = document.getElementById('scopeCountLocations');
+            if (scopeLocsEl) {
+              scopeLocsEl.textContent = selectedPlantIds.size + selectedWhIds.size;
+            }
+
+            const badgeEl = document.getElementById('userAccessScopeBadge');
+            const custAny = Array.from(container.querySelectorAll('.scope-cb-cust')).some(cb => cb.checked);
+            if (custAny) {
+              badgeEl.textContent = 'Customer / Tenant Wide Access';
+              badgeEl.style.color = '#00A88F';
+            } else if (selectedCompIds.size > 0 && selectedCompIds.size === container.querySelectorAll('.scope-cb-comp').length) {
+              badgeEl.textContent = 'All Companies Access';
+              badgeEl.style.color = '#00A88F';
+            } else if (selectedCompIds.size > 0) {
+              badgeEl.textContent = `${selectedCompIds.size} Company/Companies Scoped`;
+              badgeEl.style.color = '#1E40AF';
+            } else if (selectedPlantIds.size > 0 || selectedWhIds.size > 0) {
+              badgeEl.textContent = `${selectedPlantIds.size + selectedWhIds.size} Location(s) Scoped`;
+              badgeEl.style.color = '#D97706';
+            } else {
+              badgeEl.textContent = 'No Access Configured';
+              badgeEl.style.color = '#DC2626';
+            }
+          }
+
+          async function saveUserAccessSettings() {
+            const container = document.getElementById('userAccessTreeContainer');
+            if (!container || currentManagingUserId <= 0) return;
+
+            const saveBtn = document.getElementById('saveUserAccessBtn');
+            const errDiv = document.getElementById('userAccessModalError');
+            if (errDiv) errDiv.style.display = 'none';
+
+            // Gather active direct assignments (only non-disabled checkboxes that are checked)
+            const assignments = [];
+
+            container.querySelectorAll('.scope-cb-cust').forEach(cb => {
+              if (cb.checked && !cb.disabled) {
+                assignments.push({
+                  customer_id: parseInt(cb.dataset.custId),
+                  company_id: null,
+                  division_id: null,
+                  plant_id: null,
+                  warehouse_id: null,
+                  status: 'Active'
+                });
+              }
+            });
+
+            container.querySelectorAll('.scope-cb-comp').forEach(cb => {
+              if (cb.checked && !cb.disabled) {
+                assignments.push({
+                  customer_id: parseInt(cb.dataset.custId),
+                  company_id: parseInt(cb.dataset.compId),
+                  division_id: null,
+                  plant_id: null,
+                  warehouse_id: null,
+                  status: 'Active'
+                });
+              }
+            });
+
+            container.querySelectorAll('.scope-cb-div').forEach(cb => {
+              if (cb.checked && !cb.disabled) {
+                assignments.push({
+                  customer_id: parseInt(cb.dataset.custId),
+                  company_id: parseInt(cb.dataset.compId),
+                  division_id: parseInt(cb.dataset.divId),
+                  plant_id: null,
+                  warehouse_id: null,
+                  status: 'Active'
+                });
+              }
+            });
+
+            container.querySelectorAll('.scope-cb-plant').forEach(cb => {
+              if (cb.checked && !cb.disabled) {
+                assignments.push({
+                  customer_id: parseInt(cb.dataset.custId),
+                  company_id: parseInt(cb.dataset.compId),
+                  division_id: parseInt(cb.dataset.divId),
+                  plant_id: parseInt(cb.dataset.plantId),
+                  warehouse_id: null,
+                  status: 'Active'
+                });
+              }
+            });
+
+            container.querySelectorAll('.scope-cb-wh').forEach(cb => {
+              if (cb.checked && !cb.disabled) {
+                assignments.push({
+                  customer_id: parseInt(cb.dataset.custId),
+                  company_id: parseInt(cb.dataset.compId),
+                  division_id: parseInt(cb.dataset.divId),
+                  plant_id: cb.dataset.plantId ? parseInt(cb.dataset.plantId) : null,
+                  warehouse_id: parseInt(cb.dataset.whId),
+                  status: 'Active'
+                });
+              }
+            });
+
+            // Gather period selections (sent as period-only assignment rows)
+            const periodContainer = document.getElementById('periodAccessContainer');
+            if (periodContainer) {
+              periodContainer.querySelectorAll('.scope-cb-period').forEach(cb => {
+                if (cb.checked) {
+                  assignments.push({
+                    customer_id: null,
+                    company_id: null,
+                    division_id: null,
+                    plant_id: null,
+                    warehouse_id: null,
+                    period_id: parseInt(cb.dataset.periodId),
+                    status: 'Active'
+                  });
+                }
+              });
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving Access Scope...';
+
+            try {
+              const formData = new FormData();
+              formData.append('action', 'save_user_access');
+              formData.append('user_id', currentManagingUserId);
+              formData.append('assignments', JSON.stringify(assignments));
+
+              const res = await fetch(getUserApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (!data.success) {
+                if (errDiv) {
+                  errDiv.textContent = data.error || 'Failed to save organization access.';
+                  errDiv.style.display = 'block';
+                } else {
+                  alert(data.error || 'Failed to save organization access.');
+                }
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save Access Scope';
+                return;
+              }
+
+              closeModal('userAccessModal');
+              showToast(data.message || 'Organization access scope saved successfully.', true);
+              loadUsersTable();
+
+            } catch (err) {
+              console.error('Error saving access settings:', err);
+              if (errDiv) {
+                errDiv.textContent = 'Network or server communication error.';
+                errDiv.style.display = 'block';
+              }
+            } finally {
+              saveBtn.disabled = false;
+              saveBtn.textContent = 'Save Access Scope';
+            }
           }
         </script>
 

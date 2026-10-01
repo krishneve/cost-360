@@ -16,9 +16,18 @@ if (!$userId) {
     exit;
 }
 
-$activeCustomer = getActiveCustomer();
-$customerId = $activeCustomer['customer_id'] ?? null;
 $isAdmin = isPlatformAdmin($userId);
+$activeCustomer = getActiveCustomer();
+if ((!$activeCustomer || empty($activeCustomer['customer_id'])) && !$isAdmin) {
+    $tenantId = getUserCustomerTenantId($userId);
+    if ($tenantId) {
+        setActiveCustomer($tenantId);
+        $activeCustomer = getActiveCustomer();
+    }
+}
+$customerId = $activeCustomer['customer_id'] ?? null;
+$accessibleCustomers = getUserAccessibleCustomers($userId);
+$hasMultipleCustomers = $isAdmin || count($accessibleCustomers) > 1;
 $errorMessage = '';
 
 /* ============================================================
@@ -255,6 +264,48 @@ if ($userName === '') {
             font-weight: 600;
         }
         .nav-back a:hover { color: #0878D1; }
+        .progress-bar-container {
+            background: #FFFFFF;
+            border: 1px solid #D8E6F0;
+            border-radius: 12px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 14px rgba(3, 54, 101, 0.04);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .progress-steps {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .step {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #64748B;
+        }
+        .step.completed {
+            color: #059669;
+        }
+        .step.active {
+            color: #033665;
+            font-weight: 700;
+            background: #E8F4FD;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid #B3D8F5;
+        }
+        .step-arrow {
+            color: #CBD5E1;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -265,13 +316,33 @@ if ($userName === '') {
             <p>Select Company Context</p>
         </div>
 
+        <!-- PROGRESS BREADCRUMB -->
+        <div class="progress-bar-container">
+            <div class="progress-steps">
+                <span class="step completed">Customer ✓</span>
+                <span class="step-arrow">→</span>
+                <span class="step active">Company ●</span>
+                <span class="step-arrow">→</span>
+                <span class="step">Division ○</span>
+                <span class="step-arrow">→</span>
+                <span class="step">Location ○</span>
+                <span class="step-arrow">→</span>
+                <span class="step">Period ○</span>
+            </div>
+            <?php if ($hasMultipleCustomers): ?>
+                <a href="customer-selection.php" class="change-link">← Change Customer</a>
+            <?php endif; ?>
+        </div>
+
         <?php if (!empty($activeCustomer) && !empty($activeCustomer['customer_name'])): ?>
             <div class="context-summary">
                 <div class="context-item">
                     <span class="context-label">Customer Scope</span>
                     <span class="context-value"><?php echo htmlspecialchars($activeCustomer['customer_name']); ?></span>
                 </div>
-                <a href="customer-selection.php" class="change-link">Change Customer</a>
+                <?php if ($hasMultipleCustomers): ?>
+                    <a href="customer-selection.php" class="change-link">Change Customer</a>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
 
@@ -335,9 +406,11 @@ if ($userName === '') {
             </div>
         <?php endif; ?>
 
-        <div class="nav-back">
-            <a href="customer-selection.php">&larr; Back to Customer Selection</a>
-        </div>
+        <?php if ($hasMultipleCustomers): ?>
+            <div class="nav-back">
+                <a href="customer-selection.php">&larr; Back to Customer Selection</a>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 </body>

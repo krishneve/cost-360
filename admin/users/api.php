@@ -96,11 +96,157 @@ try {
 
 
 /* ============================================================
-   CURRENT LOGGED-IN USER
+   CURRENT LOGGED-IN USER & PLATFORM ADMIN STATUS
    ============================================================ */
 
 $currentUserId =
     (int)($_SESSION['user_id'] ?? 0);
+
+$isPlatformAdmin =
+    isPlatformAdmin($currentUserId);
+
+
+/* ============================================================
+   ADMIN ACCESSIBLE HIERARCHY TREE HELPER
+   ============================================================ */
+
+function getAdminAccessibleHierarchy(PDO $pdo, int $adminUserId): array {
+    $isPlatform = isPlatformAdmin($adminUserId);
+    $adminScope = getUserEffectiveOrganizationScope($adminUserId);
+
+    // Customers
+    $custSql = "SELECT customer_id, customer_code, customer_name FROM customers WHERE UPPER(status) = 'ACTIVE'";
+    if (!$isPlatform) {
+        $allowedCustIds = !empty($adminScope['customer_ids']) ? $adminScope['customer_ids'] : [-1];
+        $inCust = implode(',', array_map('intval', $allowedCustIds));
+        $custSql .= " AND customer_id IN ($inCust)";
+    }
+    $custSql .= " ORDER BY customer_name ASC";
+    $customers = $pdo->query($custSql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Companies
+    $compSql = "SELECT company_id, customer_id, company_code, company_name FROM companies WHERE UPPER(status) = 'ACTIVE'";
+    if (!$isPlatform) {
+        $allowedCompIds = !empty($adminScope['company_ids']) ? $adminScope['company_ids'] : [-1];
+        $inComp = implode(',', array_map('intval', $allowedCompIds));
+        $compSql .= " AND company_id IN ($inComp)";
+    }
+    $compSql .= " ORDER BY company_name ASC";
+    $companies = $pdo->query($compSql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Divisions
+    $divSql = "SELECT division_id, company_id, division_code, division_name FROM divisions WHERE UPPER(status) = 'ACTIVE'";
+    if (!$isPlatform) {
+        $allowedDivIds = !empty($adminScope['division_ids']) ? $adminScope['division_ids'] : [-1];
+        $inDiv = implode(',', array_map('intval', $allowedDivIds));
+        $divSql .= " AND division_id IN ($inDiv)";
+    }
+    $divSql .= " ORDER BY division_name ASC";
+    $divisions = $pdo->query($divSql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Plants
+    $plantSql = "SELECT plant_id, division_id, plant_code, plant_name FROM plants WHERE UPPER(status) = 'ACTIVE'";
+    if (!$isPlatform) {
+        $allowedPlantIds = !empty($adminScope['plant_ids']) ? $adminScope['plant_ids'] : [-1];
+        $inPlant = implode(',', array_map('intval', $allowedPlantIds));
+        $plantSql .= " AND plant_id IN ($inPlant)";
+    }
+    $plantSql .= " ORDER BY plant_name ASC";
+    $plants = $pdo->query($plantSql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Warehouses
+    $whSql = "SELECT warehouse_id, plant_id, warehouse_code, warehouse_name, status FROM warehouses WHERE UPPER(status) = 'ACTIVE'";
+    if (!$isPlatform) {
+        $allowedWhIds = !empty($adminScope['warehouse_ids']) ? $adminScope['warehouse_ids'] : [-1];
+        $inWh = implode(',', array_map('intval', $allowedWhIds));
+        $whSql .= " AND warehouse_id IN ($inWh)";
+    }
+    $whSql .= " ORDER BY warehouse_name ASC";
+    $warehouses = $pdo->query($whSql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    // Map plants by ID for quick parent lookup
+    $plantMap = [];
+    foreach ($plants as $p) {
+        $plantMap[$p['plant_id']] = $p;
+    }
+
+    // Build unified locations by division (Plants + Warehouses as ONE common level)
+    $locationsByDiv = [];
+    foreach ($plants as $p) {
+        $locationsByDiv[$p['division_id']][] = [
+            'id'            => (int)$p['plant_id'],
+            'location_id'   => (int)$p['plant_id'],
+            'location_type' => 'Plant',
+            'type_code'     => 'plant',
+            'location_name' => $p['plant_name'],
+            'location_code' => $p['plant_code'],
+            'plant_id'      => (int)$p['plant_id'],
+            'warehouse_id'  => null,
+            'parent_plant'  => null
+        ];
+    }
+    foreach ($warehouses as $wh) {
+        $parent = $plantMap[$wh['plant_id']] ?? null;
+        $divId = $parent ? $parent['division_id'] : null;
+        if ($divId) {
+            $locationsByDiv[$divId][] = [
+                'id'            => (int)$wh['warehouse_id'],
+                'location_id'   => (int)$wh['warehouse_id'],
+                'location_type' => 'Warehouse',
+                'type_code'     => 'warehouse',
+                'location_name' => $wh['warehouse_name'],
+                'location_code' => $wh['warehouse_code'],
+                'plant_id'      => (int)$wh['plant_id'],
+                'warehouse_id'  => (int)$wh['warehouse_id'],
+                'parent_plant'  => $parent['plant_name'] ?? null
+            ];
+        }
+    }
+
+    // Sort locations in each division: Plants first, then Warehouses
+    foreach ($locationsByDiv as $divId => &$locList) {
+        usort($locList, function($a, $b) {
+            if ($a['location_type'] !== $b['location_type']) {
+                return ($a['location_type'] === 'Plant') ? -1 : 1;
+            }
+            return strcasecmp($a['location_name'], $b['location_name']);
+        });
+    }
+    unset($locList);
+
+    // Build nested tree
+    $whByPlant = [];
+    foreach ($warehouses as $wh) {
+        $whByPlant[$wh['plant_id']][] = $wh;
+    }
+
+    $plantsByDiv = [];
+    foreach ($plants as $p) {
+        $p['warehouses'] = $whByPlant[$p['plant_id']] ?? [];
+        $plantsByDiv[$p['division_id']][] = $p;
+    }
+
+    $divsByComp = [];
+    foreach ($divisions as $d) {
+        $d['plants']    = $plantsByDiv[$d['division_id']] ?? [];
+        $d['locations'] = $locationsByDiv[$d['division_id']] ?? [];
+        $divsByComp[$d['company_id']][] = $d;
+    }
+
+    $compsByCust = [];
+    foreach ($companies as $c) {
+        $c['divisions'] = $divsByComp[$c['company_id']] ?? [];
+        $compsByCust[$c['customer_id']][] = $c;
+    }
+
+    $tree = [];
+    foreach ($customers as $cust) {
+        $cust['companies'] = $compsByCust[$cust['customer_id']] ?? [];
+        $tree[] = $cust;
+    }
+
+    return $tree;
+}
 
 
 /* ============================================================
@@ -482,15 +628,23 @@ try {
                     u.is_email_verified,
 
                     u.created_at,
+                    u.created_by,
+                    creator.username AS created_by_username,
+                    creator.full_name AS created_by_name,
                     u.updated_at,
 
                     u.last_login_at,
 
                     r.role_id,
                     r.role_code,
-                    r.role_name
+                    r.role_name,
+                    c.category_code,
+                    c.category_name
 
                 FROM users u
+
+                LEFT JOIN users creator
+                    ON creator.user_id = u.created_by
 
                 LEFT JOIN LATERAL
                 (
@@ -514,6 +668,10 @@ try {
                 LEFT JOIN roles r
                     ON r.role_id =
                        cur_role.role_id
+
+                LEFT JOIN categories c
+                    ON c.category_id =
+                       r.category_id
 
                 WHERE 1 = 1
             ";
@@ -610,6 +768,71 @@ try {
 
                 $params[':status'] =
                     $status;
+            }
+
+
+            /* --------------------------------------------------
+               STRICT TENANT & ROLE ISOLATION FOR CUSTOMER ADMIN
+               -------------------------------------------------- */
+            if (!$isPlatformAdmin) {
+                // Resolve admin's tenant customer_id from their org access
+                $adminTenantId = getUserCustomerTenantId($currentUserId);
+
+                if ($adminTenantId) {
+                    // Detect if customer_id column exists on users table to avoid 42703 error
+                    $hasUserCustomerCol = false;
+                    try {
+                        $cCheck = $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'customer_id' LIMIT 1");
+                        $hasUserCustomerCol = (bool)$cCheck->fetchColumn();
+                    } catch (Throwable $ignore) {}
+
+                    $userCustExpr = $hasUserCustomerCol
+                        ? "COALESCE(u.customer_id, (
+                            SELECT COALESCE(uoa2.customer_id, comp2.customer_id)
+                            FROM user_organization_access uoa2
+                            LEFT JOIN companies comp2 ON comp2.company_id = uoa2.company_id
+                            WHERE uoa2.user_id = u.user_id
+                              AND (uoa2.customer_id IS NOT NULL OR comp2.customer_id IS NOT NULL)
+                              AND UPPER(uoa2.status) = 'ACTIVE'
+                            ORDER BY uoa2.access_id ASC
+                            LIMIT 1
+                        ))"
+                        : "(
+                            SELECT COALESCE(uoa2.customer_id, comp2.customer_id)
+                            FROM user_organization_access uoa2
+                            LEFT JOIN companies comp2 ON comp2.company_id = uoa2.company_id
+                            WHERE uoa2.user_id = u.user_id
+                              AND (uoa2.customer_id IS NOT NULL OR comp2.customer_id IS NOT NULL)
+                              AND UPPER(uoa2.status) = 'ACTIVE'
+                            ORDER BY uoa2.access_id ASC
+                            LIMIT 1
+                        )";
+
+                    $sql .= "
+                        AND (
+                            u.user_id = :current_user_id
+                            OR (
+                                $userCustExpr = :admin_tenant_id
+                                AND u.created_by = :creator_user_id
+                            )
+                        )
+                    ";
+                    $params[':admin_tenant_id']  = $adminTenantId;
+                } else {
+                    // No tenant resolved — fall back to created_by only
+                    $sql .= "
+                        AND (
+                            u.user_id = :current_user_id
+                            OR u.created_by = :creator_user_id
+                        )
+                    ";
+                }
+                $params[':current_user_id'] = $currentUserId;
+                $params[':creator_user_id'] = $currentUserId;
+
+                // Always block Platform/CMA admin accounts from appearing in Customer Admin view
+                $sql .= " AND (r.role_code IS NULL OR UPPER(r.role_code) NOT IN ('PLATFORM_ADMIN', 'CMA_ADMIN', 'CMA_USER')) ";
+                $sql .= " AND (c.category_code IS NULL OR c.category_code NOT IN ('PLAT_ADMIN', 'CMA_ADMIN')) ";
             }
 
 
@@ -724,6 +947,22 @@ try {
                             )
                             : '—',
 
+                    'created_by' =>
+                        (int)($user['created_by'] ?? 0),
+
+                    'created_by_name' =>
+                        trim($user['created_by_name'] ?? $user['created_by_username'] ?? '') ?: 'System',
+
+                    // access_summary: real badge from DB via getUserAccessSummary()
+                    'access_summary' => getUserAccessSummary((int)$user['user_id']),
+
+                    // can_manage: computed inline from SQL row — NO DB round-trip.
+                    // Platform Admin manages all. Others: self or users they created within their tenant.
+                    'can_manage' =>
+                        $isPlatformAdmin
+                        || ((int)$user['user_id'] === $currentUserId)
+                        || ((int)($user['created_by'] ?? 0) === $currentUserId),
+
                     'last_login_at' =>
                         !empty(
                             $user['last_login_at']
@@ -763,33 +1002,30 @@ try {
             /*
              * The role dropdown should contain only
              * active roles belonging to active categories.
+             * Customer Admins are restricted from selecting Platform Admin roles.
              */
 
             $sql = "
                 SELECT
-
                     r.role_id,
                     r.category_id,
-
                     r.role_code,
                     r.role_name,
-
                     r.description,
-
                     c.category_code,
                     c.category_name
-
                 FROM roles r
-
                 INNER JOIN categories c
-                    ON c.category_id =
-                       r.category_id
-
+                    ON c.category_id = r.category_id
                 WHERE r.status = 'Active'
                   AND c.status = 'Active'
             ";
 
-            if (isCmaAdmin($currentUserId)) {
+            if (!$isPlatformAdmin) {
+                $sql .= " AND UPPER(r.role_code) NOT IN ('PLATFORM_ADMIN', 'CMA_ADMIN', 'CMA_USER') AND c.category_code NOT IN ('PLAT_ADMIN', 'CMA_ADMIN')";
+            }
+
+            if (function_exists('isCmaAdmin') && isCmaAdmin($currentUserId)) {
                 $sql .= " AND r.role_code NOT IN ('PLATFORM_ADMIN', 'SUPER_ADMIN', 'CMA_ADMIN')";
             }
 
@@ -833,6 +1069,14 @@ try {
             }
 
 
+            if (!$isPlatformAdmin && !canAdminManageUser($currentUserId, $userId)) {
+
+                throw new Exception(
+                    'Access denied. You do not have permission to view this user.'
+                );
+            }
+
+
             $user =
                 getUser(
                     $pdo,
@@ -846,6 +1090,9 @@ try {
                     'User not found.'
                 );
             }
+
+
+            $userAccessSummary = getUserAccessSummary($userId);
 
 
             jsonResponse(
@@ -865,6 +1112,9 @@ try {
 
                         'last_name' =>
                             $user['last_name'] ?? '',
+
+                        'full_name' =>
+                            $user['full_name'] ?? '',
 
                         'email' =>
                             $user['email'] ?? '',
@@ -887,7 +1137,10 @@ try {
                             $user['role_code'] ?? '',
 
                         'role_name' =>
-                            $user['role_name'] ?? ''
+                            $user['role_name'] ?? '',
+
+                        'access_summary' =>
+                            $userAccessSummary
                     ]
                 ]
             );
@@ -1044,11 +1297,20 @@ try {
                     $roleId
                 );
 
+            if (!$isPlatformAdmin && (
+                in_array(strtoupper($role['role_code'] ?? ''), ['PLATFORM_ADMIN', 'CMA_ADMIN', 'CMA_USER'], true) ||
+                in_array(strtoupper($role['category_code'] ?? ''), ['PLAT_ADMIN', 'CMA_ADMIN'], true)
+            )) {
+                throw new Exception(
+                    'Security Violation: Customer Admins can only assign Customer-level roles.'
+                );
+            }
+
             /* --------------------------------------------------
                CUSTOMER / TENANT & SUBSCRIPTION USER LIMIT ENFORCEMENT
                -------------------------------------------------- */
             $targetCustomerId = 0;
-            if (isCmaAdmin($currentUserId)) {
+            if (function_exists('isCmaAdmin') && isCmaAdmin($currentUserId)) {
                 $targetCustomerId = getCmaAdminCustomerId($currentUserId);
                 if (!$targetCustomerId) {
                     throw new Exception('No customer organization assigned to this CMA Admin.');
@@ -1056,11 +1318,14 @@ try {
                 if (in_array(strtoupper($role['role_code'] ?? ''), ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'CMA_ADMIN'], true)) {
                     throw new Exception('CMA Admins can only assign operational customer roles.');
                 }
-            } elseif (!empty($_POST['customer_id'])) {
+            } elseif (!$isPlatformAdmin) {
+                $targetCustomerId = (int)getUserCustomerTenantId($currentUserId);
+            }
+            if ($targetCustomerId <= 0 && !empty($_POST['customer_id'])) {
                 $targetCustomerId = (int)$_POST['customer_id'];
-            } elseif (!empty($_SESSION['active_customer_id'])) {
+            } elseif ($targetCustomerId <= 0 && !empty($_SESSION['active_customer_id'])) {
                 $targetCustomerId = (int)$_SESSION['active_customer_id'];
-            } else {
+            } else if ($targetCustomerId <= 0) {
                 // Check if creator is a customer-scoped user (e.g. Customer Admin)
                 $stmtScope = $pdo->prepare("
                     SELECT customer_id 
@@ -1320,9 +1585,21 @@ try {
             ]);
 
             /* --------------------------------------------------
-               CUSTOMER TENANT SCOPE
+               CUSTOMER TENANT SCOPE & HIERARCHICAL ACCESS
                -------------------------------------------------- */
-            if ($targetCustomerId > 0) {
+            $hasExplicitAccess = false;
+            if (!empty($_POST['organization_access'])) {
+                $accessData = $_POST['organization_access'];
+                if (is_string($accessData)) {
+                    $accessData = json_decode($accessData, true);
+                }
+                if (is_array($accessData) && !empty($accessData)) {
+                    saveUserOrganizationAccess($newUserId, $accessData, $currentUserId);
+                    $hasExplicitAccess = true;
+                }
+            }
+
+            if (!$hasExplicitAccess && $targetCustomerId > 0) {
                 $stmtCustAccess = $pdo->prepare("
                     INSERT INTO user_organization_access
                     (
@@ -1469,6 +1746,14 @@ try {
             }
 
 
+            if (!$isPlatformAdmin && !canAdminManageUser($currentUserId, $userId)) {
+
+                throw new Exception(
+                    'Access denied. You do not have permission to manage this user.'
+                );
+            }
+
+
             if ($username === '') {
 
                 throw new Exception(
@@ -1534,6 +1819,16 @@ try {
                     $pdo,
                     $roleId
                 );
+
+
+            if (!$isPlatformAdmin && (
+                in_array(strtoupper($role['role_code'] ?? ''), ['PLATFORM_ADMIN', 'CMA_ADMIN', 'CMA_USER'], true) ||
+                in_array(strtoupper($role['category_code'] ?? ''), ['PLAT_ADMIN', 'CMA_ADMIN'], true)
+            )) {
+                throw new Exception(
+                    'Security Violation: Customer Admins can only assign Customer-level roles.'
+                );
+            }
 
 
             /* --------------------------------------------------
@@ -1889,6 +2184,14 @@ try {
             }
 
 
+            if (!$isPlatformAdmin && !canAdminManageUser($currentUserId, $userId)) {
+
+                throw new Exception(
+                    'Access denied. You do not have permission to change this user\'s password.'
+                );
+            }
+
+
             if (
                 $newPassword === '' ||
                 strlen($newPassword) < 6
@@ -2043,6 +2346,14 @@ try {
             }
 
 
+            if (!$isPlatformAdmin && !canAdminManageUser($currentUserId, $userId)) {
+
+                throw new Exception(
+                    'Access denied. You do not have permission to delete this user.'
+                );
+            }
+
+
             /* --------------------------------------------------
                PREVENT SELF DELETE
                -------------------------------------------------- */
@@ -2151,6 +2462,269 @@ try {
             jsonResponse(
                 true,
                 'User deleted successfully.'
+            );
+
+            break;
+
+
+        /* ======================================================
+           GET USER HIERARCHICAL ACCESS & AVAILABLE TREE
+           ====================================================== */
+
+        case 'get_user_access':
+
+            $userId =
+                (int)(
+                    $_GET['user_id']
+                    ?? $_POST['user_id']
+                    ?? 0
+                );
+
+            if ($userId <= 0) {
+
+                throw new Exception(
+                    'Invalid user ID.'
+                );
+            }
+
+            if (!$isPlatformAdmin && !canAdminManageUser($currentUserId, $userId)) {
+
+                throw new Exception(
+                    'Access denied. You do not have permission to view organizational access for this user.'
+                );
+            }
+
+            $user =
+                getUser(
+                    $pdo,
+                    $userId
+                );
+
+            if (!$user) {
+
+                throw new Exception(
+                    'User not found.'
+                );
+            }
+
+            $hasUoaPeriod = hasUoaPeriodColumn($pdo);
+            $periodColSql = $hasUoaPeriod ? "uoa.period_id," : "NULL AS period_id,";
+
+            $stmt = $pdo->prepare("
+                SELECT
+                    uoa.access_id,
+                    uoa.user_id,
+                    uoa.customer_id,
+                    uoa.company_id,
+                    uoa.division_id,
+                    uoa.plant_id,
+                    uoa.warehouse_id,
+                    $periodColSql
+                    uoa.valid_from,
+                    uoa.valid_to,
+                    uoa.status,
+                    cust.customer_name,
+                    cust.customer_code,
+                    comp.company_name,
+                    comp.company_code,
+                    d.division_name,
+                    d.division_code,
+                    p.plant_name,
+                    p.plant_code,
+                    w.warehouse_name,
+                    w.warehouse_code
+                FROM user_organization_access uoa
+                LEFT JOIN customers cust ON cust.customer_id = uoa.customer_id
+                LEFT JOIN companies comp ON comp.company_id = uoa.company_id
+                LEFT JOIN divisions d ON d.division_id = uoa.division_id
+                LEFT JOIN plants p ON p.plant_id = uoa.plant_id
+                LEFT JOIN warehouses w ON w.warehouse_id = uoa.warehouse_id
+                WHERE uoa.user_id = :uid
+                  AND UPPER(uoa.status) = 'ACTIVE'
+                ORDER BY uoa.access_id ASC
+            ");
+            $stmt->execute([':uid' => $userId]);
+            $directAssignments = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            $effectiveScope = getUserEffectiveOrganizationScope($userId);
+            $summary = getUserAccessSummary($userId);
+            $availableTree = getAdminAccessibleHierarchy($pdo, $currentUserId);
+
+            // Accessible periods for this user (respects explicit period_id grants)
+            $accessiblePeriods = getUserAccessiblePeriods(null, $userId);
+
+            jsonResponse(
+                true,
+                '',
+                [
+                    'user' => [
+                        'user_id' => (int)$user['user_id'],
+                        'username' => $user['username'] ?? '',
+                        'full_name' => $user['full_name'] ?? '',
+                        'role_name' => $user['role_name'] ?? ''
+                    ],
+                    'direct_assignments' => $directAssignments,
+                    'assignments' => $directAssignments,
+                    'effective_scope' => $effectiveScope,
+                    'summary' => $summary,
+                    'available_tree' => $availableTree,
+                    'hierarchy' => $availableTree,
+                    'accessible_periods' => $accessiblePeriods
+                ]
+            );
+
+            break;
+
+
+        /* ======================================================
+           PREVIEW USER HIERARCHICAL ACCESS
+           ====================================================== */
+
+        case 'preview_user_access':
+
+            $userId =
+                (int)(
+                    $_POST['user_id']
+                    ?? $_GET['user_id']
+                    ?? 0
+                );
+
+            if ($userId <= 0) {
+
+                throw new Exception(
+                    'Invalid user ID.'
+                );
+            }
+
+            if (!$isPlatformAdmin && !canAdminManageUser($currentUserId, $userId)) {
+
+                throw new Exception(
+                    'Access denied. You do not have permission to preview access for this user.'
+                );
+            }
+
+            $rawAssignments = $_POST['assignments'] ?? '[]';
+            if (is_string($rawAssignments)) {
+                $rawAssignments = json_decode($rawAssignments, true);
+            }
+            if (!is_array($rawAssignments)) {
+                $rawAssignments = [];
+            }
+
+            // Privilege escalation prevention check
+            validateScopeAssignment($currentUserId, $rawAssignments);
+
+            // Compute hypothetical direct and inherited scope
+            $previewCompIds = [];
+            $previewDivIds = [];
+            $previewPlantIds = [];
+            $previewWhIds = [];
+
+            foreach ($rawAssignments as $a) {
+                if (!empty($a['warehouse_id'])) {
+                    $previewWhIds[] = (int)$a['warehouse_id'];
+                } elseif (!empty($a['plant_id'])) {
+                    $previewPlantIds[] = (int)$a['plant_id'];
+                } elseif (!empty($a['division_id'])) {
+                    $previewDivIds[] = (int)$a['division_id'];
+                } elseif (!empty($a['company_id'])) {
+                    $previewCompIds[] = (int)$a['company_id'];
+                } elseif (!empty($a['customer_id'])) {
+                    $cStmt = $pdo->prepare("SELECT company_id FROM companies WHERE customer_id = :cid AND UPPER(status) = 'ACTIVE'");
+                    $cStmt->execute([':cid' => (int)$a['customer_id']]);
+                    $previewCompIds = array_merge($previewCompIds, $cStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+                }
+            }
+
+            if (!empty($previewCompIds)) {
+                $inC = implode(',', array_unique(array_map('intval', $previewCompIds)));
+                $divStmt = $pdo->query("SELECT division_id FROM divisions WHERE company_id IN ($inC) AND UPPER(status) = 'ACTIVE'");
+                $previewDivIds = array_merge($previewDivIds, $divStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+            }
+            if (!empty($previewDivIds)) {
+                $inD = implode(',', array_unique(array_map('intval', $previewDivIds)));
+                $pStmt = $pdo->query("SELECT plant_id FROM plants WHERE division_id IN ($inD) AND UPPER(status) = 'ACTIVE'");
+                $previewPlantIds = array_merge($previewPlantIds, $pStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+            }
+            if (!empty($previewPlantIds)) {
+                $inP = implode(',', array_unique(array_map('intval', $previewPlantIds)));
+                $wStmt = $pdo->query("SELECT warehouse_id FROM warehouses WHERE plant_id IN ($inP) AND UPPER(status) = 'ACTIVE'");
+                $previewWhIds = array_merge($previewWhIds, $wStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+            }
+
+            jsonResponse(
+                true,
+                '',
+                [
+                    'preview' => [
+                        'company_count' => count(array_unique(array_map('intval', $previewCompIds))),
+                        'division_count' => count(array_unique(array_map('intval', $previewDivIds))),
+                        'plant_count' => count(array_unique(array_map('intval', $previewPlantIds))),
+                        'warehouse_count' => count(array_unique(array_map('intval', $previewWhIds))),
+                        'direct_count' => count($rawAssignments)
+                    ]
+                ]
+            );
+
+            break;
+
+
+        /* ======================================================
+           SAVE USER HIERARCHICAL ACCESS
+           ====================================================== */
+
+        case 'save_user_access':
+
+            requireUserMasterPermission('EDIT');
+
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+
+                throw new Exception(
+                    'Invalid request method.'
+                );
+            }
+
+            $userId =
+                (int)(
+                    $_POST['user_id']
+                    ?? 0
+                );
+
+            if ($userId <= 0) {
+
+                throw new Exception(
+                    'Invalid user ID.'
+                );
+            }
+
+            if (!$isPlatformAdmin && !canAdminManageUser($currentUserId, $userId)) {
+
+                throw new Exception(
+                    'Access denied. You do not have permission to manage organizational access for this user.'
+                );
+            }
+
+            $rawAssignments = $_POST['assignments'] ?? '[]';
+            if (is_string($rawAssignments)) {
+                $rawAssignments = json_decode($rawAssignments, true);
+            }
+            if (!is_array($rawAssignments)) {
+                $rawAssignments = [];
+            }
+
+            $result = saveUserOrganizationAccess($userId, $rawAssignments, $currentUserId);
+            $summary = getUserAccessSummary($userId);
+            $effectiveScope = getUserEffectiveOrganizationScope($userId);
+
+            jsonResponse(
+                true,
+                'Organizational access updated successfully.',
+                [
+                    'user_id' => $userId,
+                    'count' => $result['count'] ?? 0,
+                    'summary' => $summary,
+                    'effective_scope' => $effectiveScope
+                ]
             );
 
             break;
