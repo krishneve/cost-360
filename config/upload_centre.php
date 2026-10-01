@@ -131,16 +131,38 @@ function getRecentUploads($userId = null, $limit = 8) {
     return $recent;
 }
 
-// Dynamically discover columns and data types of target tables in public schema
-function getTargetTableColumns($tableName) {
+// Dynamically discover columns and data types of target tables in customer database (or global fallback)
+function getTargetTableColumns($tableName, $customerId = null) {
+    if ($customerId === null) {
+        $customerId = $_SESSION['active_customer_id'] ?? $_SESSION['customer_id'] ?? null;
+    }
     try {
-        $stmt = dbQuery("
+        $pdo = ($customerId && function_exists('getCustomerDbConnection')) 
+            ? getCustomerDbConnection($customerId) 
+            : getDbConnection();
+        $stmt = $pdo->prepare("
             SELECT column_name, data_type, is_nullable 
             FROM information_schema.columns 
             WHERE table_schema = 'public' AND table_name = ?
             ORDER BY ordinal_position
-        ", [$tableName]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        ");
+        $stmt->execute([$tableName]);
+        $cols = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($cols)) {
+            return $cols;
+        }
+        // Fallback to global db if not found in customer db yet
+        if ($customerId) {
+            $globalStmt = getDbConnection()->prepare("
+                SELECT column_name, data_type, is_nullable 
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = ?
+                ORDER BY ordinal_position
+            ");
+            $globalStmt->execute([$tableName]);
+            return $globalStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+        return [];
     } catch (Throwable $e) {
         return [];
     }
@@ -164,6 +186,52 @@ function analyzeUploadedFiles($files, $user) {
         [$importCode, $userId, $username]
     )->fetchColumn();
 
+    // Capture hierarchical scope for this upload run
+    $context = $_SESSION['cost360_context'] ?? [];
+    $custId   = (int)($_POST['customer_id'] ?? ($context['customer_id'] ?? ($_SESSION['active_customer_id'] ?? (function_exists('getUserCustomerTenantId') ? getUserCustomerTenantId($userId) : 0))));
+    $compId   = (int)($_POST['company_id'] ?? ($context['company_id'] ?? ($_SESSION['active_company_id'] ?? 0)));
+    $divId    = (int)($_POST['division_id'] ?? ($context['division_id'] ?? ($_SESSION['active_division_id'] ?? 0)));
+    $locType  = $_POST['location_type'] ?? ($context['location_type'] ?? ($_SESSION['active_location_type'] ?? ''));
+    $locId    = (int)($_POST['location_id'] ?? ($context['location_id'] ?? 0));
+    $periodId = (int)($_POST['period_id'] ?? ($context['period_id'] ?? ($_SESSION['active_period_id'] ?? 0)));
+
+    try {
+        $pdo = getDbConnection();
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS public.upload_scopes (
+                upload_id BIGINT PRIMARY KEY,
+                customer_id BIGINT,
+                company_id BIGINT,
+                division_id BIGINT,
+                location_type VARCHAR(30),
+                location_id BIGINT,
+                period_id BIGINT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+        dbQuery("
+            INSERT INTO public.upload_scopes (upload_id, customer_id, company_id, division_id, location_type, location_id, period_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (upload_id) DO UPDATE SET
+                customer_id = EXCLUDED.customer_id,
+                company_id = EXCLUDED.company_id,
+                division_id = EXCLUDED.division_id,
+                location_type = EXCLUDED.location_type,
+                location_id = EXCLUDED.location_id,
+                period_id = EXCLUDED.period_id
+        ", [
+            $uploadId,
+            $custId > 0 ? $custId : null,
+            $compId > 0 ? $compId : null,
+            $divId > 0 ? $divId : null,
+            $locType ?: null,
+            $locId > 0 ? $locId : null,
+            $periodId > 0 ? $periodId : null
+        ]);
+    } catch (Throwable $e) {
+        error_log("upload_scopes notice: " . $e->getMessage());
+    }
+
     $uploadDir = __DIR__ . '/../uploads/temp/' . date('Ymd') . '/';
     if (!is_dir($uploadDir)) {
         mkdir($uploadDir, 0755, true);
@@ -186,7 +254,11 @@ function analyzeUploadedFiles($files, $user) {
 
         $safeName = bin2hex(random_bytes(12)) . '.' . $ext;
         $storagePath = $uploadDir . $safeName;
-        move_uploaded_file($files['tmp_name'][$i], $storagePath);
+        if (is_uploaded_file($files['tmp_name'][$i])) {
+            move_uploaded_file($files['tmp_name'][$i], $storagePath);
+        } else {
+            copy($files['tmp_name'][$i], $storagePath);
+        }
 
         $fileType = strtoupper($ext);
         $rows = 0;
@@ -361,11 +433,40 @@ function updateFileClassification($fileId, $subCategoryId) {
     }
 }
 
+// Save Custom File Column Mappings
+function saveFileColumnMapping($fileId, array $mappings) {
+    try {
+        $pdo = getDbConnection();
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS public.upload_file_mappings (
+                file_id BIGINT PRIMARY KEY,
+                mappings JSONB,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+        dbQuery("
+            INSERT INTO public.upload_file_mappings (file_id, mappings, updated_at)
+            VALUES (?, ?::jsonb, CURRENT_TIMESTAMP)
+            ON CONFLICT (file_id) DO UPDATE SET mappings = EXCLUDED.mappings, updated_at = CURRENT_TIMESTAMP
+        ", [$fileId, json_encode($mappings)]);
+        return ['ok' => true];
+    } catch (Throwable $e) {
+        return ['ok' => false, 'message' => $e->getMessage()];
+    }
+}
+
 // Fetch File Rows Preview
 function getFilePreviewData($fileId) {
     $file = dbQuery("SELECT * FROM public.upload_files WHERE id = ?", [$fileId])->fetch(PDO::FETCH_ASSOC);
     if (!$file) {
         return ['ok' => false, 'message' => 'Upload file not found.'];
+    }
+
+    // Determine customer context for table column discovery
+    $scope = dbQuery("SELECT customer_id FROM public.upload_scopes WHERE upload_id = ?", [$file['upload_id']])->fetch(PDO::FETCH_ASSOC);
+    $customerId = $scope['customer_id'] ?? null;
+    if (!$customerId && isset($_SESSION['cost360_context']['customer_id'])) {
+        $customerId = $_SESSION['cost360_context']['customer_id'];
     }
 
     $ext = strtolower($file['file_type']);
@@ -398,7 +499,16 @@ function getFilePreviewData($fileId) {
         }
     }
 
-    $targetCols = getTargetTableColumns($targetTable);
+    $targetCols = getTargetTableColumns($targetTable, $customerId);
+
+    // Retrieve custom column mappings if previously saved
+    $savedMappings = [];
+    try {
+        $savedJson = dbQuery("SELECT mappings FROM public.upload_file_mappings WHERE file_id = ?", [$fileId])->fetchColumn();
+        if ($savedJson) {
+            $savedMappings = json_decode($savedJson, true) ?: [];
+        }
+    } catch (Throwable $e) {}
 
     return [
         'ok' => true,
@@ -406,11 +516,12 @@ function getFilePreviewData($fileId) {
         'headers' => $headers,
         'data' => $data,
         'target_table' => $targetTable,
-        'target_columns' => array_column($targetCols, 'column_name')
+        'target_columns' => array_column($targetCols, 'column_name'),
+        'saved_mappings' => !empty($savedMappings) ? $savedMappings : (object)[]
     ];
 }
 
-// Validate & Perform Real Import into Neon PostgreSQL
+// Validate & Perform Real Import into Dedicated Customer Database
 function executeDataImport($uploadId, $user) {
     $userId = $user['user_id'] ?? null;
     $username = $user['email'] ?? ($user['username'] ?? 'User');
@@ -425,126 +536,226 @@ function executeDataImport($uploadId, $user) {
         return ['ok' => false, 'message' => 'No upload files found to import.'];
     }
 
-    logUploadAudit($userId, $username, 'IMPORT_STARTED', 'Upload Centre', null, 'In Progress', ['upload_id' => $uploadId]);
+    // Retrieve hierarchical scope (Customer -> Company -> Division -> Location -> Period)
+    $scope = dbQuery("SELECT * FROM public.upload_scopes WHERE upload_id = ?", [$uploadId])->fetch(PDO::FETCH_ASSOC);
+    $customerId = $scope['customer_id'] ?? null;
+    $companyId  = $scope['company_id'] ?? null;
+    $divisionId = $scope['division_id'] ?? null;
+    $locType    = $scope['location_type'] ?? null;
+    $locId      = $scope['location_id'] ?? null;
+    $periodId   = $scope['period_id'] ?? null;
+
+    if (!$customerId) {
+        $context = $_SESSION['cost360_context'] ?? [];
+        $customerId = $context['customer_id'] ?? ($_SESSION['active_customer_id'] ?? (function_exists('getUserCustomerTenantId') ? getUserCustomerTenantId($userId) : null));
+        $companyId  = $companyId ?: ($context['company_id'] ?? ($_SESSION['active_company_id'] ?? null));
+        $divisionId = $divisionId ?: ($context['division_id'] ?? ($_SESSION['active_division_id'] ?? null));
+        $locType    = $locType ?: ($context['location_type'] ?? ($_SESSION['active_location_type'] ?? null));
+        $locId      = $locId ?: ($context['location_id'] ?? null);
+        $periodId   = $periodId ?: ($context['period_id'] ?? ($_SESSION['active_period_id'] ?? null));
+    }
+
+    // Ensure customer database schema is initialized and acquire customer connection
+    if ($customerId) {
+        provisionCustomerDatabase($customerId);
+        $targetPdo = getCustomerDbConnection($customerId);
+        $customerDbName = getCustomerDbName($customerId);
+    } else {
+        $targetPdo = getDbConnection();
+        $customerDbName = 'Global / Central DB';
+    }
+
+    logUploadAudit($userId, $username, 'IMPORT_STARTED', 'Upload Centre', null, 'In Progress', [
+        'upload_id'   => $uploadId,
+        'customer_id' => $customerId,
+        'database'    => $customerDbName
+    ]);
 
     $totalImported = 0;
-    $totalSkipped = 0;
-    $totalFailed = 0;
+    $totalSkipped  = 0;
+    $totalFailed   = 0;
 
-    $pdo = getDbConnection();
+    $inTransaction = false;
+    try {
+        $targetPdo->beginTransaction();
+        $inTransaction = true;
+    } catch (Throwable $e) {
+        // if transaction not supported or already active
+    }
 
-    foreach ($files as $f) {
-        $headers = json_decode($f['headers'] ?? '[]', true) ?: [];
-        $subCatId = $f['sub_category_id'];
-        
-        // Find target table
-        $targetTable = 'item_master';
-        if ($subCatId) {
-            $tName = dbQuery("SELECT te.table_name FROM public.sub_categories sc JOIN public.target_entities te ON te.id = sc.target_entity_id WHERE sc.id = ?", [$subCatId])->fetchColumn();
-            if ($tName) {
-                $targetTable = $tName;
-            }
-        }
-
-        // Discover dynamic target columns for this table
-        $dbCols = getTargetTableColumns($targetTable);
-        $dbColNames = array_column($dbCols, 'column_name');
-
-        if (!file_exists($f['storage_path'])) {
-            continue;
-        }
-
-        $handle = fopen($f['storage_path'], 'rb');
-        if ($handle === false) {
-            continue;
-        }
-
-        $rawHeaders = fgetcsv($handle);
-        $rowNum = 0;
-
-        while (($row = fgetcsv($handle)) !== false) {
-            $rowNum++;
-            if (empty(array_filter($row))) {
-                $totalSkipped++;
-                continue;
-            }
-
-            $aliasMap = [
-                'cc_code'             => 'work_center_code',
-                'cost_center_code'    => 'work_center_code',
-                'std_machine_hr_rate' => 'hourly_rate',
-                'machine_rate'        => 'hourly_rate',
-                'std_hr_rate'         => 'hourly_rate',
-                'desc'                => 'item_description',
-                'description'         => 'item_description',
-                'unit_rate'           => 'rate',
-                'unit_cost'           => 'rate'
-            ];
-
-            $mappedData = [];
-            foreach ($headers as $idx => $headerName) {
-                $cleanCol = preg_replace('/[^a-z0-9_]/', '', strtolower(str_replace(' ', '_', trim($headerName))));
-                
-                if (in_array($cleanCol, $dbColNames, true)) {
-                    $mappedData[$cleanCol] = $row[$idx] ?? null;
-                } elseif (isset($aliasMap[$cleanCol]) && in_array($aliasMap[$cleanCol], $dbColNames, true)) {
-                    $mappedData[$aliasMap[$cleanCol]] = $row[$idx] ?? null;
+    try {
+        foreach ($files as $f) {
+            $headers = json_decode($f['headers'] ?? '[]', true) ?: [];
+            $subCatId = $f['sub_category_id'];
+            
+            // Read saved mappings from upload_file_mappings
+            $savedMappings = [];
+            try {
+                $savedJson = dbQuery("SELECT mappings FROM public.upload_file_mappings WHERE file_id = ?", [$f['id']])->fetchColumn();
+                if ($savedJson) {
+                    $savedMappings = json_decode($savedJson, true) ?: [];
+                }
+            } catch (Throwable $e) {}
+            
+            // Find target table
+            $targetTable = 'item_master';
+            if ($subCatId) {
+                $tName = dbQuery("SELECT te.table_name FROM public.sub_categories sc JOIN public.target_entities te ON te.id = sc.target_entity_id WHERE sc.id = ?", [$subCatId])->fetchColumn();
+                if ($tName) {
+                    $targetTable = $tName;
                 }
             }
 
-            // Enforce strict schema validation: filter out any key not physically present in $dbColNames
-            $mappedData = array_filter($mappedData, fn($k) => in_array($k, $dbColNames, true), ARRAY_FILTER_USE_KEY);
+            // Discover target columns dynamically from the customer's database
+            $dbCols = getTargetTableColumns($targetTable, $customerId);
+            $dbColNames = array_column($dbCols, 'column_name');
 
-            // Determine primary non-null identifier column for this table
-            $primaryCol = $dbColNames[1] ?? ($dbColNames[0] ?? null);
-            if ($primaryCol && empty($mappedData[$primaryCol])) {
-                // If primary identifier wasn't mapped by header, check if first non-empty column value exists
-                foreach ($dbColNames as $col) {
-                    if ($col !== 'id' && $col !== 'created_at' && $col !== 'created_by' && !empty($mappedData[$col])) {
-                        $primaryCol = $col;
-                        break;
+            if (!file_exists($f['storage_path'])) {
+                continue;
+            }
+
+            $handle = fopen($f['storage_path'], 'rb');
+            if ($handle === false) {
+                continue;
+            }
+
+            $rawHeaders = fgetcsv($handle);
+            $rowNum = 0;
+
+            while (($row = fgetcsv($handle)) !== false) {
+                $rowNum++;
+                if (empty(array_filter($row))) {
+                    $totalSkipped++;
+                    continue;
+                }
+
+                $aliasMap = [
+                    'cc_code'             => 'work_center_code',
+                    'cost_center_code'    => 'work_center_code',
+                    'std_machine_hr_rate' => 'hourly_rate',
+                    'machine_rate'        => 'hourly_rate',
+                    'std_hr_rate'         => 'hourly_rate',
+                    'desc'                => 'item_description',
+                    'description'         => 'item_description',
+                    'unit_rate'           => 'rate',
+                    'unit_cost'           => 'rate',
+                    'part_number'         => 'item_code',
+                    'material_code'       => 'item_code',
+                    'unit_of_measure'     => 'uom',
+                    'unit'                => 'uom'
+                ];
+
+                $mappedData = [];
+                foreach ($headers as $idx => $headerName) {
+                    $val = $row[$idx] ?? null;
+
+                    // 1. Check if user configured explicit column mapping
+                    if (isset($savedMappings[$headerName])) {
+                        $targetCol = $savedMappings[$headerName];
+                        if ($targetCol === '__IGNORE__') {
+                            continue;
+                        }
+                        if (in_array($targetCol, $dbColNames, true)) {
+                            $mappedData[$targetCol] = $val;
+                            continue;
+                        }
+                    }
+
+                    // 2. Standard normalized name matching
+                    $cleanCol = preg_replace('/[^a-z0-9_]/', '', strtolower(str_replace(' ', '_', trim($headerName))));
+                    
+                    if (in_array($cleanCol, $dbColNames, true)) {
+                        $mappedData[$cleanCol] = $val;
+                    } elseif (isset($aliasMap[$cleanCol]) && in_array($aliasMap[$cleanCol], $dbColNames, true)) {
+                        $mappedData[$aliasMap[$cleanCol]] = $val;
                     }
                 }
-            }
 
-            if ($primaryCol && empty($mappedData[$primaryCol])) {
-                $totalFailed++;
-                dbQuery("
-                    INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
-                    VALUES(?, ?, ?, ?, 'Missing Required Field', 'Row missing required identifier', 'High')
-                ", [$uploadId, $f['id'], $rowNum, $primaryCol]);
-                continue;
-            }
+                // Inject hierarchical scope attributes if supported by target table
+                if ($companyId && in_array('company_id', $dbColNames, true) && empty($mappedData['company_id'])) {
+                    $mappedData['company_id'] = $companyId;
+                }
+                if ($divisionId && in_array('division_id', $dbColNames, true) && empty($mappedData['division_id'])) {
+                    $mappedData['division_id'] = $divisionId;
+                }
+                if ($locId) {
+                    if (in_array('location_id', $dbColNames, true) && empty($mappedData['location_id'])) {
+                        $mappedData['location_id'] = $locId;
+                    }
+                    if (strtolower((string)$locType) === 'plant' && in_array('plant_id', $dbColNames, true) && empty($mappedData['plant_id'])) {
+                        $mappedData['plant_id'] = $locId;
+                    } elseif (strtolower((string)$locType) === 'warehouse' && in_array('warehouse_id', $dbColNames, true) && empty($mappedData['warehouse_id'])) {
+                        $mappedData['warehouse_id'] = $locId;
+                    }
+                }
+                if ($periodId && in_array('period_id', $dbColNames, true) && empty($mappedData['period_id'])) {
+                    $mappedData['period_id'] = $periodId;
+                }
 
-            // Build dynamic parameterised INSERT statement
-            $colsToInsert = array_keys($mappedData);
-            if (!in_array('created_by', $colsToInsert, true) && in_array('created_by', $dbColNames, true)) {
-                $colsToInsert[] = 'created_by';
-                $mappedData['created_by'] = $userId;
-            }
+                // Enforce strict schema validation: filter out any key not physically present in $dbColNames
+                $mappedData = array_filter($mappedData, fn($k) => in_array($k, $dbColNames, true), ARRAY_FILTER_USE_KEY);
 
-            $colList = implode(', ', $colsToInsert);
-            $placeholders = implode(', ', array_fill(0, count($colsToInsert), '?'));
-            $values = array_values($mappedData);
+                // Determine primary non-null identifier column for this table
+                $primaryCol = $dbColNames[1] ?? ($dbColNames[0] ?? null);
+                if ($primaryCol && empty($mappedData[$primaryCol])) {
+                    foreach ($dbColNames as $col) {
+                        if ($col !== 'id' && $col !== 'created_at' && $col !== 'created_by' && !empty($mappedData[$col])) {
+                            $primaryCol = $col;
+                            break;
+                        }
+                    }
+                }
 
-            try {
-                $insertSql = "INSERT INTO public.{$targetTable} ({$colList}) VALUES ({$placeholders}) ON CONFLICT DO NOTHING";
-                $stmt = $pdo->prepare($insertSql);
-                $stmt->execute($values);
-                $totalImported++;
-            } catch (Throwable $e) {
-                $totalFailed++;
-                dbQuery("
-                    INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
-                    VALUES(?, ?, ?, ?, 'Database Constraint Failure', ?, 'Critical')
-                ", [$uploadId, $f['id'], $rowNum, $primaryCol, $e->getMessage()]);
+                if ($primaryCol && empty($mappedData[$primaryCol])) {
+                    $totalFailed++;
+                    // Record in Global DB error log
+                    dbQuery("
+                        INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
+                        VALUES(?, ?, ?, ?, 'Missing Required Field', 'Row missing required identifier', 'High')
+                    ", [$uploadId, $f['id'], $rowNum, $primaryCol]);
+                    continue;
+                }
+
+                // Build dynamic parameterised INSERT statement
+                $colsToInsert = array_keys($mappedData);
+                if (!in_array('created_by', $colsToInsert, true) && in_array('created_by', $dbColNames, true)) {
+                    $colsToInsert[] = 'created_by';
+                    $mappedData['created_by'] = $userId;
+                }
+
+                $colList = implode(', ', $colsToInsert);
+                $placeholders = implode(', ', array_fill(0, count($colsToInsert), '?'));
+                $values = array_values($mappedData);
+
+                try {
+                    $insertSql = "INSERT INTO public.{$targetTable} ({$colList}) VALUES ({$placeholders}) ON CONFLICT DO NOTHING";
+                    $stmt = $targetPdo->prepare($insertSql);
+                    $stmt->execute($values);
+                    $totalImported++;
+                } catch (Throwable $e) {
+                    $totalFailed++;
+                    dbQuery("
+                        INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
+                        VALUES(?, ?, ?, ?, 'Database Constraint Failure', ?, 'Critical')
+                    ", [$uploadId, $f['id'], $rowNum, $primaryCol, $e->getMessage()]);
+                }
             }
+            fclose($handle);
         }
-        fclose($handle);
+
+        if ($inTransaction) {
+            $targetPdo->commit();
+        }
+    } catch (Throwable $e) {
+        if ($inTransaction) {
+            $targetPdo->rollBack();
+        }
+        throw $e;
     }
 
     $finalStatus = ($totalFailed === 0) ? 'Completed' : 'Completed with Errors';
 
+    // Update global uploads record
     dbQuery("
         UPDATE public.uploads 
         SET status = ?, success_rows = ?, warning_rows = ?, error_rows = ?, completed_at = now() 
@@ -552,19 +763,22 @@ function executeDataImport($uploadId, $user) {
     ", [$finalStatus, $totalImported, $totalSkipped, $totalFailed, $uploadId]);
 
     logUploadAudit($userId, $username, 'IMPORT_COMPLETED', 'Upload Centre', null, 'Success', [
-        'imported' => $totalImported,
-        'skipped' => $totalSkipped,
-        'failed' => $totalFailed
+        'imported'    => $totalImported,
+        'skipped'     => $totalSkipped,
+        'failed'      => $totalFailed,
+        'customer_id' => $customerId,
+        'database'    => $customerDbName
     ]);
 
     clearUploadCentreCache();
 
     return [
-        'ok' => true,
+        'ok'       => true,
         'imported' => $totalImported,
-        'skipped' => $totalSkipped,
-        'failed' => $totalFailed,
-        'status' => $finalStatus
+        'skipped'  => $totalSkipped,
+        'failed'   => $totalFailed,
+        'status'   => $finalStatus,
+        'database' => $customerDbName
     ];
 }
 

@@ -129,6 +129,16 @@
     formData.append('action', 'upload');
     selectedFiles.forEach(file => formData.append('files[]', file));
 
+    // Pass active organization & operational location hierarchy scope
+    if (window.cost360ActiveScope) {
+      if (window.cost360ActiveScope.customerId) formData.append('customer_id', window.cost360ActiveScope.customerId);
+      if (window.cost360ActiveScope.companyId) formData.append('company_id', window.cost360ActiveScope.companyId);
+      if (window.cost360ActiveScope.divisionId) formData.append('division_id', window.cost360ActiveScope.divisionId);
+      if (window.cost360ActiveScope.locationType) formData.append('location_type', window.cost360ActiveScope.locationType);
+      if (window.cost360ActiveScope.locationId) formData.append('location_id', window.cost360ActiveScope.locationId);
+      if (window.cost360ActiveScope.periodId) formData.append('period_id', window.cost360ActiveScope.periodId);
+    }
+
     analyzeBtn.disabled = true;
     analyzeBtn.innerHTML = '<span class="spinner"></span> Analyzing File Structure...';
 
@@ -262,16 +272,20 @@
       const headers = result.headers || [];
       const data = result.data || [];
       const targetCols = result.target_columns || ['item_code', 'item_description', 'uom', 'rate', 'category', 'created_by'];
+      const savedMappings = result.saved_mappings || {};
 
       // Header Mapping Row Builder
       const mappingRowsHtml = headers.map(header => {
         const cleanH = header.replace(/[^a-z0-9_]/gi, '').toLowerCase();
+        const savedVal = savedMappings[header];
         
         const colOptions = targetCols.map(col => {
           const cleanCol = col.replace(/[^a-z0-9_]/gi, '').toLowerCase();
-          const selected = (cleanH === cleanCol || cleanH.includes(cleanCol) || cleanCol.includes(cleanH)) ? 'selected' : '';
+          const selected = savedVal ? (savedVal === col ? 'selected' : '') : ((cleanH === cleanCol || cleanH.includes(cleanCol) || cleanCol.includes(cleanH)) ? 'selected' : '');
           return `<option value="${col}" ${selected}>${escapeHtml(col)}</option>`;
         }).join('');
+
+        const isIgnored = savedVal === '__IGNORE__' ? 'selected' : '';
 
         return `
           <div class="mapping-grid-row">
@@ -280,13 +294,13 @@
             </div>
             <div class="mapping-arrow">&rarr;</div>
             <div class="target-field-select-wrap">
-              <select class="cost360-select-sm">
+              <select class="cost360-select-sm header-mapping-select" data-source-header="${escapeHtml(header)}">
                 ${colOptions}
-                <option value="__IGNORE__">&mdash; Skip / Do Not Import &mdash;</option>
+                <option value="__IGNORE__" ${isIgnored}>&mdash; Skip / Do Not Import &mdash;</option>
               </select>
             </div>
             <div class="mapping-match-status">
-              <span class="confidence-badge conf-high">Match Found</span>
+              <span class="confidence-badge conf-high">Mapped</span>
             </div>
           </div>
         `;
@@ -304,7 +318,7 @@
             </div>
 
             <div class="modal-body-tablewrap">
-              <h4 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--color-primary-text);">Source Column &rarr; Neon Database Field Dropdown Mapping</h4>
+              <h4 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--color-primary-text);">Source Column &rarr; Target Database Field Dropdown Mapping</h4>
               <div class="mapping-grid-container">
                 ${mappingRowsHtml}
               </div>
@@ -324,7 +338,7 @@
 
             <div class="modal-footer">
               <button class="btn-secondary" onclick="this.closest('.cost360-modal-overlay').remove()">Cancel & Close</button>
-              <button class="btn-primary" style="background: #10B981;" onclick="this.closest('.cost360-modal-overlay').remove()">Save Mapping & Close</button>
+              <button class="btn-primary" style="background: #10B981;" onclick="saveMappingAndClose(this, ${fileId})">Save Mapping & Close</button>
             </div>
           </div>
         </div>
@@ -336,6 +350,39 @@
     }
   }
   window.previewFile = previewFile;
+
+  async function saveMappingAndClose(btn, fileId) {
+    const modal = btn.closest('.cost360-modal-overlay');
+    const selects = modal.querySelectorAll('.header-mapping-select');
+    const mappings = {};
+    selects.forEach(sel => {
+      const src = sel.getAttribute('data-source-header');
+      if (src) {
+        mappings[src] = sel.value;
+      }
+    });
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+    try {
+      const fd = new FormData();
+      fd.append('action', 'save_mapping');
+      fd.append('file_id', fileId);
+      fd.append('mappings', JSON.stringify(mappings));
+
+      const res = await fetch('api/upload_api.php', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('Could not save mapping: ' + (data.message || 'Unknown error'));
+      }
+    } catch (e) {
+      console.warn('Save mapping error:', e);
+    } finally {
+      modal.remove();
+    }
+  }
+  window.saveMappingAndClose = saveMappingAndClose;
 
   async function viewImportErrors(uploadId) {
     try {
@@ -404,12 +451,13 @@
   async function executeImport() {
     if (!currentUploadRunId) return alert('No active upload run found to import.');
 
-    if (!confirm('Are you sure you want to import this validated dataset into your Neon PostgreSQL database?')) {
+    const targetDbDesc = (window.cost360ActiveScope && window.cost360ActiveScope.customerDb) ? window.cost360ActiveScope.customerDb : 'Customer Database';
+    if (!confirm(`Are you sure you want to import this validated dataset into ${targetDbDesc}?`)) {
       return;
     }
 
     importBtn.disabled = true;
-    importBtn.innerHTML = '<span class="spinner"></span> Importing to Neon DB...';
+    importBtn.innerHTML = '<span class="spinner"></span> Importing to Customer Database...';
 
     try {
       const formData = new FormData();
@@ -421,7 +469,8 @@
 
       if (!result.ok) throw new Error(result.message || 'Import failed.');
 
-      alert(`Import Complete!\n\n✔ ${result.imported} records successfully imported into Neon PostgreSQL.\n⚠ ${result.skipped} records skipped.\n✖ ${result.failed} records failed.`);
+      const destDb = result.database || targetDbDesc;
+      alert(`Import Complete!\n\n✔ ${result.imported} records successfully imported into ${destDb}.\n⚠ ${result.skipped} records skipped.\n✖ ${result.failed} records failed.`);
       window.location.href = 'dashboard.php?page=history';
     } catch (err) {
       alert('Import Failed: ' + err.message);

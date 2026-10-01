@@ -38,6 +38,8 @@ $activeWarehouseId = $orgContext['warehouse_id'] ?? null;
 $activeWarehouseName = $orgContext['warehouse_name'] ?? '';
 $activePeriodId = $orgContext['period_id'] ?? null;
 $activePeriodName = $orgContext['period_name'] ?? '';
+$activeLocation = getActiveOperationalLocation();
+$customerDbName = $activeCustomerId ? getCustomerDbName($activeCustomerId) : 'Central DB';
 $availablePeriods = getUserAccessiblePeriods($activeCompanyId);
 
 /* ============================================================
@@ -184,6 +186,20 @@ if (!function_exists('formatMenuRouteUrl')) {
   <title>Cost360 - Enterprise Workspace & Upload Centre</title>
   <script>
     window.cost360BaseUrlPrefix = "<?php echo $baseUrlPrefix; ?>";
+    window.cost360ActiveScope = {
+      customerId: <?php echo json_encode($activeCustomerId); ?>,
+      customerName: <?php echo json_encode($activeCustomerName); ?>,
+      customerDb: <?php echo json_encode($customerDbName); ?>,
+      companyId: <?php echo json_encode($activeCompanyId); ?>,
+      companyName: <?php echo json_encode($activeCompanyName); ?>,
+      divisionId: <?php echo json_encode($activeDivisionId); ?>,
+      divisionName: <?php echo json_encode($activeDivisionName); ?>,
+      locationType: <?php echo json_encode($activeLocation['type'] ?? ($activePlantId ? 'plant' : ($activeWarehouseId ? 'warehouse' : ''))); ?>,
+      locationId: <?php echo json_encode($activeLocation['id'] ?? ($activePlantId ?: ($activeWarehouseId ?: null))); ?>,
+      locationName: <?php echo json_encode($activeLocation['name'] ?? ($activePlantName ?: ($activeWarehouseName ?: ''))); ?>,
+      periodId: <?php echo json_encode($activePeriodId); ?>,
+      periodName: <?php echo json_encode($activePeriodName); ?>
+    };
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1559,6 +1575,41 @@ if (!function_exists('formatMenuRouteUrl')) {
           </div>
         </section>
 
+        <!-- ACTIVE INGESTION DESTINATION & ISOLATED CUSTOMER DATABASE CONTEXT -->
+        <div class="upload-scope-banner" style="background: linear-gradient(135deg, #033665 0%, #063D70 100%); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; color: #FFFFFF; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; box-shadow: 0 4px 15px rgba(3, 54, 101, 0.15);">
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
+              <span style="background: #00CFEF; color: #033665; font-size: 0.7rem; font-weight: 800; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;">Active Import Destination</span>
+              <span style="font-size: 0.82rem; color: rgba(255,255,255,0.75);">Isolated Customer Database: <strong style="color: #00CFEF;"><?php echo htmlspecialchars($customerDbName); ?></strong></span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.92rem;">
+              <span>Customer: <strong style="color: #FFFFFF;"><?php echo htmlspecialchars($activeCustomerName ?: 'All Customers'); ?></strong></span>
+              <span style="color: rgba(255,255,255,0.4);">&bull;</span>
+              <span>Company: <strong style="color: #FFFFFF;"><?php echo htmlspecialchars($activeCompanyName ?: 'All Companies'); ?></strong></span>
+              <span style="color: rgba(255,255,255,0.4);">&bull;</span>
+              <span>Division: <strong style="color: #FFFFFF;"><?php echo htmlspecialchars($activeDivisionName ?: 'All Divisions'); ?></strong></span>
+              <span style="color: rgba(255,255,255,0.4);">&bull;</span>
+              <span>Location: 
+                <strong style="color: #FFFFFF;">
+                  <?php if (!empty($activeLocation)): ?>
+                    <?php echo htmlspecialchars($activeLocation['name']); ?> 
+                    <span style="background: rgba(0,207,239,0.2); color: #00CFEF; padding: 1px 6px; border-radius: 4px; font-size: 0.72rem; text-transform: uppercase;"><?php echo htmlspecialchars($activeLocation['label']); ?></span>
+                  <?php else: ?>
+                    All Locations
+                  <?php endif; ?>
+                </strong>
+              </span>
+              <span style="color: rgba(255,255,255,0.4);">&bull;</span>
+              <span>Period: <strong style="color: #00CFEF;"><?php echo htmlspecialchars($activePeriodName ?: 'Active Period'); ?></strong></span>
+            </div>
+          </div>
+          <div>
+            <button type="button" onclick="toggleContextPopover(event)" class="btn-secondary" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); color: #FFFFFF; font-size: 0.8rem; padding: 0.45rem 0.9rem; border-radius: 6px; cursor: pointer;">
+              Switch Scope / Period &rarr;
+            </button>
+          </div>
+        </div>
+
         <section class="section-card">
           <div class="section-header">
             <h2 class="section-title">Upload Costing & Master Data Files</h2>
@@ -1606,6 +1657,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                     <th>Success</th>
                     <th>Errors</th>
                     <th>Status</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1618,6 +1670,13 @@ if (!function_exists('formatMenuRouteUrl')) {
                       <td><span style="color: #059669; font-weight: 700;"><?php echo number_format((int)$r['success_rows']); ?></span></td>
                       <td><span style="color: #DC2626; font-weight: 700;"><?php echo number_format((int)$r['error_rows']); ?></span></td>
                       <td><span class="status-badge"><?php echo htmlspecialchars($r['status']); ?></span></td>
+                      <td>
+                        <?php if ((int)$r['error_rows'] > 0): ?>
+                          <button type="button" class="btn-action-sm" style="color: #DC2626; border-color: #FCA5A5; background: #FEF2F2;" onclick="viewImportErrors(<?php echo (int)$r['id']; ?>)">View Errors</button>
+                        <?php else: ?>
+                          <span style="color: #64748B; font-size: 0.78rem;">Clean Run</span>
+                        <?php endif; ?>
+                      </td>
                     </tr>
                   <?php endforeach; ?>
                 </tbody>
