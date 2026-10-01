@@ -110,7 +110,6 @@ try {
         if (!$customer) {
             throw new Exception("Customer record not found.");
         }
-        $customer['database_name'] = getCustomerDbName($customerId, $pdo);
 
         // Fetch Customer Administrator
         $adminStmt = $pdo->prepare("
@@ -448,16 +447,12 @@ try {
 
         $pdo->commit();
 
-        // 8. Provision dedicated customer database & initialize customer schema
-        $provResult = provisionCustomerDatabase((int)$newCustomerId);
-
         echo json_encode([
             'success' => true,
-            'message' => 'Customer created successfully with dedicated database and default FREE subscription.',
+            'message' => 'Customer created successfully with default FREE subscription.',
             'customer_id' => $newCustomerId,
             'customer_code' => $customerCode,
             'customer_name' => $customerName,
-            'database' => $provResult,
             'admin_name' => $adminFullName,
             'admin_email' => $adminEmail,
             'subscription' => [

@@ -82,14 +82,6 @@ try {
             echo json_encode(['ok' => true, 'errors' => $errors]);
             break;
 
-        case 'save_mapping':
-            $fileId = (int)($_POST['file_id'] ?? 0);
-            $rawMappings = $_POST['mappings'] ?? '{}';
-            $mappings = is_array($rawMappings) ? $rawMappings : (json_decode($rawMappings, true) ?: []);
-            $res = saveFileColumnMapping($fileId, $mappings);
-            echo json_encode($res);
-            break;
-
         default:
             echo json_encode(['ok' => false, 'message' => 'Unknown API action specified.']);
             break;
