@@ -309,21 +309,30 @@ function getPredefinedTableSchema(string $tableName): ?string {
         case 'standard_cost':
             return "
                 CREATE TABLE IF NOT EXISTS public.standard_cost (
-                    id              BIGSERIAL PRIMARY KEY,
-                    item_id         BIGINT,
-                    item_code       VARCHAR(100),
-                    product_code    VARCHAR(100),
-                    cost_component  VARCHAR(50) DEFAULT 'Total',
-                    cost_value      NUMERIC(15,4),
-                    standard_rate   NUMERIC(15,4),
-                    rate            NUMERIC(15,4),
-                    effective_date  DATE DEFAULT CURRENT_DATE,
-                    effective_from  DATE DEFAULT CURRENT_DATE,
-                    effective_to    DATE,
-                    currency        VARCHAR(10) DEFAULT 'INR',
-                    status          VARCHAR(20) DEFAULT 'Active',
-                    created_at      TIMESTAMPTZ DEFAULT now()
+                    cost_id             BIGSERIAL PRIMARY KEY,
+                    id                  BIGSERIAL,
+                    item_id             BIGINT,
+                    item_code           VARCHAR(100),
+                    product_code        VARCHAR(100),
+                    cost_component      VARCHAR(50) DEFAULT 'Total',
+                    std_material        NUMERIC(15,4) DEFAULT 0.0000,
+                    std_material_cost   NUMERIC(15,4) DEFAULT 0.0000,
+                    std_conversion      NUMERIC(15,4) DEFAULT 0.0000,
+                    std_conversion_cost NUMERIC(15,4) DEFAULT 0.0000,
+                    std_total_cost      NUMERIC(15,4) DEFAULT 0.0000,
+                    cost_value          NUMERIC(15,4) DEFAULT 0.0000,
+                    standard_rate       NUMERIC(15,4) DEFAULT 0.0000,
+                    rate                NUMERIC(15,4) DEFAULT 0.0000,
+                    std_rev_date        DATE DEFAULT CURRENT_DATE,
+                    effective_date      DATE DEFAULT CURRENT_DATE,
+                    effective_from      DATE DEFAULT CURRENT_DATE,
+                    effective_to        DATE,
+                    currency            VARCHAR(10) DEFAULT 'INR',
+                    status              VARCHAR(20) DEFAULT 'Active',
+                    created_at          TIMESTAMPTZ DEFAULT now()
                 );
+                CREATE INDEX IF NOT EXISTS idx_std_cost_product ON public.standard_cost(product_code);
+                CREATE INDEX IF NOT EXISTS idx_std_cost_item ON public.standard_cost(item_code);
             ";
 
         case 'bom':
@@ -506,8 +515,12 @@ function getPredefinedTableSchema(string $tableName): ?string {
                     cost_center_code    VARCHAR(100),
                     cc_code             VARCHAR(100),
                     cost_center_name    VARCHAR(200),
+                    cc_name             VARCHAR(200),
                     name                VARCHAR(200),
                     department          VARCHAR(100),
+                    cc_type             VARCHAR(50),
+                    is_production       INT DEFAULT 1,
+                    shift_capacity_hrs_month NUMERIC(12,2),
                     status              VARCHAR(20) DEFAULT 'Active',
                     created_at          TIMESTAMPTZ DEFAULT now()
                 );
@@ -619,6 +632,36 @@ function ensureTargetTableExistsInCustomerDb(PDO $custPdo, string $tableName): b
             foreach ($colsToAdd as $cDef) {
                 try { $custPdo->exec("ALTER TABLE public.bom ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
             }
+        } elseif ($clean === 'standard_cost') {
+            $colsToAdd = [
+                'product_code VARCHAR(100)',
+                'item_code VARCHAR(100)',
+                'item_id BIGINT',
+                'cost_component VARCHAR(50) DEFAULT \'Total\'',
+                'std_material NUMERIC(15,4) DEFAULT 0.0000',
+                'std_material_cost NUMERIC(15,4) DEFAULT 0.0000',
+                'std_conversion NUMERIC(15,4) DEFAULT 0.0000',
+                'std_conversion_cost NUMERIC(15,4) DEFAULT 0.0000',
+                'std_total_cost NUMERIC(15,4) DEFAULT 0.0000',
+                'cost_value NUMERIC(15,4) DEFAULT 0.0000',
+                'standard_rate NUMERIC(15,4) DEFAULT 0.0000',
+                'rate NUMERIC(15,4) DEFAULT 0.0000',
+                'std_rev_date DATE DEFAULT CURRENT_DATE',
+                'effective_date DATE DEFAULT CURRENT_DATE',
+                'effective_from DATE DEFAULT CURRENT_DATE',
+                'effective_to DATE',
+                'currency VARCHAR(10) DEFAULT \'INR\'',
+                'status VARCHAR(20) DEFAULT \'Active\'',
+                'created_at TIMESTAMPTZ DEFAULT now()'
+            ];
+            foreach ($colsToAdd as $cDef) {
+                try { $custPdo->exec("ALTER TABLE public.standard_cost ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
+            }
+            try { $custPdo->exec("ALTER TABLE public.standard_cost ALTER COLUMN item_id DROP NOT NULL"); } catch (Throwable $e) {}
+            try { $custPdo->exec("ALTER TABLE public.standard_cost ALTER COLUMN cost_component DROP NOT NULL"); } catch (Throwable $e) {}
+            try { $custPdo->exec("ALTER TABLE public.standard_cost ALTER COLUMN cost_value DROP NOT NULL"); } catch (Throwable $e) {}
+            try { $custPdo->exec("ALTER TABLE public.standard_cost ALTER COLUMN effective_from DROP NOT NULL"); } catch (Throwable $e) {}
+            try { $custPdo->exec("ALTER TABLE public.standard_cost ALTER COLUMN effective_to DROP NOT NULL"); } catch (Throwable $e) {}
         } elseif ($clean === 'machine_master') {
             $colsToAdd = [
                 'machine_code VARCHAR(100)',
@@ -645,6 +688,22 @@ function ensureTargetTableExistsInCustomerDb(PDO $custPdo, string $tableName): b
             ];
             foreach ($colsToAdd as $cDef) {
                 try { $custPdo->exec("ALTER TABLE public.items ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
+            }
+        } elseif ($clean === 'cost_center_master' || $clean === 'cost_centers') {
+            $colsToAdd = [
+                'cost_center_code VARCHAR(100)',
+                'cc_code VARCHAR(100)',
+                'cost_center_name VARCHAR(200)',
+                'cc_name VARCHAR(200)',
+                'name VARCHAR(200)',
+                'department VARCHAR(100)',
+                'cc_type VARCHAR(50)',
+                'is_production INT DEFAULT 1',
+                'shift_capacity_hrs_month NUMERIC(12,2)',
+                'status VARCHAR(20) DEFAULT \'Active\''
+            ];
+            foreach ($colsToAdd as $cDef) {
+                try { $custPdo->exec("ALTER TABLE public.{$clean} ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
             }
         }
 
@@ -855,8 +914,8 @@ function analyzeUploadedFiles($files, $user) {
             $masterName = 'Stock Ledger'; $subName = 'Consumption Transaction'; $confidence = 98;
         } elseif (str_contains($lowerName, 'production') || str_contains($lowerName, 'wo_')) {
             $masterName = 'Stock Ledger'; $subName = 'Production Transaction'; $confidence = 98;
-        } elseif (str_contains($lowerName, 'standard_cost') || str_contains($lowerName, 'std_cost')) {
-            $masterName = 'Item Master'; $subName = 'Standard Cost'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'standard_cost') || str_contains($lowerName, 'std_cost') || str_starts_with($lowerName, '06_standard') || str_starts_with($lowerName, '06_std')) {
+            $masterName = 'Item Master'; $subName = 'Standard Cost'; $confidence = 99;
         } elseif (str_contains($lowerName, 'product_master') || str_contains($lowerName, 'product')) {
             $masterName = 'Item Master'; $subName = 'Product Master'; $confidence = 98;
         } elseif (str_contains($lowerName, 'uom')) {
@@ -871,6 +930,8 @@ function analyzeUploadedFiles($files, $user) {
                 $masterName = 'BOM'; $subName = 'Routing'; $confidence = 97;
             } elseif (str_contains($headersStr, 'std_material_cost') || str_contains($headersStr, 'std_qty_per_unit')) {
                 $masterName = 'BOM'; $subName = 'BOM'; $confidence = 97;
+            } elseif (str_contains($headersStr, 'std_material') || str_contains($headersStr, 'std_conversion') || str_contains($headersStr, 'std_total_cost') || str_contains($headersStr, 'std_rev_date')) {
+                $masterName = 'Item Master'; $subName = 'Standard Cost'; $confidence = 97;
             } elseif (str_contains($headersStr, 'po_number') || str_contains($headersStr, 'vendor_code') && str_contains($headersStr, 'unit_price')) {
                 $masterName = 'Stock Ledger'; $subName = 'Purchase Transaction'; $confidence = 97;
             } elseif (str_contains($headersStr, 'issue_number')) {
@@ -1157,7 +1218,11 @@ function executeDataImport($uploadId, $user) {
                     'parent_item'         => 'parent_item_code',
                     'component_item'      => 'component_item_code',
                     'qty'                 => 'quantity',
-                    'std_qty'             => 'std_qty_per_unit'
+                    'std_qty'             => 'std_qty_per_unit',
+                    'std_material'        => 'std_material_cost',
+                    'std_conversion'      => 'std_conversion_cost',
+                    'std_total_cost'      => 'cost_value',
+                    'std_rev_date'        => 'effective_date'
                 ];
 
                 $mappedData = [];
@@ -1174,6 +1239,19 @@ function executeDataImport($uploadId, $user) {
                         $mappedData[$aliasMap[$cleanCol]] = $val;
                     } elseif ($targetTable === 'items' && ($cleanCol === 'uom' || $cleanCol === 'uom_code')) {
                         $mappedData['uom_code'] = $val;
+                    }
+                }
+
+                // Handle entity specific column defaults
+                if ($targetTable === 'standard_cost') {
+                    if (in_array('cost_value', $dbColNames, true) && empty($mappedData['cost_value']) && !empty($mappedData['std_total_cost'])) {
+                        $mappedData['cost_value'] = $mappedData['std_total_cost'];
+                    }
+                    if (in_array('cost_component', $dbColNames, true) && empty($mappedData['cost_component'])) {
+                        $mappedData['cost_component'] = 'Total';
+                    }
+                    if (in_array('effective_from', $dbColNames, true) && empty($mappedData['effective_from'])) {
+                        $mappedData['effective_from'] = $mappedData['std_rev_date'] ?? date('Y-m-d');
                     }
                 }
 
