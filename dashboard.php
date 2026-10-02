@@ -2753,7 +2753,7 @@ if (!function_exists('formatMenuRouteUrl')) {
           <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
             <div>
               <h2 class="section-title" style="margin-bottom: 0.2rem;">User Master</h2>
-              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage application users, roles, and organizational access mappings</p>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage application users and their roles</p>
             </div>
             <div style="display: flex; gap: 0.75rem;">
               <button type="button" class="btn-primary" id="openAddUserBtn" onclick="openAddUserModal()">
@@ -2822,6 +2822,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   <th>Email</th>
                   <th>Status</th>
                   <th>Role</th>
+                  <th>Access Scope</th>
                   <th>Created By</th>
                   <th>Last Login</th>
                   <th style="text-align: right;">Actions</th>
@@ -3422,7 +3423,6 @@ if (!function_exists('formatMenuRouteUrl')) {
               tbody.innerHTML = data.users.map(u => {
                 const statusColor = u.status === 'ACTIVE' ? '#00A88F' : (u.status === 'INACTIVE' ? '#6B7F91' : '#DC2626');
                 const statusBg = u.status === 'ACTIVE' ? '#E6F9F6' : (u.status === 'INACTIVE' ? '#F1F5F9' : '#FEE2E2');
-                const accessSummary = u.access_summary || 'Full Access';
 
                 return `
                   <tr>
@@ -3435,14 +3435,23 @@ if (!function_exists('formatMenuRouteUrl')) {
                         ${escapeHtml(u.status)}
                       </span>
                     </td>
-                    <td><span class="role-badge">${escapeHtml(u.role_name)}</span></td>
+                    <td><span class="role-badge" style="background: rgba(0, 207, 239, 0.12); color: #0070BA; padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600;">${escapeHtml(u.role_name)}</span></td>
+                    <td>
+                      <button type="button" class="scope-pill-btn" onclick="openViewScopeModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.full_name)}')" style="display: inline-flex; align-items: center; gap: 6px; padding: 0.32rem 0.75rem; background: #E6F9F6; color: #00A88F; border: 1px solid #A7F3D0; border-radius: 20px; font-size: 0.78rem; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <span>View Scope</span>
+                      </button>
+                    </td>
                     <td><span style="font-size: 0.82rem; color: var(--color-secondary-text);">${escapeHtml(u.created_by_name || 'System')}</span></td>
                     <td>${escapeHtml(u.last_login_at || u.created_at || 'Never')}</td>
                     <td style="text-align: right; white-space: nowrap;">
-                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditUserModal(${u.user_id})">Edit</button>
-                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px; border-color: var(--color-primary-blue); color: var(--color-primary-blue);" onclick="openManageUserAccessModal(${u.user_id}, '${escapeJs(u.full_name)}')">Manage Access</button>
+                      <button type="button" class="btn-secondary" style="padding: 0.32rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditUserModal(${u.user_id})">Edit</button>
+                      <button type="button" class="btn-secondary" style="padding: 0.32rem 0.65rem; font-size: 0.78rem; margin-right: 4px; border-color: var(--color-primary-blue); color: var(--color-primary-blue);" onclick="openUserAccessModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.full_name)}')">Manage Access</button>
                       ${u.user_id !== currentSessionUserId ? `
-                        <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; color: ${u.status === 'ACTIVE' ? '#DC2626' : '#059669'}; border-color: ${u.status === 'ACTIVE' ? '#FCA5A5' : '#A7F3D0'};" onclick="toggleUserStatus(${u.user_id}, '${escapeJs(u.status)}')">${u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button>
+                        <button type="button" class="btn-secondary" style="padding: 0.32rem 0.65rem; font-size: 0.78rem; color: ${u.status === 'ACTIVE' ? '#DC2626' : '#059669'}; border-color: ${u.status === 'ACTIVE' ? '#FCA5A5' : '#A7F3D0'};" onclick="toggleUserStatus(${u.user_id}, '${escapeJs(u.status)}')">${u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button>
                       ` : ''}
                     </td>
                   </tr>
