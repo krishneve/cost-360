@@ -2503,50 +2503,57 @@ if (!function_exists('userHasMenuAccess')) {
         $menuRouteOrCode,
         $userId = null
     ) {
+        if ($userId === null) {
+            $userId = $_SESSION['user_id'] ?? null;
+        }
 
-        $menus =
-            getUserAuthorizedMenus(
-                $userId
-            );
+        if (!$userId) {
+            return false;
+        }
 
-        $cleanTarget =
-            strtolower(
-                trim($menuRouteOrCode)
-            );
+        if (isPlatformAdmin($userId)) {
+            return true;
+        }
+
+        $menus = getUserAuthorizedMenus($userId);
+        $cleanTarget = strtolower(trim($menuRouteOrCode));
+        $cleanTargetNorm = str_replace(['centre', '-', '_', '/', '.php', ' '], ['center', '', '', '', '', ''], $cleanTarget);
+
+        $aliasMap = [
+            'upload_center' => ['upload_centre', 'upload-centre.php', '/data/upload', 'data/upload', 'upload', 'data_management', '/data'],
+            'upload_centre' => ['upload_center', 'upload-centre.php', '/data/upload', 'data/upload', 'upload', 'data_management', '/data'],
+            'mapping' => ['mapping_center', 'mapping_centre', 'mapping-centre.php', '/data/mapping', 'data/mapping', 'data_management', '/data'],
+            'mapping_centre' => ['mapping', 'mapping_center', 'mapping-centre.php', '/data/mapping', 'data/mapping', 'data_management', '/data'],
+            'import_history' => ['import-history.php', 'upload_center', 'upload_centre', 'data_management', '/data'],
+            'audit_logs' => ['audit-logs.php', 'audit', 'audit_trail', 'audit_desk', 'reconciliation', '/audit'],
+            'master_groups' => ['master-groups.php', 'data_management', 'settings'],
+        ];
 
         foreach ($menus as $m) {
+            $mCode = strtolower(trim($m['menu_code'] ?? ''));
+            $mRoute = strtolower(trim($m['route'] ?? ''));
+            $mCodeNorm = str_replace(['centre', '-', '_', '/', '.php', ' '], ['center', '', '', '', '', ''], $mCode);
+            $mRouteNorm = str_replace(['centre', '-', '_', '/', '.php', ' '], ['center', '', '', '', '', ''], $mRoute);
 
-            $mCode =
-                strtolower(
-                    trim($m['menu_code'])
-                );
-
-            $mRoute =
-                strtolower(
-                    trim($m['route'])
-                );
-
-            if (
-                $mCode === $cleanTarget ||
-                $mRoute === $cleanTarget
-            ) {
+            if ($mCode === $cleanTarget || $mRoute === $cleanTarget) {
                 return true;
             }
 
-            if (
-                $mRoute !== '' &&
-                (
-                    str_contains(
-                        $mRoute,
-                        $cleanTarget
-                    ) ||
-                    str_contains(
-                        $cleanTarget,
-                        $mCode
-                    )
-                )
-            ) {
+            if ($mCodeNorm !== '' && ($mCodeNorm === $cleanTargetNorm || str_contains($cleanTargetNorm, $mCodeNorm) || str_contains($mCodeNorm, $cleanTargetNorm))) {
                 return true;
+            }
+
+            if ($mRouteNorm !== '' && ($mRouteNorm === $cleanTargetNorm || str_contains($mRouteNorm, $cleanTargetNorm) || str_contains($cleanTargetNorm, $mRouteNorm))) {
+                return true;
+            }
+
+            if (isset($aliasMap[$cleanTarget])) {
+                foreach ($aliasMap[$cleanTarget] as $alt) {
+                    $normAlt = str_replace(['centre', '-', '_', '/', '.php', ' '], ['center', '', '', '', '', ''], strtolower($alt));
+                    if ($mCode === strtolower($alt) || $mRoute === strtolower($alt) || $mCodeNorm === $normAlt || $mRouteNorm === $normAlt) {
+                        return true;
+                    }
+                }
             }
         }
 
@@ -2562,28 +2569,27 @@ if (!function_exists('userHasPermission')) {
         $menuCode = null,
         $userId = null
     ) {
+        if ($userId === null) {
+            $userId = $_SESSION['user_id'] ?? null;
+        }
 
-        $permissions =
-            getUserAuthorizedPermissions(
-                $userId
-            );
+        if ($userId && isPlatformAdmin($userId)) {
+            return true;
+        }
+
+        $permissions = getUserAuthorizedPermissions($userId);
+        $normReqMenu = $menuCode ? str_replace(['centre', '-', '_', '/', ' '], ['center', '', '', '', ''], strtolower(trim($menuCode))) : null;
 
         foreach ($permissions as $p) {
-
-            if (
-                strcasecmp(
-                    $p['permission_code'],
-                    $permissionCode
-                ) === 0
-            ) {
-
-                if (
-                    $menuCode === null ||
-                    strcasecmp(
-                        $p['menu_code'],
-                        $menuCode
-                    ) === 0
-                ) {
+            if (strcasecmp($p['permission_code'], $permissionCode) === 0) {
+                if ($menuCode === null) {
+                    return true;
+                }
+                if (strcasecmp($p['menu_code'], $menuCode) === 0) {
+                    return true;
+                }
+                $normPermMenu = str_replace(['centre', '-', '_', '/', ' '], ['center', '', '', '', ''], strtolower(trim($p['menu_code'] ?? '')));
+                if ($normReqMenu !== '' && ($normPermMenu === $normReqMenu || str_contains($normPermMenu, $normReqMenu) || str_contains($normReqMenu, $normPermMenu))) {
                     return true;
                 }
             }
