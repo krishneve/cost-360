@@ -41,12 +41,17 @@ $locations = getUserAccessibleLocations($userId, $companyId, $divisionId);
 
 /* ============================================================
    AUTO-SKIP LOGIC (MANDATORY REQUIREMENT)
-   IF exactly ONE Location exists under this scope:
-   Automatically select it and proceed to Period selection.
+   - IF exactly ONE Location exists under this scope: Automatically select it and proceed to Period selection.
+   - IF ZERO Locations exist under this scope: Advance to Period selection at Division scope.
    ============================================================ */
-if (!$isAdmin && count($locations) === 1 && empty($_POST)) {
-    $singleLocation = $locations[0];
-    if (setActiveLocation($singleLocation['type'], $singleLocation['id'])) {
+if (!$isAdmin && empty($_POST)) {
+    if (count($locations) === 1) {
+        $singleLocation = $locations[0];
+        if (setActiveLocation($singleLocation['type'], $singleLocation['id'])) {
+            header('Location: period-selection.php');
+            exit;
+        }
+    } elseif (count($locations) === 0) {
         header('Location: period-selection.php');
         exit;
     }

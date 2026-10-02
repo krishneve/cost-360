@@ -1536,6 +1536,43 @@ if (!function_exists('formatMenuRouteUrl')) {
         <!-- ============================================================
              UPLOAD CENTRE PAGE MODULE
              ============================================================ -->
+        <?php
+          $userCanUpload = isPlatformAdmin($user['user_id']) || userHasPermission('UPLOAD', 'UPLOAD_CENTRE', $user['user_id']) || userHasPermission('UPLOAD', null, $user['user_id']);
+          $activeLocInfo = getActiveOperationalLocation();
+        ?>
+
+        <!-- ACTIVE TARGET SCOPE DISPLAY BANNER -->
+        <section class="section-card" style="margin-bottom: 1.25rem; background: rgba(0, 207, 239, 0.05); border: 1px solid rgba(0, 207, 239, 0.25);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-bright-cyan); font-weight: 700; margin-bottom: 0.25rem;">Active Target Scope</div>
+              <div style="font-size: 1.1rem; font-weight: 700; color: #FFFFFF; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <span>Company: <strong><?php echo htmlspecialchars($activeCompanyName ?: 'All Companies'); ?></strong></span>
+                <span>&bull;</span>
+                <span>Location: <strong><?php echo htmlspecialchars(($activePlantName ?: $activeWarehouseName) ?: 'All Locations'); ?></strong></span>
+                <?php if ($activeLocInfo): ?>
+                  <span class="status-badge" style="background: rgba(0,207,239,0.15); color: var(--color-bright-cyan); font-size: 0.72rem;">
+                    <?php echo htmlspecialchars($activeLocInfo['label']); ?>
+                  </span>
+                <?php endif; ?>
+              </div>
+              <div style="font-size: 0.85rem; color: rgba(255,255,255,0.7); margin-top: 0.25rem;">
+                Tenant: <strong><?php echo htmlspecialchars($activeCustomerName ?: 'All Customers'); ?></strong> | 
+                Period: <strong><?php echo htmlspecialchars($activePeriodName ?: 'All Periods'); ?></strong>
+              </div>
+            </div>
+            <div>
+              <a href="customer-selection.php" class="btn-secondary" style="font-size: 0.8rem; text-decoration: none;">Switch Scope</a>
+            </div>
+          </div>
+        </section>
+
+        <?php if (!$userCanUpload): ?>
+          <div style="padding: 1rem 1.25rem; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; color: #F87171; margin-bottom: 1.25rem; font-size: 0.9rem;">
+            <strong>View-Only Notice:</strong> Your assigned role has view access to the Upload Center, but file uploading is disabled (<code>can_upload = false</code>). Contact your administrator to request upload permissions.
+          </div>
+        <?php endif; ?>
+
         <section class="grid-cards">
           <div class="stat-card">
             <div class="stat-header"><span class="stat-label">Files Uploaded</span></div>
@@ -1545,7 +1582,7 @@ if (!function_exists('formatMenuRouteUrl')) {
           <div class="stat-card">
             <div class="stat-header"><span class="stat-label">Imports Completed</span></div>
             <div class="stat-number" style="color: var(--color-bright-cyan);"><?php echo number_format($uploadStats['imports']); ?></div>
-            <div class="stat-desc">Committed to Neon DB</div>
+            <div class="stat-desc">Committed to DB</div>
           </div>
           <div class="stat-card">
             <div class="stat-header"><span class="stat-label">Rows Processed</span></div>
@@ -1559,6 +1596,7 @@ if (!function_exists('formatMenuRouteUrl')) {
           </div>
         </section>
 
+        <?php if ($userCanUpload): ?>
         <section class="section-card">
           <div class="section-header">
             <h2 class="section-title">Upload Costing & Master Data Files</h2>
@@ -1587,6 +1625,7 @@ if (!function_exists('formatMenuRouteUrl')) {
             <button class="btn-primary" id="importBtn" style="display: none; background: #10B981;">Confirm & Import</button>
           </div>
         </section>
+        <?php endif; ?>
 
         <!-- RECENT IMPORT ACTIVITY -->
         <section class="section-card">

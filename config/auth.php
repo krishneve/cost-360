@@ -274,34 +274,144 @@ if (!function_exists('requireActiveOrganizationContext')) {
             }
         }
 
+        autoResolveSingleScopeChain($userId);
+
         $appRootDir = realpath(dirname(__DIR__));
         $currentScriptDir = realpath(dirname($_SERVER['SCRIPT_FILENAME'] ?? __FILE__));
         $relative = str_replace('\\', '/', substr($currentScriptDir, strlen($appRootDir)));
         $relative = trim($relative, '/');
         $prefix = $relative === '' ? '' : str_repeat('../', count(explode('/', $relative)));
 
+        // 1. Company Check
         if (empty($_SESSION['active_company_id'])) {
-            header('Location: ' . $prefix . 'company-selection.php');
-            exit;
+            $accessibleCompanies = getUserAccessibleCompanies($userId);
+            if (count($accessibleCompanies) === 1) {
+                setActiveCompany($accessibleCompanies[0]['company_id']);
+            } elseif (count($accessibleCompanies) > 1) {
+                header('Location: ' . $prefix . 'company-selection.php');
+                exit;
+            } else {
+                // No company access assigned
+                header('Location: ' . $prefix . 'login.php');
+                exit;
+            }
         }
 
+        $companyId = $_SESSION['active_company_id'];
+
+        // 2. Division Check (Only required if multiple divisions exist and none selected)
         if (empty($_SESSION['active_division_id'])) {
-            header('Location: ' . $prefix . 'division-selection.php');
-            exit;
+            $divisions = getUserAccessibleDivisions($userId, $companyId);
+            if (count($divisions) === 1) {
+                setActiveDivision($divisions[0]['division_id']);
+            } elseif (count($divisions) > 1) {
+                header('Location: ' . $prefix . 'division-selection.php');
+                exit;
+            }
+            // If 0 divisions exist, valid at Company scope
         }
 
+        // 3. Location Check (Plant / Warehouse - Only required if multiple locations exist and none selected)
+        $divisionId = $_SESSION['active_division_id'] ?? null;
         $hasOperationalLocation = !empty($_SESSION['active_plant_id']) || !empty($_SESSION['active_warehouse_id']);
-        if (!$hasOperationalLocation) {
-            header('Location: ' . $prefix . 'organization-selection.php');
-            exit;
+        if (!$hasOperationalLocation && !empty($divisionId)) {
+            $locations = getUserAccessibleLocations($userId, $companyId, $divisionId);
+            if (count($locations) === 1) {
+                setActiveLocation($locations[0]['type'], $locations[0]['id']);
+            } elseif (count($locations) > 1) {
+                header('Location: ' . $prefix . 'organization-selection.php');
+                exit;
+            }
+            // If 0 locations exist, valid at Division scope
         }
 
+        // 4. Period Check (Only required if multiple periods exist and none selected)
         if (empty($_SESSION['active_period_id'])) {
-            header('Location: ' . $prefix . 'period-selection.php');
-            exit;
+            $activeLoc = getActiveOperationalLocation();
+            $locType = $activeLoc['type_code'] ?? null;
+            $locId = $activeLoc['id'] ?? null;
+            $periods = getUserAccessiblePeriods($companyId, $userId, $divisionId, $locType, $locId);
+            if (count($periods) === 1) {
+                setActivePeriod($periods[0]['period_id']);
+            } elseif (count($periods) > 1) {
+                header('Location: ' . $prefix . 'period-selection.php');
+                exit;
+            }
         }
 
         return true;
+    }
+}
+
+if (!function_exists('autoResolveSingleScopeChain')) {
+    /**
+     * Automatically resolves single-assignment organizational context levels
+     * down the chain: Customer -> Company -> Division -> Location -> Period.
+     * Stops automatically if 2+ options exist at any step.
+     */
+    function autoResolveSingleScopeChain($userId = null)
+    {
+        if ($userId === null) {
+            $userId = $_SESSION['user_id'] ?? null;
+        }
+        if (!$userId || isPlatformAdmin($userId) || isCmaAdmin($userId)) {
+            return;
+        }
+
+        // 1. Resolve Customer Tenant
+        $activeCustomer = getActiveCustomer();
+        if (!$activeCustomer || empty($activeCustomer['customer_id'])) {
+            $tenantId = getUserCustomerTenantId($userId);
+            if ($tenantId) {
+                setActiveCustomer($tenantId);
+                $activeCustomer = getActiveCustomer();
+            }
+        }
+        $customerId = $activeCustomer['customer_id'] ?? null;
+
+        // 2. Company Auto-Selection
+        if (empty($_SESSION['active_company_id'])) {
+            $companies = getUserAccessibleCompanies($userId, $customerId);
+            if (count($companies) === 1) {
+                setActiveCompany($companies[0]['company_id']);
+            } else {
+                return;
+            }
+        }
+
+        // 3. Division Auto-Selection
+        $companyId = $_SESSION['active_company_id'];
+        if (empty($_SESSION['active_division_id'])) {
+            $divisions = getUserAccessibleDivisions($userId, $companyId);
+            if (count($divisions) === 1) {
+                setActiveDivision($divisions[0]['division_id']);
+            } elseif (count($divisions) > 1) {
+                return;
+            }
+        }
+
+        // 4. Location Auto-Selection (Plant / Warehouse)
+        $divisionId = $_SESSION['active_division_id'] ?? null;
+        $hasOpLoc = !empty($_SESSION['active_plant_id']) || !empty($_SESSION['active_warehouse_id']);
+        if (!$hasOpLoc && !empty($divisionId)) {
+            $locations = getUserAccessibleLocations($userId, $companyId, $divisionId);
+            if (count($locations) === 1) {
+                setActiveLocation($locations[0]['type'], $locations[0]['id']);
+            } elseif (count($locations) > 1) {
+                return;
+            }
+        }
+
+        // 5. Period Auto-Selection
+        $activeLoc = getActiveOperationalLocation();
+        $locType = $activeLoc['type_code'] ?? null;
+        $locId = $activeLoc['id'] ?? null;
+        if (empty($_SESSION['active_period_id'])) {
+            $periods = getUserAccessiblePeriods($companyId, $userId, $divisionId, $locType, $locId);
+            if (count($periods) === 1) {
+                setActivePeriod($periods[0]['period_id']);
+            }
+        }
     }
 }
 
@@ -1758,6 +1868,18 @@ if (!function_exists('getUserAccessiblePeriods')) {
     {
         if ($userId === null) {
             $userId = $_SESSION['user_id'] ?? null;
+        }
+        if ($companyId === null) {
+            $companyId = $_SESSION['active_company_id'] ?? null;
+        }
+        if ($divisionId === null) {
+            $divisionId = $_SESSION['active_division_id'] ?? null;
+        }
+        if ($locationType === null) {
+            $locationType = $_SESSION['active_location_type'] ?? null;
+        }
+        if ($locationId === null) {
+            $locationId = ($locationType === 'plant') ? ($_SESSION['active_plant_id'] ?? null) : (($locationType === 'warehouse') ? ($_SESSION['active_warehouse_id'] ?? null) : null);
         }
 
         try {

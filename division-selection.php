@@ -62,12 +62,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $divisions = getUserAccessibleDivisions($userId, $companyId);
 
 /* ============================================================
-   AUTO-SELECT SINGLE DIVISION (For non-admin)
+   AUTO-SELECT SINGLE DIVISION OR ADVANCE IF NONE (For non-admin)
    ============================================================ */
 
-if (!$isAdmin && count($divisions) === 1 && empty($_POST)) {
-    $singleDivision = $divisions[0];
-    if (setActiveDivision($singleDivision['division_id'])) {
+if (!$isAdmin && empty($_POST)) {
+    if (count($divisions) === 1) {
+        $singleDivision = $divisions[0];
+        if (setActiveDivision($singleDivision['division_id'])) {
+            header('Location: organization-selection.php');
+            exit;
+        }
+    } elseif (count($divisions) === 0) {
         header('Location: organization-selection.php');
         exit;
     }

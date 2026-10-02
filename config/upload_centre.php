@@ -155,6 +155,26 @@ function analyzeUploadedFiles($files, $user) {
         return ['ok' => false, 'message' => 'No files selected for upload.'];
     }
 
+    // Backend Organizational Scope Validation
+    $orgContext = getActiveOrganizationContext();
+    $customerId = $orgContext['customer_id'] ?? null;
+    $companyId = $orgContext['company_id'] ?? null;
+    $divisionId = $orgContext['division_id'] ?? null;
+    $activeLoc = getActiveOperationalLocation();
+    $locationType = $activeLoc['type_code'] ?? 'plant';
+    $locationId = $activeLoc['id'] ?? null;
+    $periodId = $orgContext['period_id'] ?? null;
+
+    if (!$companyId || !$locationId || !$periodId) {
+        return ['ok' => false, 'message' => 'Validation Error: Active scope (Company, Location, and Period) must be selected before uploading files.'];
+    }
+
+    if ($userId && !isPlatformAdmin($userId)) {
+        if (!userCanAccessCompany($companyId, $userId) || !userCanAccessLocation($locationType, $locationId, $userId) || !userCanAccessPeriod($periodId, $userId)) {
+            return ['ok' => false, 'message' => 'Authorization Error: You are not authorized to upload data for the selected organizational scope.'];
+        }
+    }
+
     $allowedExts = ['csv', 'xls', 'xlsx', 'pdf'];
     $importCode = 'IMP-' . date('ymdHis') . '-' . random_int(100, 999);
 
@@ -163,6 +183,24 @@ function analyzeUploadedFiles($files, $user) {
         "INSERT INTO public.uploads(import_code, uploaded_by, username, status) VALUES(?, ?, ?, 'Analyzing') RETURNING id",
         [$importCode, $userId, $username]
     )->fetchColumn();
+
+    // Link upload run to active scope in upload_scopes table
+    try {
+        dbQuery("
+            INSERT INTO public.upload_scopes (upload_id, customer_id, company_id, division_id, location_type, location_id, period_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ", [
+            $uploadId,
+            $customerId,
+            $companyId,
+            $divisionId,
+            strtoupper($locationType ?: 'PLANT'),
+            $locationId,
+            $periodId
+        ]);
+    } catch (Throwable $se) {
+        error_log("Upload Scope Insertion Warning: " . $se->getMessage());
+    }
 
     $uploadDir = __DIR__ . '/../uploads/temp/' . date('Ymd') . '/';
     if (!is_dir($uploadDir)) {
@@ -186,7 +224,12 @@ function analyzeUploadedFiles($files, $user) {
 
         $safeName = bin2hex(random_bytes(12)) . '.' . $ext;
         $storagePath = $uploadDir . $safeName;
-        move_uploaded_file($files['tmp_name'][$i], $storagePath);
+
+        if (is_uploaded_file($files['tmp_name'][$i])) {
+            move_uploaded_file($files['tmp_name'][$i], $storagePath);
+        } else if (!empty($files['tmp_name'][$i]) && file_exists($files['tmp_name'][$i])) {
+            copy($files['tmp_name'][$i], $storagePath);
+        }
 
         $fileType = strtoupper($ext);
         $rows = 0;
@@ -410,7 +453,7 @@ function getFilePreviewData($fileId) {
     ];
 }
 
-// Validate & Perform Real Import into Neon PostgreSQL
+// Validate & Perform Real Import into Target Customer DB
 function executeDataImport($uploadId, $user) {
     $userId = $user['user_id'] ?? null;
     $username = $user['email'] ?? ($user['username'] ?? 'User');
@@ -425,13 +468,40 @@ function executeDataImport($uploadId, $user) {
         return ['ok' => false, 'message' => 'No upload files found to import.'];
     }
 
-    logUploadAudit($userId, $username, 'IMPORT_STARTED', 'Upload Centre', null, 'In Progress', ['upload_id' => $uploadId]);
+    // Resolve active upload scope
+    $scope = dbQuery("SELECT * FROM public.upload_scopes WHERE upload_id = ?", [$uploadId])->fetch(PDO::FETCH_ASSOC);
+    $targetCustomerId = $scope['customer_id'] ?? (function_exists('getUserCustomerTenantId') ? getUserCustomerTenantId($userId) : 1);
+    $targetCompanyId = $scope['company_id'] ?? ($_SESSION['active_company_id'] ?? null);
+    $targetLocationType = $scope['location_type'] ?? 'PLANT';
+    $targetLocationId = $scope['location_id'] ?? ($_SESSION['active_plant_id'] ?? $_SESSION['active_warehouse_id'] ?? null);
+    $targetPeriodId = $scope['period_id'] ?? ($_SESSION['active_period_id'] ?? null);
+
+    // Backend scope authorization validation
+    if ($userId && function_exists('isPlatformAdmin') && !isPlatformAdmin($userId)) {
+        if ($targetCompanyId && function_exists('userCanAccessCompany') && !userCanAccessCompany($targetCompanyId, $userId)) {
+            return ['ok' => false, 'message' => 'Authorization Error: Access denied to target company scope.'];
+        }
+        if ($targetLocationId && function_exists('userCanAccessLocation') && !userCanAccessLocation($targetLocationType, $targetLocationId, $userId)) {
+            return ['ok' => false, 'message' => 'Authorization Error: Access denied to target location scope.'];
+        }
+        if ($targetPeriodId && function_exists('userCanAccessPeriod') && !userCanAccessPeriod($targetPeriodId, $userId)) {
+            return ['ok' => false, 'message' => 'Authorization Error: Access denied to target period scope.'];
+        }
+    }
+
+    logUploadAudit($userId, $username, 'IMPORT_STARTED', 'Upload Centre', null, 'In Progress', ['upload_id' => $uploadId, 'customer_id' => $targetCustomerId]);
 
     $totalImported = 0;
     $totalSkipped = 0;
     $totalFailed = 0;
 
-    $pdo = getDbConnection();
+    // Resolve Customer DB PDO handle
+    try {
+        $pdo = getCustomerDbConnection($targetCustomerId, $userId);
+    } catch (Throwable $e) {
+        error_log("Customer DB Routing Warning (using central connection fallback): " . $e->getMessage());
+        $pdo = getDbConnection();
+    }
 
     foreach ($files as $f) {
         $headers = json_decode($f['headers'] ?? '[]', true) ?: [];
@@ -497,8 +567,8 @@ function executeDataImport($uploadId, $user) {
 
             // Determine primary non-null identifier column for this table
             $primaryCol = $dbColNames[1] ?? ($dbColNames[0] ?? null);
-            if ($primaryCol && empty($mappedData[$primaryCol])) {
-                // If primary identifier wasn't mapped by header, check if first non-empty column value exists
+            if ($primaryCol && !array_key_exists($primaryCol, $mappedData)) {
+                // Primary column wasn't mapped from CSV headers at all — try to find an alternative identifier
                 foreach ($dbColNames as $col) {
                     if ($col !== 'id' && $col !== 'created_at' && $col !== 'created_by' && !empty($mappedData[$col])) {
                         $primaryCol = $col;

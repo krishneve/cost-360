@@ -31,15 +31,18 @@ if (!$activeDivision || empty($activeDivision['division_id'])) {
     exit;
 }
 
-if (!$activeLocation || empty($activeLocation['id'])) {
+$companyId    = $activeCompany['company_id'];
+$divisionId   = $activeDivision['division_id'] ?? null;
+
+// Only enforce location if accessible locations actually exist under the division
+$locationsUnderDiv = (!empty($divisionId)) ? getUserAccessibleLocations($userId, $companyId, $divisionId) : [];
+if ((!$activeLocation || empty($activeLocation['id'])) && count($locationsUnderDiv) > 1) {
     header('Location: organization-selection.php');
     exit;
 }
 
-$companyId    = $activeCompany['company_id'];
-$divisionId   = $activeDivision['division_id'];
-$locationType = $activeLocation['type_code'] ?? 'plant';
-$locationId   = $activeLocation['id'];
+$locationType = $activeLocation['type_code'] ?? null;
+$locationId   = $activeLocation['id'] ?? null;
 $errorMessage = '';
 
 /* ============================================================
@@ -66,11 +69,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $periods = getUserAccessiblePeriods($companyId, $userId, $divisionId, $locationType, $locationId);
 
 /* ============================================================
-   DYNAMIC SKIP: AUTO-SELECT SINGLE ACTIVE PERIOD
+   DYNAMIC SKIP: AUTO-SELECT SINGLE ACTIVE PERIOD OR ADVANCE IF NONE
    ============================================================ */
-if (count($periods) === 1 && empty($_POST)) {
-    $singlePeriod = $periods[0];
-    if (setActivePeriod($singlePeriod['period_id'])) {
+if (empty($_POST)) {
+    if (count($periods) === 1) {
+        $singlePeriod = $periods[0];
+        if (setActivePeriod($singlePeriod['period_id'])) {
+            header('Location: dashboard.php');
+            exit;
+        }
+    } elseif (count($periods) === 0) {
         header('Location: dashboard.php');
         exit;
     }

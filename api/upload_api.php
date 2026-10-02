@@ -30,6 +30,12 @@ try {
 
     switch ($action) {
         case 'upload':
+            $canUpload = isPlatformAdmin($user['user_id']) || userHasPermission('UPLOAD', 'UPLOAD_CENTRE', $user['user_id']) || userHasPermission('UPLOAD', null, $user['user_id']);
+            if (!$canUpload) {
+                http_response_code(403);
+                echo json_encode(['ok' => false, 'message' => 'Permission Denied: Your role does not have permission to upload files.']);
+                exit;
+            }
             $files = $_FILES['files'] ?? null;
             if (!$files) {
                 echo json_encode(['ok' => false, 'message' => 'No files uploaded.']);

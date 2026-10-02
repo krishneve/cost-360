@@ -76,36 +76,34 @@ if (isLoggedIn()) {
         exit;
     }
 
+    $userId = $_SESSION['user_id'] ?? null;
+    if ($userId) {
+        autoResolveSingleScopeChain($userId);
+    }
     $ctx = getActiveOrganizationContext();
 
-    if (
-        $ctx &&
-        !empty($ctx['company_id']) &&
-        !empty($ctx['division_id']) &&
-        !empty($ctx['plant_id']) &&
-        !empty($ctx['warehouse_id']) &&
-        !empty($ctx['period_id'])
-    ) {
+    if ($ctx && !empty($ctx['company_id'])) {
+        $divs = getUserAccessibleDivisions($userId, $ctx['company_id']);
+        $hasDiv = !empty($ctx['division_id']) || empty($divs);
 
-        if ($isAjax) {
+        $locs = (!empty($ctx['division_id'])) ? getUserAccessibleLocations($userId, $ctx['company_id'], $ctx['division_id']) : [];
+        $hasLoc = !empty($ctx['plant_id']) || !empty($ctx['warehouse_id']) || empty($locs);
 
-            header(
-                'Content-Type: application/json'
-            );
+        $pers = getUserAccessiblePeriods($ctx['company_id'], $userId);
+        $hasPer = !empty($ctx['period_id']) || empty($pers);
 
-            echo json_encode([
-                'success' => true,
-                'redirect' => 'dashboard.php'
-            ]);
-
+        if ($hasDiv && $hasLoc && $hasPer) {
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => true,
+                    'redirect' => 'dashboard.php'
+                ]);
+                exit;
+            }
+            header('Location: dashboard.php');
             exit;
         }
-
-        header(
-            'Location: dashboard.php'
-        );
-
-        exit;
     }
 
 
@@ -535,168 +533,54 @@ if (isPlatformAdmin($user['user_id']) || isCmaAdmin($user['user_id'])) {
 
     exit;
 }
-                        $accessibleCompanies =
-                            getUserAccessibleCompanies(
-                                $user['user_id']
-                            );
+                        autoResolveSingleScopeChain($user['user_id']);
+                        $accessibleCompanies = getUserAccessibleCompanies($user['user_id']);
+                        $companyCount = count($accessibleCompanies);
 
-
-                        $companyCount =
-                            count(
-                                $accessibleCompanies
-                            );
-
-
-                        /* =====================================
-                           NO COMPANY ACCESS
-                           ===================================== */
-
-                        if (
-                            $companyCount === 0
-                        ) {
-
-                            $errorMessage =
-                                'Your account is authenticated, but no company access has been assigned.';
-
-                            /*
-                             * Remove the authenticated session
-                             * because the user cannot enter the
-                             * Cost360 application without an
-                             * organization/company context.
-                             */
-
+                        if ($companyCount === 0) {
+                            $errorMessage = 'Your account is authenticated, but no company access has been assigned.';
                             $_SESSION = [];
-
-                            if (
-                                ini_get(
-                                    'session.use_cookies'
-                                )
-                            ) {
-
-                                $params =
-                                    session_get_cookie_params();
-
-                                setcookie(
-                                    session_name(),
-                                    '',
-                                    time() - 42000,
-                                    $params['path'],
-                                    $params['domain'],
-                                    $params['secure'],
-                                    $params['httponly']
-                                );
+                            if (ini_get('session.use_cookies')) {
+                                $params = session_get_cookie_params();
+                                setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+                            }
+                            session_destroy();
+                        } else {
+                            $nextRedirect = 'company-selection.php';
+                            if (empty($_SESSION['active_company_id'])) {
+                                $nextRedirect = 'company-selection.php';
+                            } else {
+                                $divs = getUserAccessibleDivisions($user['user_id'], $_SESSION['active_company_id']);
+                                if (empty($_SESSION['active_division_id']) && count($divs) > 1) {
+                                    $nextRedirect = 'division-selection.php';
+                                } else {
+                                    $divId = $_SESSION['active_division_id'] ?? null;
+                                    $locs = ($divId) ? getUserAccessibleLocations($user['user_id'], $_SESSION['active_company_id'], $divId) : [];
+                                    $hasLoc = !empty($_SESSION['active_plant_id']) || !empty($_SESSION['active_warehouse_id']);
+                                    if (!$hasLoc && count($locs) > 1) {
+                                        $nextRedirect = 'organization-selection.php';
+                                    } else {
+                                        $pers = getUserAccessiblePeriods($_SESSION['active_company_id'], $user['user_id'], $divId, $_SESSION['active_location_type'] ?? null, $_SESSION['active_plant_id'] ?? $_SESSION['active_warehouse_id'] ?? null);
+                                        if (empty($_SESSION['active_period_id']) && count($pers) > 1) {
+                                            $nextRedirect = 'period-selection.php';
+                                        } else {
+                                            $nextRedirect = 'dashboard.php';
+                                        }
+                                    }
+                                }
                             }
 
-                            session_destroy();
-
-
-                        } else {
-
-                            /* =================================
-                               ONE COMPANY
-                               ================================= */
-
-                            if (
-                                $companyCount === 1
-                            ) {
-
-                                $company =
-                                    $accessibleCompanies[0];
-
-
-                                /*
-                                 * Automatically select
-                                 * the only accessible company.
-                                 */
-
-                                $companySelected =
-                                    setActiveCompany(
-                                        $company['company_id']
-                                    );
-
-
-                                if (
-                                    !$companySelected
-                                ) {
-
-                                    $errorMessage =
-                                        'Unable to set the active company. Please contact support.';
-
-                                } else {
-
-                                    /* =========================
-                                       AJAX RESPONSE
-                                       ========================= */
-
-                                    if ($isAjax) {
-
-                                        header(
-                                            'Content-Type: application/json'
-                                        );
-
-                                        echo json_encode([
-                                            'success' =>
-                                                true,
-
-                                            'redirect' =>
-                                                'division-selection.php'
-                                        ]);
-
-                                        exit;
-                                    }
-
-
-                                    /* =========================
-                                       NORMAL RESPONSE
-                                       ========================= */
-
-                                    header(
-                                        'Location: division-selection.php'
-                                    );
-
-                                    exit;
-                                }
-
-
-                            } else {
-
-                                /* =============================
-                                   MULTIPLE COMPANIES
-                                   ============================= */
-
-                                /*
-                                 * User has access to more than
-                                 * one company.
-                                 *
-                                 * Do not select one automatically.
-                                 *
-                                 * Send user to company selection.
-                                 */
-
-                                if ($isAjax) {
-
-                                    header(
-                                        'Content-Type: application/json'
-                                    );
-
-                                    echo json_encode([
-                                        'success' =>
-                                            true,
-
-                                        'redirect' =>
-                                            'company-selection.php'
-                                    ]);
-
-                                    exit;
-                                }
-
-
-                                header(
-                                    'Location: company-selection.php'
-                                );
-
+                            if ($isAjax) {
+                                header('Content-Type: application/json');
+                                echo json_encode([
+                                    'success' => true,
+                                    'redirect' => $nextRedirect
+                                ]);
                                 exit;
                             }
+
+                            header('Location: ' . $nextRedirect);
+                            exit;
                         }
                     }
 
