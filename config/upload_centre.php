@@ -634,6 +634,11 @@ function executeDataImport($uploadId, $user) {
             }
         }
 
+        // Ensure core customer tables exist in the customer database
+        if (function_exists('ensureCustomerTablesExist')) {
+            ensureCustomerTablesExist($custPdo);
+        }
+
         // Check physically if $targetTable exists in customer database
         $chkTable = $custPdo->prepare("
             SELECT 1 FROM information_schema.tables 
@@ -650,7 +655,7 @@ function executeDataImport($uploadId, $user) {
             }
         }
 
-        // Final physical table existence check
+        // Final physical table existence check (if missing, auto-create dynamic table)
         $chkTableFinal = $custPdo->prepare("
             SELECT 1 FROM information_schema.tables 
             WHERE table_schema = 'public' AND table_name = :tname 
@@ -658,10 +663,24 @@ function executeDataImport($uploadId, $user) {
         ");
         $chkTableFinal->execute([':tname' => $targetTable]);
         if (!$chkTableFinal->fetch()) {
-            return [
-                'ok' => false,
-                'message' => "Target table '{$targetTable}' does not exist in customer database ({$custDbName}). Please select an available customer data type (Items, UOMs, Periods)."
-            ];
+            // Auto-create missing target table in Customer Database on-the-fly
+            try {
+                $custPdo->exec("
+                    CREATE TABLE IF NOT EXISTS public.{$targetTable} (
+                        id BIGSERIAL PRIMARY KEY,
+                        code VARCHAR(100),
+                        name VARCHAR(255),
+                        description TEXT,
+                        status VARCHAR(20) DEFAULT 'Active',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                ");
+            } catch (Throwable $createEx) {
+                return [
+                    'ok' => false,
+                    'message' => "Target table '{$targetTable}' does not exist in customer database ({$custDbName}) and auto-creation failed: " . $createEx->getMessage()
+                ];
+            }
         }
 
         // Discover dynamic target columns for this table in $custPdo
