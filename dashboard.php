@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/config/auth.php';
 require_once __DIR__ . '/config/upload_centre.php';
+require_once __DIR__ . '/config/subscription.php';
 
 /*
  * Cost360 dashboard requires:
@@ -18,6 +19,26 @@ requireActiveCompany();
 $user = getAuthUser();
 $role = getCurrentUserRole();
 $authorizedMenus = getUserAuthorizedMenus();
+
+$currentPage = $_GET['page'] ?? 'home';
+$activeMenuName = 'Dashboard';
+if (!empty($authorizedMenus)) {
+    foreach ($authorizedMenus as $m) {
+        if (!empty($m['route']) && (strpos($m['route'], 'page=' . $currentPage) !== false || strpos($m['route'], $currentPage) !== false)) {
+            $activeMenuName = $m['menu_name'];
+            break;
+        }
+    }
+}
+if ($currentPage === 'users') {
+    $activeMenuName = 'User Master';
+} elseif ($currentPage === 'user-access') {
+    $activeMenuName = 'User Access Mapping';
+} elseif ($currentPage === 'cma-users') {
+    $activeMenuName = 'CMA Users';
+} elseif ($currentPage === 'companies') {
+    $activeMenuName = 'Company Management';
+}
 
 /*
  * Active 6-tier organization & period context.
@@ -73,8 +94,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // Determine the current URL to set active menu states
-$currentUrl = $_SERVER['REQUEST_URI'];
-$currentPage = strtolower($_GET['page'] ?? 'dashboard'); // Kept as fallback for module inclusion, but we won't use it for navigation state
+$currentUrl = $_SERVER['REQUEST_URI'] ?? $_SERVER['SCRIPT_NAME'] ?? '/dashboard.php';
+$currentPage = strtolower($_GET['page'] ?? 'dashboard'); // Kept as fallback for module inclusion
 
 // Upload Centre dynamic data (Lazy-loaded per module page for instant rendering)
 $uploadStats = ($currentPage === 'upload') ? getUploadCentreStats($user['user_id']) : ['files' => 0, 'imports' => 0, 'rows' => 0, 'warnings' => 0, 'errors' => 0, 'pending' => 0];
@@ -122,13 +143,17 @@ if (!function_exists('formatMenuRouteUrl')) {
         $lower = strtolower($r);
 
         // If route is simply 'dashboard', point to dashboard.php
-        if ($lower === 'dashboard') {
+        if ($lower === 'dashboard' || $lower === 'dashboard.php') {
             return $prefix . 'dashboard.php';
         }
 
         // Parent modules with no standalone page shouldn't navigate away to a 404
-        $parentOnlyRoutes = ['administration', 'data', 'costing', 'audit', 'reports', 'settings', 'organization', 'customers', 'customer_mgmt', 'administration/subscriptions', 'subscriptions', 'administration/cma', 'cma', 'cma/users', 'cma/companies', 'cma/access'];
-        if (in_array($lower, $parentOnlyRoutes)) {
+        $parentOnlyRoutes = [
+            'administration', 'admin', 'data', 'costing', 'audit', 'reports', 'settings',
+            'organization', 'customers', 'customer_mgmt', 'administration/subscriptions',
+            'subscriptions', 'administration/cma', 'cma', 'cma/user-management', 'cma_user_mgmt'
+        ];
+        if (in_array(rtrim($lower, '/'), $parentOnlyRoutes)) {
             return 'javascript:void(0);';
         }
 
@@ -148,10 +173,9 @@ if (!function_exists('formatMenuRouteUrl')) {
             'admin/roles'                            => 'admin/roles/',
             'administration/menus'                   => 'admin/menus/',
             'admin/menus'                            => 'admin/menus/',
-            'administration/cma/admins'              => 'administration/cma/admins/',
-            'admin/cma-admins'                       => 'admin/cma-admins/',
             'cma/users'                              => 'cma/users/',
             'cma/users/'                             => 'cma/users/',
+            'cma-users'                              => 'cma/users/',
             'cma/access'                             => 'cma/access/',
             'cma/access/'                            => 'cma/access/',
             'user-access'                            => 'cma/access/',
@@ -1228,25 +1252,69 @@ if (!function_exists('formatMenuRouteUrl')) {
                   }
               }
           }
+          unset($m); // Break dangling reference to last $menuMap element
 
           // Recursive function to mark active routes
           if (!function_exists('markActiveMenus')) {
-              function markActiveMenus(&$node, $currentUrl, $baseUrlPrefix) {
+              function markActiveMenus(&$node, $currentUrl, $baseUrlPrefix, $currentPage = '') {
                   $isActive = false;
+                  $menuCode = strtoupper(trim($node['menu_code'] ?? ''));
+                  $nodeRoute = trim($node['route'] ?? '');
 
-                  $menuRoute = formatMenuRouteUrl($node['route'], $baseUrlPrefix);
-                  if ($menuRoute !== '#' && $menuRoute !== '') {
-                      $normUrl = parse_url($currentUrl, PHP_URL_PATH) . (parse_url($currentUrl, PHP_URL_QUERY) ? '?' . parse_url($currentUrl, PHP_URL_QUERY) : '');
-                      $normMenu = parse_url($menuRoute, PHP_URL_PATH) . (parse_url($menuRoute, PHP_URL_QUERY) ? '?' . parse_url($menuRoute, PHP_URL_QUERY) : '');
-
-                      if (strpos($normUrl, ltrim($normMenu, '/')) !== false || strpos($normUrl, $normMenu) !== false) {
+                  // 1. Direct page matching via $currentPage
+                  if ($currentPage !== '') {
+                      if ($currentPage === 'cma-users' && ($menuCode === 'CMA_USERS' || strpos($nodeRoute, 'cma/users') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'user-access' && ($menuCode === 'CMA_ACCESS_MAPPING' || strpos($nodeRoute, 'cma/access') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'users' && ($menuCode === 'USER_MASTER' || strpos($nodeRoute, 'admin/users') !== false || strpos($nodeRoute, 'administration/users') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'roles' && ($menuCode === 'ROLE_MASTER' || strpos($nodeRoute, 'admin/roles') !== false || strpos($nodeRoute, 'administration/roles') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'menus' && ($menuCode === 'MENU_MASTER' || strpos($nodeRoute, 'admin/menus') !== false || strpos($nodeRoute, 'administration/menus') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'companies' && ($menuCode === 'ORG_COMPANIES' || strpos($nodeRoute, 'companies') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'divisions' && ($menuCode === 'ORG_DIVISIONS' || strpos($nodeRoute, 'divisions') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'plants' && ($menuCode === 'ORG_PLANTS' || strpos($nodeRoute, 'plants') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'warehouses' && ($menuCode === 'ORG_WAREHOUSES' || strpos($nodeRoute, 'warehouses') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'periods' && ($menuCode === 'ORG_PERIODS' || strpos($nodeRoute, 'periods') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'overview' && ($menuCode === 'ORG_OVERVIEW' || strpos($nodeRoute, 'overview') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'customers' && ($menuCode === 'CUSTOMER_MASTER' || $menuCode === 'CUSTOMERS')) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'upload' && ($menuCode === 'UPLOAD_CENTER' || strpos($nodeRoute, 'upload') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'mapping' && ($menuCode === 'MAPPING' || strpos($nodeRoute, 'mapping') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'history' && strpos($nodeRoute, 'history') !== false) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'audit' && ($menuCode === 'AUDIT' || strpos($nodeRoute, 'audit') !== false)) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'subscription-plans' && strpos($nodeRoute, 'subscriptions/plans') !== false) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'customer-subscriptions' && strpos($nodeRoute, 'subscriptions/customers') !== false) {
+                          $isActive = true;
+                      } elseif ($currentPage === 'dashboard' && $menuCode === 'DASHBOARD') {
                           $isActive = true;
                       }
                   }
 
-                  if (!$isActive && strpos($currentUrl, 'dashboard.php') !== false && strpos($currentUrl, '?page') === false) {
-                      if (strcasecmp($node['menu_code'], 'DASHBOARD') === 0) {
-                          $isActive = true;
+                  // 2. URL Path Matching (normalized without ../)
+                  if (!$isActive && !empty($nodeRoute) && $nodeRoute !== '#') {
+                      $formattedRoute = formatMenuRouteUrl($nodeRoute, '');
+                      if ($formattedRoute !== 'javascript:void(0);' && $formattedRoute !== '#') {
+                          $cleanRoute = trim(preg_replace('/\.\.\//', '', $formattedRoute), '/');
+                          $normUrlPath = trim(parse_url($currentUrl, PHP_URL_PATH) ?? '', '/');
+                          if (!empty($cleanRoute)) {
+                              if ($normUrlPath === $cleanRoute || substr($normUrlPath, -strlen($cleanRoute)) === $cleanRoute || strpos($normUrlPath, $cleanRoute) !== false) {
+                                  $isActive = true;
+                              }
+                          }
                       }
                   }
 
@@ -1254,7 +1322,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                   $childActive = false;
 
                   foreach ($node['children'] as &$child) {
-                      if (markActiveMenus($child, $currentUrl, $baseUrlPrefix)) {
+                      if (markActiveMenus($child, $currentUrl, $baseUrlPrefix, $currentPage)) {
                           $childActive = true;
                       }
                   }
@@ -1269,8 +1337,9 @@ if (!function_exists('formatMenuRouteUrl')) {
 
           $activeMenuName = 'Cost Management & Manufacturing Analytics';
           foreach ($menuTree as &$rootMenu) {
-              markActiveMenus($rootMenu, $currentUrl, $baseUrlPrefix);
+              markActiveMenus($rootMenu, $currentUrl, $baseUrlPrefix, $currentPage);
           }
+          unset($rootMenu); // Break dangling reference to last $menuTree element
 
           if (!function_exists('findActiveMenuName')) {
               function findActiveMenuName($nodes, &$activeName) {
@@ -1298,7 +1367,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                       if ($hasChildren) {
                           echo '<div class="nav-parent-group ' . ($isActive ? 'open' : '') . '">';
                           echo '<div class="nav-item nav-parent-item ' . ($isActive ? 'active' : '') . '">';
-                          echo '<a href="' . $linkHref . '" class="nav-link-main">';
+                          echo '<a href="javascript:void(0);" class="nav-link-main" onclick="toggleSubmenu(this); return false;">';
                           echo '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
                           echo getMenuIconSvg($node['icon']);
                           echo '</svg>';
@@ -1325,7 +1394,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                       if ($hasChildren) {
                           echo '<div class="nav-parent-group ' . ($isActive ? 'open' : '') . '">';
                           echo '<div class="nav-item nav-parent-item ' . ($isActive ? 'active' : '') . '">';
-                          echo '<a href="' . $linkHref . '" class="nav-link-main nav-child-item">';
+                          echo '<a href="javascript:void(0);" class="nav-link-main nav-child-item" onclick="toggleSubmenu(this); return false;">';
                           echo '<span class="child-indent-arrow" style="margin-left: ' . (($depth - 1) * 10) . 'px;">&rarr;</span>';
                           echo '<span>' . htmlspecialchars($node['menu_name']) . '</span>';
                           echo '</a>';
@@ -2012,10 +2081,8 @@ if (!function_exists('formatMenuRouteUrl')) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                   <div>
                     <label class="dropdown-label">Subscription Plan *</label>
-                    <select id="wizSubPlan" name="subscription_plan" class="cost360-select">
-                      <option value="Enterprise">Enterprise (Multi-Plant / Full Access)</option>
-                      <option value="Professional">Professional (Standard Operations)</option>
-                      <option value="Standard">Standard (Single Plant)</option>
+                    <select id="wizSubPlan" name="plan_id" class="cost360-select">
+                      <option value="">Loading active plans from subscription_plans...</option>
                     </select>
                   </div>
                   <div>
@@ -2042,9 +2109,9 @@ if (!function_exists('formatMenuRouteUrl')) {
                 <div style="background: var(--color-soft-blue); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--color-border); margin-bottom: 1rem;">
                   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                     <span style="font-weight: 700; color: var(--color-deep-navy);">Provisioning Mode:</span>
-                    <span class="status-badge" style="background: #D1FAE5; color: #065F46;">Connected (Neon Global DB)</span>
+                    <span class="status-badge" style="background: #D1FAE5; color: #065F46;">Auto-Provisioning Enabled (Dedicated DB)</span>
                   </div>
-                  <p style="font-size: 0.85rem; color: var(--color-secondary-text);">The customer tenant will be provisioned in the central Neon PostgreSQL global database architecture with isolated schema routing.</p>
+                  <p style="font-size: 0.85rem; color: var(--color-secondary-text);">A dedicated PostgreSQL database <code>cust&lt;ID&gt;</code> will be automatically created on PostgreSQL Server and initialized with isolated schema tables (<code>period</code>, <code>uoms</code>, <code>items</code>).</p>
                 </div>
               </div>
 
@@ -2631,6 +2698,34 @@ if (!function_exists('formatMenuRouteUrl')) {
         <!-- ============================================================
              USER MASTER PAGE MODULE (DYNAMIC FROM NEON DB)
              ============================================================ -->
+        <!-- SUBSCRIPTION USER LIMIT AWARENESS BANNER -->
+        <div id="cmaSubLimitBanner" style="display: none; background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 12px; padding: 1.15rem 1.35rem; margin-bottom: 1.5rem; box-shadow: var(--shadow-card);">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div style="width: 46px; height: 46px; border-radius: 12px; background: rgba(0, 207, 239, 0.12); color: var(--color-primary-blue); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              </div>
+              <div>
+                <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--color-secondary-text); letter-spacing: 0.05em;">Subscription User Limit</div>
+                <div style="font-size: 1.1rem; font-weight: 800; color: var(--color-deep-navy);" id="cmaSubPlanTitle">Active Plan: Loading...</div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 1.75rem; flex-wrap: wrap;">
+              <div>
+                <span style="font-size: 0.78rem; color: var(--color-secondary-text); display: block; font-weight: 500;">Users Provisioned</span>
+                <span style="font-size: 1.15rem; font-weight: 800; color: var(--color-primary-text);" id="cmaSubUsersUsed">0 / 0</span>
+              </div>
+              <div>
+                <span style="font-size: 0.78rem; color: var(--color-secondary-text); display: block; font-weight: 500;">Slots Available</span>
+                <span style="font-size: 1.15rem; font-weight: 800; color: var(--color-bright-cyan);" id="cmaSubSlotsAvailable">0</span>
+              </div>
+              <div id="cmaSubLimitBadge" style="display: none; padding: 0.45rem 0.95rem; border-radius: 20px; font-size: 0.8rem; font-weight: 700; background: #FEE2E2; color: #DC2626; border: 1px solid #FCA5A5;">
+                User limit reached for the current subscription.
+              </div>
+            </div>
+          </div>
+        </div>
+
         <section class="grid-cards" style="margin-bottom: 1.5rem;">
           <div class="stat-card">
             <div class="stat-header"><span class="stat-label">Total Users</span></div>
@@ -2658,10 +2753,10 @@ if (!function_exists('formatMenuRouteUrl')) {
           <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
             <div>
               <h2 class="section-title" style="margin-bottom: 0.2rem;">User Master</h2>
-              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage application users and their roles</p>
+              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Manage application users, roles, and organizational access mappings</p>
             </div>
             <div style="display: flex; gap: 0.75rem;">
-              <button type="button" class="btn-primary" onclick="openAddUserModal()">
+              <button type="button" class="btn-primary" id="openAddUserBtn" onclick="openAddUserModal()">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -2801,6 +2896,14 @@ if (!function_exists('formatMenuRouteUrl')) {
                     <option value="LOCKED">LOCKED</option>
                   </select>
                 </div>
+              </div>
+
+              <div id="addUserCustomerWrap" style="display: none;">
+                <label class="dropdown-label">Customer / Tenant Organization <span style="color: #DC2626;">*</span></label>
+                <select name="customer_id" id="addUserCustomerSelect" class="cost360-select">
+                  <option value="">Select Customer Organization...</option>
+                </select>
+                <small style="color: var(--color-secondary-text); font-size: 0.78rem;">Required for CMA Admin and customer-scoped accounts.</small>
               </div>
 
               <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 1rem;">
@@ -3038,6 +3141,88 @@ if (!function_exists('formatMenuRouteUrl')) {
                 Save Access Scope
               </button>
             </div>
+        <!-- MANAGE USER ACCESS MODAL (SECTION 7-19 SPECIFICATION) -->
+        <div id="manageUserAccessModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.65); z-index: 1050; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+          <div class="cost360-modal-dialog" style="background: #FFFFFF; border-radius: 16px; width: 100%; max-width: 780px; box-shadow: 0 25px 50px -12px rgba(3, 54, 101, 0.25); border: 1px solid var(--color-border); overflow: hidden; display: flex; flex-direction: column; max-height: 92vh;">
+            
+            <!-- Modal Header -->
+            <div style="padding: 1.25rem 1.5rem; background: linear-gradient(180deg, var(--color-deep-navy) 0%, var(--color-dark-blue) 100%); color: #FFFFFF; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--color-bright-cyan); letter-spacing: 0.05em;">Organizational Access Configurator</div>
+                <h3 style="font-size: 1.2rem; font-weight: 700; margin: 0.2rem 0 0 0; color: #FFFFFF;" id="manageAccessModalUserTitle">Manage User Access</h3>
+              </div>
+              <button type="button" onclick="closeModal('manageUserAccessModal')" style="background: rgba(255,255,255,0.1); border: none; cursor: pointer; color: #FFFFFF; font-size: 1.2rem; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">&times;</button>
+            </div>
+
+            <form id="manageAccessModalForm" onsubmit="submitManageUserAccessConfig(event)" style="display: flex; flex-direction: column; overflow: hidden; flex: 1;">
+              <input type="hidden" id="manageAccessTargetUserId" name="user_id">
+              
+              <div style="padding: 1.5rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 1.25rem;">
+                <div id="manageAccessErrorBox" style="display: none; padding: 0.75rem 1rem; background: #FEE2E2; border-left: 4px solid #DC2626; color: #991B1B; border-radius: 6px; font-size: 0.85rem; font-weight: 600;"></div>
+
+                <!-- Section 8 & 9: Access Mode Radio Selector -->
+                <div>
+                  <label style="display: block; font-weight: 700; font-size: 0.88rem; margin-bottom: 0.5rem; color: var(--color-primary-text);">Access Mode</label>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <label style="display: flex; align-items: flex-start; gap: 0.65rem; padding: 0.85rem 1rem; background: var(--color-page-bg); border: 2px solid var(--color-primary-blue); border-radius: 10px; cursor: pointer; transition: all 0.2s ease;" id="accessModeFullCard">
+                      <input type="radio" name="modalAccessMode" value="FULL" style="margin-top: 2px;" onchange="onModalAccessModeToggle()">
+                      <div>
+                        <strong style="display: block; font-size: 0.9rem; color: var(--color-deep-navy);">Full Access</strong>
+                        <span style="font-size: 0.78rem; color: var(--color-secondary-text);">Grants access to all companies, divisions, and physical locations in customer scope.</span>
+                      </div>
+                    </label>
+                    <label style="display: flex; align-items: flex-start; gap: 0.65rem; padding: 0.85rem 1rem; background: var(--color-page-bg); border: 2px solid var(--color-primary-blue); border-radius: 10px; cursor: pointer; transition: all 0.2s ease;" id="accessModeSelectedCard">
+                      <input type="radio" name="modalAccessMode" value="SELECTED" checked style="margin-top: 2px;" onchange="onModalAccessModeToggle()">
+                      <div>
+                        <strong style="display: block; font-size: 0.9rem; color: var(--color-deep-navy);">Selected Organizations</strong>
+                        <span style="font-size: 0.78rem; color: var(--color-secondary-text);">Configure specific companies and granular division/plant access levels.</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Section 9: Full Access Info Banner -->
+                <div id="fullAccessInfoContainer" style="display: none; padding: 1rem 1.25rem; background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 10px; color: #3730A3; font-size: 0.85rem; line-height: 1.5;">
+                  <strong style="display: block; font-size: 0.92rem; margin-bottom: 0.25rem; color: #1E1B4B;">FULL ACCESS ACTIVE</strong>
+                  This user will automatically inherit access to <strong>all companies, all divisions, and all physical locations (plants & warehouses)</strong> within your organization. No individual company selection is required.
+                </div>
+
+                <!-- Section 10-15: Selected Organizations Configurator -->
+                <div id="selectedOrgsConfigContainer">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <label style="font-weight: 700; font-size: 0.88rem; color: var(--color-primary-text);">Select Companies &amp; Access Levels</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                      <button type="button" class="btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="selectAllCompaniesInAccessModal(true)">Select All</button>
+                      <button type="button" class="btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="selectAllCompaniesInAccessModal(false)">Clear Selection</button>
+                    </div>
+                  </div>
+
+                  <div style="margin-bottom: 0.85rem; position: relative;">
+                    <input type="text" id="modalCompSearchInput" class="cost360-select" placeholder="Search companies..." onkeyup="filterCompaniesInAccessModal()" style="padding-left: 2.25rem; font-size: 0.85rem;">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--color-secondary-text)" stroke-width="2" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  </div>
+
+                  <div id="modalCompanyCardsList" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 260px; overflow-y: auto; padding-right: 4px;">
+                    <div style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">Loading company hierarchy...</div>
+                  </div>
+                </div>
+
+                <!-- Section 16: Effective Access Preview Box -->
+                <div style="border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; background: #FAFDFE;">
+                  <div style="padding: 0.65rem 1rem; background: var(--color-soft-blue); border-bottom: 1px solid var(--color-border); font-weight: 700; font-size: 0.8rem; color: var(--color-deep-navy); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: space-between;">
+                    <span>EFFECTIVE ACCESS PREVIEW</span>
+                    <span style="font-weight: 600; text-transform: none; font-size: 0.75rem; color: var(--color-secondary-text);">Real-time Hierarchy Tree</span>
+                  </div>
+                  <pre id="modalEffectiveAccessTreePreview" style="padding: 1rem; margin: 0; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.82rem; color: var(--color-primary-text); max-height: 180px; overflow-y: auto; white-space: pre-wrap; line-height: 1.45;">Updating effective access preview...</pre>
+                </div>
+              </div>
+
+              <!-- Modal Footer -->
+              <div style="padding: 1rem 1.5rem; background: var(--color-page-bg); border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 0.75rem;">
+                <button type="button" class="btn-secondary" onclick="closeModal('manageUserAccessModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="saveUserAccessConfigBtn">Save Access</button>
+              </div>
+            </form>
           </div>
         </div>
 
@@ -3097,7 +3282,22 @@ if (!function_exists('formatMenuRouteUrl')) {
             }
             if (addSelect) {
               addSelect.innerHTML = '<option value="">Select Role...</option>' +
-                roles.map(r => `<option value="${r.role_id}">${escapeHtml(r.role_name)} (${escapeHtml(r.role_code)})</option>`).join('');
+                roles.map(r => `<option value="${r.role_id}" data-role-code="${escapeHtml(r.role_code)}">${escapeHtml(r.role_name)} (${escapeHtml(r.role_code)})</option>`).join('');
+
+              addSelect.onchange = function() {
+                const opt = this.options[this.selectedIndex];
+                const code = opt ? (opt.getAttribute('data-role-code') || '').toUpperCase() : '';
+                const custWrap = document.getElementById('addUserCustomerWrap');
+                const custSelect = document.getElementById('addUserCustomerSelect');
+                if (code === 'CMA_ADMIN' || code === 'CUSTOMER_ADMIN' || code === 'CUSTOMER_MANAGER' || code === 'CMA_USER') {
+                  if (custWrap) custWrap.style.display = 'block';
+                  if (custSelect) custSelect.required = true;
+                  preloadCustomersForUserMaster();
+                } else {
+                  if (custWrap) custWrap.style.display = 'none';
+                  if (custSelect) { custSelect.required = false; custSelect.value = ''; }
+                }
+              };
             }
             if (editSelect) {
               editSelect.innerHTML = '<option value="">Select Role...</option>' +
@@ -3122,7 +3322,7 @@ if (!function_exists('formatMenuRouteUrl')) {
 
             tbody.innerHTML = `
               <tr>
-                <td colspan="10" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                <td colspan="9" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
                   Loading users...
                 </td>
               </tr>
@@ -3150,11 +3350,44 @@ if (!function_exists('formatMenuRouteUrl')) {
                 return;
               }
 
+              // Update Subscription Limit Awareness Banner
+              if (data.subscription_limit) {
+                const subBanner = document.getElementById('cmaSubLimitBanner');
+                const usedCountEl = document.getElementById('cmaSubLimitUsedCount');
+                const availCountEl = document.getElementById('cmaSubLimitAvailableCount');
+                const subBadge = document.getElementById('cmaSubLimitBadge');
+                const addBtn = document.getElementById('openAddUserBtn');
+
+                if (subBanner && usedCountEl && availCountEl) {
+                  subBanner.style.display = 'block';
+                  usedCountEl.textContent = `${data.subscription_limit.current_users} / ${data.subscription_limit.max_users} users used`;
+                  availCountEl.textContent = `${data.subscription_limit.available_users} users available`;
+
+                  if (!data.subscription_limit.allowed) {
+                    if (subBadge) subBadge.style.display = 'block';
+                    if (addBtn) {
+                      addBtn.disabled = true;
+                      addBtn.style.opacity = '0.6';
+                      addBtn.style.cursor = 'not-allowed';
+                      addBtn.title = 'User limit reached for current subscription.';
+                    }
+                  } else {
+                    if (subBadge) subBadge.style.display = 'none';
+                    if (addBtn) {
+                      addBtn.disabled = false;
+                      addBtn.style.opacity = '1';
+                      addBtn.style.cursor = 'pointer';
+                      addBtn.title = '';
+                    }
+                  }
+                }
+              }
+
               if (!data.users || data.users.length === 0) {
-                document.getElementById('kpiTotalUsers').textContent = '0';
-                document.getElementById('kpiActiveUsers').textContent = '0';
-                document.getElementById('kpiLockedUsers').textContent = '0';
-                document.getElementById('kpiUniqueRoles').textContent = '0';
+                if (document.getElementById('kpiTotalUsers')) document.getElementById('kpiTotalUsers').textContent = '0';
+                if (document.getElementById('kpiActiveUsers')) document.getElementById('kpiActiveUsers').textContent = '0';
+                if (document.getElementById('kpiLockedUsers')) document.getElementById('kpiLockedUsers').textContent = '0';
+                if (document.getElementById('kpiUniqueRoles')) document.getElementById('kpiUniqueRoles').textContent = '0';
 
                 tbody.innerHTML = `
                   <tr>
@@ -3179,16 +3412,17 @@ if (!function_exists('formatMenuRouteUrl')) {
                   uniqueRoles.add(u.role_name);
               });
 
-              document.getElementById('kpiTotalUsers').textContent = data.users.length;
-              document.getElementById('kpiActiveUsers').textContent = activeCount;
-              document.getElementById('kpiLockedUsers').textContent = lockedCount;
-              document.getElementById('kpiUniqueRoles').textContent = uniqueRoles.size;
+              if (document.getElementById('kpiTotalUsers')) document.getElementById('kpiTotalUsers').textContent = data.users.length;
+              if (document.getElementById('kpiActiveUsers')) document.getElementById('kpiActiveUsers').textContent = activeCount;
+              if (document.getElementById('kpiLockedUsers')) document.getElementById('kpiLockedUsers').textContent = lockedCount;
+              if (document.getElementById('kpiUniqueRoles')) document.getElementById('kpiUniqueRoles').textContent = uniqueRoles.size;
 
               const currentSessionUserId = <?php echo (int)($user['user_id'] ?? 0); ?>;
 
               tbody.innerHTML = data.users.map(u => {
                 const statusColor = u.status === 'ACTIVE' ? '#00A88F' : (u.status === 'INACTIVE' ? '#6B7F91' : '#DC2626');
                 const statusBg = u.status === 'ACTIVE' ? '#E6F9F6' : (u.status === 'INACTIVE' ? '#F1F5F9' : '#FEE2E2');
+                const accessSummary = u.access_summary || 'Full Access';
 
                 return `
                   <tr>
@@ -3203,21 +3437,13 @@ if (!function_exists('formatMenuRouteUrl')) {
                     </td>
                     <td><span class="role-badge">${escapeHtml(u.role_name)}</span></td>
                     <td><span style="font-size: 0.82rem; color: var(--color-secondary-text);">${escapeHtml(u.created_by_name || 'System')}</span></td>
-                    <td>${escapeHtml(u.last_login_at || 'Never')}</td>
+                    <td>${escapeHtml(u.last_login_at || u.created_at || 'Never')}</td>
                     <td style="text-align: right; white-space: nowrap;">
-                      ${u.can_manage ? `
-                        <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px; border-color: #00A88F; color: #00A88F;" onclick="openViewScopeModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.full_name)}')">
-                          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align: -1px; margin-right: 2px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                          View Scope
-                        </button>
-                        <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditUserModal(${u.user_id})">Edit</button>
-                        <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openChangePasswordModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.email)}')" >Password</button>
-                        ${u.user_id !== currentSessionUserId ? `
-                          <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; color: #DC2626; border-color: #FCA5A5;" onclick="openDeleteModal(${u.user_id}, '${escapeJs(u.username)}')" >Delete</button>
-                        ` : ''}
-                      ` : `
-                        <span style="font-size: 0.78rem; color: var(--color-secondary-text); font-style: italic;">Protected</span>
-                      `}
+                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditUserModal(${u.user_id})">Edit</button>
+                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px; border-color: var(--color-primary-blue); color: var(--color-primary-blue);" onclick="openManageUserAccessModal(${u.user_id}, '${escapeJs(u.full_name)}')">Manage Access</button>
+                      ${u.user_id !== currentSessionUserId ? `
+                        <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; color: ${u.status === 'ACTIVE' ? '#DC2626' : '#059669'}; border-color: ${u.status === 'ACTIVE' ? '#FCA5A5' : '#A7F3D0'};" onclick="toggleUserStatus(${u.user_id}, '${escapeJs(u.status)}')">${u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button>
+                      ` : ''}
                     </td>
                   </tr>
                 `;
@@ -3232,6 +3458,34 @@ if (!function_exists('formatMenuRouteUrl')) {
                   </td>
                 </tr>
               `;
+            }
+          }
+
+          async function toggleUserStatus(userId, currentStatus) {
+            const isAct = String(currentStatus).toUpperCase() === 'ACTIVE';
+            if (!confirm(`Are you sure you want to ${isAct ? 'DEACTIVATE' : 'ACTIVATE'} user account #${userId}?`)) {
+              return;
+            }
+
+            try {
+              const formData = new FormData();
+              formData.append('action', 'toggle_status');
+              formData.append('user_id', userId);
+
+              const res = await fetch(getUserApiUrl(), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                showToast(data.message || 'User status updated.', true);
+                loadUsersTable();
+              } else {
+                showToast(data.error || 'Failed to update user status.', false);
+              }
+            } catch (err) {
+              showToast('Error connecting to database.', false);
             }
           }
 
@@ -3255,8 +3509,7 @@ if (!function_exists('formatMenuRouteUrl')) {
             let csv = [];
             for (let i = 0; i < table.rows.length; i++) {
                 let row = [], cols = table.rows[i].querySelectorAll("td, th");
-                // Skip the actions column
-                let length = (i === 0) ? cols.length - 1 : cols.length - 1;
+                let length = cols.length - 1;
                 for (let j = 0; j < length; j++) {
                     let text = cols[j].innerText.replace(/"/g, '""');
                     row.push('"' + text + '"');
@@ -3273,9 +3526,33 @@ if (!function_exists('formatMenuRouteUrl')) {
             document.body.removeChild(downloadLink);
           }
 
+          async function preloadCustomersForUserMaster() {
+            const select = document.getElementById('addUserCustomerSelect');
+            if (!select || select.options.length > 1) return;
+            try {
+              const res = await fetch((window.cost360BaseUrlPrefix || '') + 'admin/customers/api.php?action=list');
+              const data = await res.json();
+              if (data.success && data.customers) {
+                select.innerHTML = '<option value="">Select Customer Organization...</option>' +
+                  data.customers.map(c => `<option value="${c.customer_id}">${escapeHtml(c.customer_name)} (${escapeHtml(c.customer_code || 'CUST')})</option>`).join('');
+              }
+            } catch (err) {
+              console.error('Failed to load customers for user master:', err);
+            }
+          }
+
           function openAddUserModal() {
             document.getElementById('addUserForm').reset();
             document.getElementById('addUserError').style.display = 'none';
+
+            const addSelect = document.getElementById('addUserRoleSelect');
+            if (addSelect && availableRolesCache.length > 0) {
+              const cmaUserRole = availableRolesCache.find(r => r.role_code === 'CMA_USER');
+              if (cmaUserRole) {
+                addSelect.value = cmaUserRole.role_id;
+              }
+            }
+
             document.getElementById('addUserModal').style.display = 'flex';
           }
 
@@ -3435,6 +3712,363 @@ if (!function_exists('formatMenuRouteUrl')) {
               alert('Server connection error.');
             }
           }
+
+          /* ============================================================
+             MANAGE USER ACCESS MODAL LOGIC (REQUIREMENTS 7 - 19)
+             ============================================================ */
+          async function openManageUserAccessModal(userId, fullName) {
+            currentManageAccessUserId = userId;
+            document.getElementById('manageAccessTargetUserId').value = userId;
+            document.getElementById('manageAccessModalUserTitle').textContent = 'Manage Access - ' + fullName;
+            document.getElementById('manageAccessErrorBox').style.display = 'none';
+            document.getElementById('modalEffectiveAccessTreePreview').textContent = 'Loading access configuration...';
+
+            const cardsContainer = document.getElementById('modalCompanyCardsList');
+            cardsContainer.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">Loading company hierarchy...</div>';
+
+            document.getElementById('manageUserAccessModal').style.display = 'flex';
+
+            try {
+              const res = await fetch(`cma/access/api.php?action=get_user_access_config&user_id=${userId}`);
+              const data = await res.json();
+
+              if (!data.success) {
+                cardsContainer.innerHTML = `<div style="text-align: center; padding: 1.5rem; color: #DC2626;">${escapeHtml(data.error || 'Failed to load user access configuration.')}</div>`;
+                return;
+              }
+
+              modalOrgTreeData = data.companies || [];
+              currentAccessMappingsMap = {};
+
+              (data.mappings || []).forEach(m => {
+                if (m.company_id) {
+                  currentAccessMappingsMap[m.company_id] = {
+                    company_id: m.company_id,
+                    access_level: m.access_level || 'COMPANY',
+                    division_id: m.division_id || '',
+                    physical_location_id: m.plant_id || ''
+                  };
+                }
+              });
+
+              const mode = data.access_mode === 'FULL' ? 'FULL' : 'SELECTED';
+              const fullRadio = document.querySelector('input[name="modalAccessMode"][value="FULL"]');
+              const selectedRadio = document.querySelector('input[name="modalAccessMode"][value="SELECTED"]');
+              if (mode === 'FULL' && fullRadio) fullRadio.checked = true;
+              if (mode === 'SELECTED' && selectedRadio) selectedRadio.checked = true;
+
+              onModalAccessModeToggle();
+              renderModalCompanyCards();
+              updateModalEffectivePreview();
+
+            } catch (err) {
+              cardsContainer.innerHTML = '<div style="text-align: center; padding: 1.5rem; color: #DC2626;">Network error while connecting to server.</div>';
+            }
+          }
+
+          function onModalAccessModeToggle() {
+            const mode = document.querySelector('input[name="modalAccessMode"]:checked')?.value || 'SELECTED';
+            const fullCard = document.getElementById('accessModeFullCard');
+            const selectedCard = document.getElementById('accessModeSelectedCard');
+            const fullInfo = document.getElementById('fullAccessInfoContainer');
+            const selectedOrgs = document.getElementById('selectedOrgsConfigContainer');
+
+            if (mode === 'FULL') {
+              if (fullCard) fullCard.style.borderColor = 'var(--color-primary-blue)';
+              if (selectedCard) selectedCard.style.borderColor = 'var(--color-border)';
+              if (fullInfo) fullInfo.style.display = 'block';
+              if (selectedOrgs) selectedOrgs.style.display = 'none';
+            } else {
+              if (fullCard) fullCard.style.borderColor = 'var(--color-border)';
+              if (selectedCard) selectedCard.style.borderColor = 'var(--color-primary-blue)';
+              if (fullInfo) fullInfo.style.display = 'none';
+              if (selectedOrgs) selectedOrgs.style.display = 'block';
+            }
+
+            updateModalEffectivePreview();
+          }
+
+          function renderModalCompanyCards() {
+            const container = document.getElementById('modalCompanyCardsList');
+            if (!container) return;
+
+            if (!modalOrgTreeData || modalOrgTreeData.length === 0) {
+              container.innerHTML = '<div style="text-align: center; padding: 1.5rem; color: var(--color-secondary-text);">No active companies registered in organization.</div>';
+              return;
+            }
+
+            let html = '';
+            modalOrgTreeData.forEach(comp => {
+              const cid = comp.company_id;
+              const mapping = currentAccessMappingsMap[cid];
+              const isChecked = !!mapping;
+              const accessLvl = mapping ? (mapping.access_level || 'COMPANY') : 'COMPANY';
+              const selDivId = mapping ? (mapping.division_id || '') : '';
+              const selLocId = mapping ? (mapping.physical_location_id || '') : '';
+
+              let badgeHtml = '<span class="status-badge" style="background: #F1F5F9; color: #6B7F91;">Unselected</span>';
+              if (isChecked) {
+                if (accessLvl === 'COMPANY') badgeHtml = '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">FULL COMPANY ACCESS</span>';
+                else if (accessLvl === 'DIVISION') badgeHtml = '<span class="status-badge" style="background: #EEF2FF; color: #4F46E5;">DIVISION ACCESS</span>';
+                else if (accessLvl === 'PLANT') badgeHtml = '<span class="status-badge" style="background: #FEF3C7; color: #D97706;">LOCATION ACCESS</span>';
+              }
+
+              html += `
+                <div class="modal-comp-card" id="compCard_${cid}" style="background: ${isChecked ? '#FAFDFE' : '#FFFFFF'}; border: 1.5px solid ${isChecked ? 'var(--color-primary-blue)' : 'var(--color-border)'}; border-radius: 10px; padding: 0.85rem 1rem; transition: all 0.2s ease;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <label style="display: flex; align-items: center; gap: 0.65rem; cursor: pointer; flex: 1;">
+                      <input type="checkbox" id="compCheck_${cid}" ${isChecked ? 'checked' : ''} onchange="toggleCompanyAccessSelection(${cid})" style="width: 17px; height: 17px; accent-color: var(--color-primary-blue);">
+                      <div>
+                        <strong style="font-size: 0.92rem; color: var(--color-deep-navy);">${escapeHtml(comp.company_name)}</strong>
+                        <span style="font-size: 0.78rem; color: var(--color-secondary-text); margin-left: 6px;">(${escapeHtml(comp.company_code)})</span>
+                      </div>
+                    </label>
+                    <div>${badgeHtml}</div>
+                  </div>
+
+                  <div id="compGranularOpts_${cid}" style="display: ${isChecked ? 'block' : 'none'}; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed var(--color-border);">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; align-items: center;">
+                      <div>
+                        <label style="font-size: 0.75rem; font-weight: 700; color: var(--color-secondary-text); display: block; margin-bottom: 2px;">Access Level</label>
+                        <select class="cost360-select" style="font-size: 0.82rem; padding: 0.35rem 0.5rem;" onchange="onCompanyAccessLevelChange(${cid}, this.value)">
+                          <option value="COMPANY" ${accessLvl === 'COMPANY' ? 'selected' : ''}>Company (Full)</option>
+                          <option value="DIVISION" ${accessLvl === 'DIVISION' ? 'selected' : ''}>Division</option>
+                          <option value="PLANT" ${accessLvl === 'PLANT' ? 'selected' : ''}>Physical Location</option>
+                        </select>
+                      </div>
+
+                      <div id="divSelectContainer_${cid}" style="display: ${accessLvl === 'DIVISION' || accessLvl === 'PLANT' ? 'block' : 'none'};">
+                        <label style="font-size: 0.75rem; font-weight: 700; color: var(--color-secondary-text); display: block; margin-bottom: 2px;">Division *</label>
+                        <select id="divSelect_${cid}" class="cost360-select" style="font-size: 0.82rem; padding: 0.35rem 0.5rem;" onchange="onCompanyDivisionChange(${cid}, this.value)">
+                          <option value="">Select Division...</option>
+                          ${(comp.divisions || []).map(d => `<option value="${d.division_id}" ${String(d.division_id) === String(selDivId) ? 'selected' : ''}>${escapeHtml(d.division_name)}</option>`).join('')}
+                        </select>
+                      </div>
+
+                      <div id="locSelectContainer_${cid}" style="display: ${accessLvl === 'PLANT' ? 'block' : 'none'};">
+                        <label style="font-size: 0.75rem; font-weight: 700; color: var(--color-secondary-text); display: block; margin-bottom: 2px;">Physical Location *</label>
+                        <select id="locSelect_${cid}" class="cost360-select" style="font-size: 0.82rem; padding: 0.35rem 0.5rem;" onchange="onCompanyLocationChange(${cid}, this.value)">
+                          <option value="">Select Location...</option>
+                          ${getPlantsOptionsHtml(comp, selDivId, selLocId)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            });
+
+            container.innerHTML = html;
+          }
+
+          function getPlantsOptionsHtml(comp, selDivId, selLocId) {
+            if (!selDivId || !comp.divisions) return '';
+            const targetDiv = comp.divisions.find(d => String(d.division_id) === String(selDivId));
+            if (!targetDiv || !targetDiv.plants) return '';
+            return targetDiv.plants.map(p => `<option value="${p.plant_id}" ${String(p.plant_id) === String(selLocId) ? 'selected' : ''}>${escapeHtml(p.plant_name)}</option>`).join('');
+          }
+
+          function toggleCompanyAccessSelection(companyId) {
+            const chk = document.getElementById(`compCheck_${companyId}`);
+            if (chk && chk.checked) {
+              currentAccessMappingsMap[companyId] = {
+                company_id: companyId,
+                access_level: 'COMPANY',
+                division_id: '',
+                physical_location_id: ''
+              };
+            } else {
+              delete currentAccessMappingsMap[companyId];
+            }
+            renderModalCompanyCards();
+            updateModalEffectivePreview();
+          }
+
+          function selectAllCompaniesInAccessModal(selectAll) {
+            if (selectAll) {
+              modalOrgTreeData.forEach(c => {
+                if (!currentAccessMappingsMap[c.company_id]) {
+                  currentAccessMappingsMap[c.company_id] = {
+                    company_id: c.company_id,
+                    access_level: 'COMPANY',
+                    division_id: '',
+                    physical_location_id: ''
+                  };
+                }
+              });
+            } else {
+              currentAccessMappingsMap = {};
+            }
+            renderModalCompanyCards();
+            updateModalEffectivePreview();
+          }
+
+          function filterCompaniesInAccessModal() {
+            const q = (document.getElementById('modalCompSearchInput')?.value || '').toLowerCase().trim();
+            modalOrgTreeData.forEach(c => {
+              const card = document.getElementById(`compCard_${c.company_id}`);
+              if (card) {
+                const match = !q || c.company_name.toLowerCase().includes(q) || c.company_code.toLowerCase().includes(q);
+                card.style.display = match ? 'block' : 'none';
+              }
+            });
+          }
+
+          function onCompanyAccessLevelChange(companyId, newLevel) {
+            if (!currentAccessMappingsMap[companyId]) {
+              currentAccessMappingsMap[companyId] = { company_id: companyId, access_level: newLevel, division_id: '', physical_location_id: '' };
+            } else {
+              currentAccessMappingsMap[companyId].access_level = newLevel;
+              if (newLevel === 'COMPANY') {
+                currentAccessMappingsMap[companyId].division_id = '';
+                currentAccessMappingsMap[companyId].physical_location_id = '';
+              }
+            }
+            renderModalCompanyCards();
+            updateModalEffectivePreview();
+          }
+
+          function onCompanyDivisionChange(companyId, divisionId) {
+            if (!currentAccessMappingsMap[companyId]) return;
+            currentAccessMappingsMap[companyId].division_id = divisionId;
+            currentAccessMappingsMap[companyId].physical_location_id = '';
+
+            const comp = modalOrgTreeData.find(c => c.company_id == companyId);
+            const locSelect = document.getElementById(`locSelect_${companyId}`);
+            if (comp && locSelect) {
+              locSelect.innerHTML = '<option value="">Select Location...</option>' + getPlantsOptionsHtml(comp, divisionId, '');
+            }
+            updateModalEffectivePreview();
+          }
+
+          function onCompanyLocationChange(companyId, locationId) {
+            if (!currentAccessMappingsMap[companyId]) return;
+            currentAccessMappingsMap[companyId].physical_location_id = locationId;
+            updateModalEffectivePreview();
+          }
+
+          function updateModalEffectivePreview() {
+            const previewEl = document.getElementById('modalEffectiveAccessTreePreview');
+            if (!previewEl) return;
+
+            const mode = document.querySelector('input[name="modalAccessMode"]:checked')?.value || 'SELECTED';
+
+            if (mode === 'FULL') {
+              previewEl.textContent = "EFFECTIVE ACCESS: FULL SCOPE\n\nAll Companies\n└── All Divisions\n    └── All Physical Locations";
+              return;
+            }
+
+            const selectedCompIds = Object.keys(currentAccessMappingsMap);
+            if (selectedCompIds.length === 0) {
+              previewEl.textContent = "(No companies selected — user will have no active access)";
+              return;
+            }
+
+            let lines = ["EFFECTIVE ACCESS PREVIEW:"];
+
+            selectedCompIds.forEach(cid => {
+              const comp = modalOrgTreeData.find(c => String(c.company_id) === String(cid));
+              if (!comp) return;
+
+              const m = currentAccessMappingsMap[cid];
+              lines.push(`\n${comp.company_name} (${comp.company_code})`);
+
+              if (m.access_level === 'COMPANY') {
+                lines.push("└── FULL COMPANY ACCESS");
+                lines.push("    ├── All Divisions");
+                lines.push("    └── All Physical Locations");
+              } else if (m.access_level === 'DIVISION') {
+                const targetDiv = (comp.divisions || []).find(d => String(d.division_id) === String(m.division_id));
+                const divName = targetDiv ? targetDiv.division_name : '(No division selected)';
+                lines.push(`└── DIVISION ACCESS: ${divName}`);
+                lines.push("    └── All Physical Locations under Division");
+              } else if (m.access_level === 'PLANT') {
+                const targetDiv = (comp.divisions || []).find(d => String(d.division_id) === String(m.division_id));
+                const divName = targetDiv ? targetDiv.division_name : '(No division selected)';
+                let locName = '(No plant selected)';
+                if (targetDiv && targetDiv.plants) {
+                  const targetPlant = targetDiv.plants.find(p => String(p.plant_id) === String(m.physical_location_id));
+                  if (targetPlant) locName = targetPlant.plant_name;
+                }
+                lines.push(`└── DIVISION: ${divName}`);
+                lines.push(`    └── PHYSICAL LOCATION: ${locName}`);
+              }
+            });
+
+            previewEl.textContent = lines.join("\n");
+          }
+
+          async function submitManageUserAccessConfig(e) {
+            e.preventDefault();
+            const errBox = document.getElementById('manageAccessErrorBox');
+            const submitBtn = document.getElementById('saveUserAccessConfigBtn');
+            errBox.style.display = 'none';
+
+            const userId = document.getElementById('manageAccessTargetUserId').value;
+            const mode = document.querySelector('input[name="modalAccessMode"]:checked')?.value || 'SELECTED';
+
+            let mappingsArray = [];
+            if (mode === 'SELECTED') {
+              const selectedCompIds = Object.keys(currentAccessMappingsMap);
+              if (selectedCompIds.length === 0) {
+                errBox.textContent = 'Please select at least one company for custom access configuration.';
+                errBox.style.display = 'block';
+                return;
+              }
+
+              for (const cid of selectedCompIds) {
+                const m = currentAccessMappingsMap[cid];
+                if (m.access_level === 'DIVISION' && !m.division_id) {
+                  errBox.textContent = 'Please select a Division for all Division-level company mappings.';
+                  errBox.style.display = 'block';
+                  return;
+                }
+                if (m.access_level === 'PLANT' && (!m.division_id || !m.physical_location_id)) {
+                  errBox.textContent = 'Please select both Division and Physical Location for Location-level mappings.';
+                  errBox.style.display = 'block';
+                  return;
+                }
+                mappingsArray.push({
+                  company_id: parseInt(m.company_id),
+                  access_level: m.access_level,
+                  division_id: m.division_id ? parseInt(m.division_id) : null,
+                  plant_id: m.physical_location_id ? parseInt(m.physical_location_id) : null
+                });
+              }
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Saving Access...';
+
+            try {
+              const res = await fetch('cma/access/api.php?action=save_user_access_config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  user_id: parseInt(userId),
+                  access_mode: mode,
+                  mappings: mappingsArray
+                })
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeModal('manageUserAccessModal');
+                showToast(data.message || 'User access configuration saved successfully.', true);
+                loadUsersTable();
+              } else {
+                errBox.textContent = data.error || 'Failed to save access configuration.';
+                errBox.style.display = 'block';
+              }
+            } catch (err) {
+              errBox.textContent = 'Server communication error.';
+              errBox.style.display = 'block';
+            } finally {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Save Access';
+            }
+          }
+
 
           function closeModal(modalId) {
             const modal = document.getElementById(modalId);
@@ -7331,35 +7965,33 @@ if (!function_exists('formatMenuRouteUrl')) {
         </script>
 
       
-      <?php elseif ($currentPage === 'cma-admins'): ?>
+      <?php elseif ($currentPage === 'cma-users'): ?>
         <!-- ============================================================
-             CMA ADMIN MANAGEMENT MODULE (PHASE 2 & 3)
+             CMA USER MANAGEMENT MODULE (SECTIONS 5 - 8)
              ============================================================ -->
         <section class="section-card" style="margin-bottom: 1.5rem;">
           <div class="breadcrumb" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--color-secondary-text); margin-bottom: 0.75rem;">
-            <span>Administration</span>
+            <span>CMA User Management</span>
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            <span>CMA Management</span>
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            <span style="color: var(--color-bright-cyan); font-weight: 600;">CMA Admins</span>
+            <span style="color: var(--color-bright-cyan); font-weight: 600;">CMA Users</span>
           </div>
 
           <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
             <div>
-              <h2 class="section-title" style="margin-bottom: 0.25rem;">CMA Administrators</h2>
+              <h2 class="section-title" style="margin-bottom: 0.25rem;">CMA Users</h2>
               <p style="font-size: 0.88rem; color: var(--color-secondary-text); margin: 0;">
-                Provision and manage Cost Management Administrators bound to customer organizations.
+                Manage customer-scoped CMA Users and allocate organizational access.
               </p>
             </div>
-            <div style="display: flex; gap: 0.75rem;">
-              <button type="button" class="btn-primary" onclick="openCreateCmaModal()">
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+              <button type="button" class="btn-primary" id="createCmaUserBtn" onclick="openCreateCmaUserModal()">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                <span>Create CMA Admin</span>
+                <span>+ Create CMA User</span>
               </button>
-              <button type="button" class="btn-secondary" onclick="loadCmaAdminsTable()">
+              <button type="button" class="btn-secondary" onclick="loadCmaUsersTable()">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
                   <polyline points="23 4 23 10 17 10"></polyline>
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
@@ -7370,71 +8002,76 @@ if (!function_exists('formatMenuRouteUrl')) {
           </div>
         </section>
 
-        <!-- KPI SUMMARY CARDS -->
-        <section class="grid-cards" style="margin-bottom: 1.5rem;">
-          <div class="stat-card">
-            <div class="stat-header"><span class="stat-label">Total CMA Admins</span></div>
-            <div class="stat-number" id="kpiTotalCma">-</div>
-            <div class="stat-desc">Provisioned administrators</div>
+        <!-- SUBSCRIPTION QUOTA & USAGE METRICS -->
+        <section class="section-card" style="margin-bottom: 1.5rem; background: linear-gradient(135deg, rgba(3, 54, 101, 0.04) 0%, rgba(0, 112, 186, 0.08) 100%); border: 1px solid #C8DDF2;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div style="width: 44px; height: 44px; border-radius: 10px; background: #0070BA; display: flex; align-items: center; justify-content: center; color: #fff;">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+              </div>
+              <div>
+                <div style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; color: #0284C7; letter-spacing: 0.5px;" id="cmaSubTenantName">Customer Organization</div>
+                <div style="display: flex; align-items: center; gap: 0.6rem; margin-top: 0.15rem;">
+                  <span style="font-size: 1.1rem; font-weight: 700; color: #033665;" id="cmaSubPlanBadge">Plan: Loading...</span>
+                  <span id="cmaSubQuotaBadge" style="font-size: 0.78rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 999px; background: #E0F2FE; color: #0369A1;">- / - Users</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Progress Meter -->
+            <div style="min-width: 240px; flex: 1; max-width: 360px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.35rem; color: #033665;">
+                <span>User Allocation</span>
+                <span id="cmaSubAvailableSlots">- Available</span>
+              </div>
+              <div style="height: 8px; width: 100%; background: #E2E8F0; border-radius: 999px; overflow: hidden;">
+                <div id="cmaSubProgressBar" style="height: 100%; width: 0%; background: #059669; transition: width 0.3s ease;"></div>
+              </div>
+            </div>
           </div>
-          <div class="stat-card">
-            <div class="stat-header"><span class="stat-label">Active Admins</span></div>
-            <div class="stat-number" id="kpiActiveCma" style="color: #059669;">-</div>
-            <div class="stat-desc">Can sign in to Cost360</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-header"><span class="stat-label">Inactive Admins</span></div>
-            <div class="stat-number" id="kpiInactiveCma" style="color: #DC2626;">-</div>
-            <div class="stat-desc">Suspended or disabled</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-header"><span class="stat-label">Customers Covered</span></div>
-            <div class="stat-number" id="kpiCoveredCustomers" style="color: var(--color-bright-cyan);">-</div>
-            <div class="stat-desc">Organizations with CMA Admin</div>
+
+          <!-- Alert Banner when limit is reached -->
+          <div id="cmaQuotaAlertBanner" style="display: none; margin-top: 1rem; padding: 0.75rem 1rem; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; color: #991B1B; font-size: 0.85rem; font-weight: 600;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="display: inline; vertical-align: sub; margin-right: 0.4rem;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span id="cmaQuotaAlertMessage">User limit reached for your active subscription plan.</span>
           </div>
         </section>
 
         <!-- FILTERS & TABLE -->
         <section class="section-card">
           <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
-            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; flex: 1; max-width: 720px;">
-              <div style="position: relative; flex: 1; min-width: 220px;">
-                <input type="text" id="cmaSearchInput" class="cost360-input" placeholder="Search by name, username, email, customer..." onkeyup="if(event.key==='Enter') loadCmaAdminsTable()" style="width: 100%; padding-left: 2rem;">
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%); color: var(--color-secondary-text);">
-                  <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-              </div>
-              <select id="cmaCustomerFilter" class="cost360-select" onchange="loadCmaAdminsTable()" style="min-width: 180px;">
-                <option value="0">All Customers</option>
-              </select>
-              <select id="cmaStatusFilter" class="cost360-select" onchange="loadCmaAdminsTable()" style="min-width: 130px;">
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; flex: 1; max-width: 600px;">
+              <input type="text" id="cmaUserSearchInput" class="cost360-select" placeholder="Search by name, email, username..." onkeyup="handleCmaUserSearchKeyup(event)" style="flex: 1; min-width: 200px;">
+              <select id="cmaUserStatusFilter" class="cost360-select" onchange="loadCmaUsersTable()" style="min-width: 140px;">
                 <option value="ALL">All Status</option>
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
+                <option value="ACTIVE" selected>ACTIVE</option>
+                <option value="INACTIVE">INACTIVE</option>
               </select>
-            </div>
-            <div>
-              <button type="button" class="btn-secondary" onclick="loadCmaAdminsTable()">Search</button>
             </div>
           </div>
 
           <div class="table-responsive">
-            <table class="cost360-data-table" id="cmaAdminsTable" style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+            <table class="cost360-data-table" id="cmaUsersTable" style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
               <thead>
                 <tr style="border-bottom: 1px solid var(--color-card-border); text-align: left; color: var(--color-secondary-text);">
-                  <th style="padding: 0.75rem 1rem;">Administrator</th>
-                  <th style="padding: 0.75rem 1rem;">Username / Email</th>
-                  <th style="padding: 0.75rem 1rem;">Customer Organization</th>
-                  <th style="padding: 0.75rem 1rem;">Subscription</th>
+                  <th style="padding: 0.75rem 1rem;">Name</th>
+                  <th style="padding: 0.75rem 1rem;">Username</th>
+                  <th style="padding: 0.75rem 1rem;">Email</th>
                   <th style="padding: 0.75rem 1rem;">Status</th>
-                  <th style="padding: 0.75rem 1rem;">Created At</th>
+                  <th style="padding: 0.75rem 1rem;">Access Summary</th>
+                  <th style="padding: 0.75rem 1rem;">Created Date</th>
                   <th style="padding: 0.75rem 1rem; text-align: right;">Actions</th>
                 </tr>
               </thead>
-              <tbody id="cmaAdminsTableBody">
+              <tbody id="cmaUsersTableBody">
                 <tr>
                   <td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--color-secondary-text);">
-                    <span>Loading CMA Administrators...</span>
+                    Loading CMA Users...
                   </td>
                 </tr>
               </tbody>
@@ -7442,161 +8079,217 @@ if (!function_exists('formatMenuRouteUrl')) {
           </div>
         </section>
 
-        <!-- MODAL: CREATE CMA ADMIN -->
-        <div id="createCmaModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
-          <div class="cost360-modal-content" style="background: var(--color-card-surface, #ffffff); border-radius: 12px; width: 100%; max-width: 580px; box-shadow: 0 20px 40px rgba(0,0,0,0.25); border: 1px solid var(--color-card-border, #E2E8F0); overflow: hidden; display: flex; flex-direction: column; max-height: 90vh;">
+        <!-- MODAL: CREATE CMA USER -->
+        <div id="createCmaUserModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+          <div class="cost360-modal-content" style="background: var(--color-card-surface, #ffffff); border-radius: 12px; width: 100%; max-width: 540px; box-shadow: 0 20px 40px rgba(0,0,0,0.25); border: 1px solid var(--color-card-border, #E2E8F0); overflow: hidden; display: flex; flex-direction: column;">
             <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-card-border, #E2E8F0); display: flex; justify-content: space-between; align-items: center;">
               <div>
-                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary-blue);">CMA Management</span>
-                <h2 style="font-size: 1.25rem; color: var(--color-deep-navy); margin: 0.2rem 0 0 0;">Create CMA Admin</h2>
+                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary-blue);">CMA Provisioning</span>
+                <h2 style="font-size: 1.25rem; color: var(--color-deep-navy); margin: 0.2rem 0 0 0;">Create CMA User</h2>
               </div>
-              <button type="button" onclick="closeCmaModal('createCmaModal')" style="background: none; border: none; cursor: pointer; color: var(--color-secondary-text); padding: 4px;">
+              <button type="button" onclick="closeCmaModal('createCmaUserModal')" style="background: none; border: none; cursor: pointer; color: var(--color-secondary-text); padding: 4px;">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
-            <form id="createCmaForm" onsubmit="submitCreateCma(event)" style="display: flex; flex-direction: column; overflow-y: auto; flex: 1;">
+            <form id="createCmaUserForm" onsubmit="submitCreateCmaUser(event)" style="display: flex; flex-direction: column;">
               <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
-                <div id="createCmaErrorBox" style="display: none; padding: 0.75rem 1rem; background: #FEE2E2; border-left: 4px solid #DC2626; color: #991B1B; border-radius: 4px; font-size: 0.85rem;"></div>
+                <div id="createCmaUserError" style="display: none; padding: 0.75rem 1rem; background: #FEE2E2; border-left: 4px solid #DC2626; color: #991B1B; border-radius: 4px; font-size: 0.85rem;"></div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div>
+                    <label class="dropdown-label">First Name *</label>
+                    <input type="text" name="first_name" class="cost360-select" required placeholder="e.g. Rahul">
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Last Name</label>
+                    <input type="text" name="last_name" class="cost360-select" placeholder="e.g. Sharma">
+                  </div>
+                </div>
 
                 <div>
-                  <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Customer Organization <span style="color: #DC2626;">*</span></label>
-                  <select id="newCmaCustomerId" class="cost360-select" required style="width: 100%;">
-                    <option value="">-- Select Customer --</option>
-                  </select>
-                  <small style="color: var(--color-secondary-text); font-size: 0.76rem;">The CMA Admin will have administrative jurisdiction over this customer organization.</small>
+                  <label class="dropdown-label">Username *</label>
+                  <input type="text" name="username" class="cost360-select" required placeholder="e.g. rahul.sharma">
+                </div>
+
+                <div>
+                  <label class="dropdown-label">Email Address *</label>
+                  <input type="email" name="email" class="cost360-select" required placeholder="e.g. rahul@company.com">
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                   <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">First Name <span style="color: #DC2626;">*</span></label>
-                    <input type="text" id="newCmaFirstName" class="cost360-input" required placeholder="e.g. Rahul" style="width: 100%;">
+                    <label class="dropdown-label">Password *</label>
+                    <input type="password" name="password" class="cost360-select" required placeholder="Min 6 characters">
                   </div>
                   <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Last Name</label>
-                    <input type="text" id="newCmaLastName" class="cost360-input" placeholder="e.g. Sharma" style="width: 100%;">
-                  </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                  <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Username <span style="color: #DC2626;">*</span></label>
-                    <input type="text" id="newCmaUsername" class="cost360-input" required placeholder="e.g. rsharma_cma" style="width: 100%;">
-                  </div>
-                  <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Email Address <span style="color: #DC2626;">*</span></label>
-                    <input type="email" id="newCmaEmail" class="cost360-input" required placeholder="e.g. rahul.sharma@example.com" style="width: 100%;">
+                    <label class="dropdown-label">Confirm Password *</label>
+                    <input type="password" name="confirm_password" class="cost360-select" required placeholder="Re-enter password">
                   </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                   <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Password <span style="color: #DC2626;">*</span></label>
-                    <input type="password" id="newCmaPassword" class="cost360-input" required placeholder="Min 6 characters" minlength="6" style="width: 100%;">
+                    <label class="dropdown-label">Assigned Role</label>
+                    <input type="text" value="CMA_USER" class="cost360-select" readonly style="background: #F1F5F9; color: #475569; cursor: not-allowed; font-weight: 600;">
                   </div>
                   <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Account Status</label>
-                    <select id="newCmaStatus" class="cost360-select" style="width: 100%;">
-                      <option value="ACTIVE">ACTIVE</option>
+                    <label class="dropdown-label">Status *</label>
+                    <select name="status" class="cost360-select" required>
+                      <option value="ACTIVE" selected>ACTIVE</option>
                       <option value="INACTIVE">INACTIVE</option>
                     </select>
                   </div>
                 </div>
+
+                <div style="font-size: 0.78rem; color: var(--color-secondary-text); background: #F8FAFC; padding: 0.65rem 0.85rem; border-radius: 6px; border: 1px solid #E2E8F0;">
+                  <strong>Note:</strong> Organizational access (Company, Division, Plant) can be mapped immediately after creating the user using <strong>Manage Access</strong>.
+                </div>
               </div>
+
               <div style="padding: 1rem 1.5rem; background: var(--color-bg-light, #F8FAFC); border-top: 1px solid var(--color-card-border, #E2E8F0); display: flex; justify-content: flex-end; gap: 0.75rem;">
-                <button type="button" class="btn-secondary" onclick="closeCmaModal('createCmaModal')">Cancel</button>
-                <button type="submit" class="btn-primary" id="createCmaSubmitBtn">Create CMA Admin</button>
+                <button type="button" class="btn-secondary" onclick="closeCmaModal('createCmaUserModal')">Cancel</button>
+                <button type="submit" class="btn-primary" id="saveCmaUserBtn">Save User</button>
               </div>
             </form>
           </div>
         </div>
 
-        <!-- MODAL: EDIT CMA ADMIN -->
-        <div id="editCmaModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
-          <div class="cost360-modal-content" style="background: var(--color-card-surface, #ffffff); border-radius: 12px; width: 100%; max-width: 580px; box-shadow: 0 20px 40px rgba(0,0,0,0.25); border: 1px solid var(--color-card-border, #E2E8F0); overflow: hidden; display: flex; flex-direction: column; max-height: 90vh;">
+        <!-- MODAL: EDIT CMA USER -->
+        <div id="editCmaUserModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+          <div class="cost360-modal-content" style="background: var(--color-card-surface, #ffffff); border-radius: 12px; width: 100%; max-width: 540px; box-shadow: 0 20px 40px rgba(0,0,0,0.25); border: 1px solid var(--color-card-border, #E2E8F0); overflow: hidden; display: flex; flex-direction: column;">
             <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-card-border, #E2E8F0); display: flex; justify-content: space-between; align-items: center;">
               <div>
-                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary-blue);">CMA Management</span>
-                <h2 style="font-size: 1.25rem; color: var(--color-deep-navy); margin: 0.2rem 0 0 0;">Edit CMA Admin</h2>
+                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary-blue);">CMA User</span>
+                <h2 style="font-size: 1.25rem; color: var(--color-deep-navy); margin: 0.2rem 0 0 0;">Edit CMA User</h2>
               </div>
-              <button type="button" onclick="closeCmaModal('editCmaModal')" style="background: none; border: none; cursor: pointer; color: var(--color-secondary-text); padding: 4px;">
+              <button type="button" onclick="closeCmaModal('editCmaUserModal')" style="background: none; border: none; cursor: pointer; color: var(--color-secondary-text); padding: 4px;">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
-            <form id="editCmaForm" onsubmit="submitEditCma(event)" style="display: flex; flex-direction: column; overflow-y: auto; flex: 1;">
-              <input type="hidden" id="editCmaUserId">
+            <form id="editCmaUserForm" onsubmit="submitEditCmaUser(event)" style="display: flex; flex-direction: column;">
+              <input type="hidden" name="user_id" id="editCmaUserId">
               <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
-                <div id="editCmaErrorBox" style="display: none; padding: 0.75rem 1rem; background: #FEE2E2; border-left: 4px solid #DC2626; color: #991B1B; border-radius: 4px; font-size: 0.85rem;"></div>
+                <div id="editCmaUserError" style="display: none; padding: 0.75rem 1rem; background: #FEE2E2; border-left: 4px solid #DC2626; color: #991B1B; border-radius: 4px; font-size: 0.85rem;"></div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div>
+                    <label class="dropdown-label">First Name *</label>
+                    <input type="text" name="first_name" id="editCmaUserFirstName" class="cost360-select" required>
+                  </div>
+                  <div>
+                    <label class="dropdown-label">Last Name</label>
+                    <input type="text" name="last_name" id="editCmaUserLastName" class="cost360-select">
+                  </div>
+                </div>
 
                 <div>
-                  <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Customer Organization <span style="color: #DC2626;">*</span></label>
-                  <select id="editCmaCustomerId" class="cost360-select" required style="width: 100%;">
-                    <option value="">-- Select Customer --</option>
+                  <label class="dropdown-label">Email Address *</label>
+                  <input type="email" name="email" id="editCmaUserEmail" class="cost360-select" required>
+                </div>
+
+                <div>
+                  <label class="dropdown-label">Phone Number</label>
+                  <input type="text" name="phone" id="editCmaUserPhone" class="cost360-select" placeholder="Optional">
+                </div>
+
+                <div>
+                  <label class="dropdown-label">Status *</label>
+                  <select name="status" id="editCmaUserStatus" class="cost360-select" required>
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="INACTIVE">INACTIVE</option>
                   </select>
                 </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                  <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">First Name <span style="color: #DC2626;">*</span></label>
-                    <input type="text" id="editCmaFirstName" class="cost360-input" required style="width: 100%;">
-                  </div>
-                  <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Last Name</label>
-                    <input type="text" id="editCmaLastName" class="cost360-input" style="width: 100%;">
-                  </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                  <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Username</label>
-                    <input type="text" id="editCmaUsername" class="cost360-input" readonly disabled style="width: 100%; opacity: 0.75;">
-                  </div>
-                  <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Email Address <span style="color: #DC2626;">*</span></label>
-                    <input type="email" id="editCmaEmail" class="cost360-input" required style="width: 100%;">
-                  </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                  <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">New Password (Optional)</label>
-                    <input type="password" id="editCmaPassword" class="cost360-input" placeholder="Leave blank to retain" minlength="6" style="width: 100%;">
-                  </div>
-                  <div>
-                    <label style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.35rem; color: var(--color-primary-text);">Account Status</label>
-                    <select id="editCmaStatus" class="cost360-select" style="width: 100%;">
-                      <option value="ACTIVE">ACTIVE</option>
-                      <option value="INACTIVE">INACTIVE</option>
-                    </select>
-                  </div>
-                </div>
               </div>
+
               <div style="padding: 1rem 1.5rem; background: var(--color-bg-light, #F8FAFC); border-top: 1px solid var(--color-card-border, #E2E8F0); display: flex; justify-content: flex-end; gap: 0.75rem;">
-                <button type="button" class="btn-secondary" onclick="closeCmaModal('editCmaModal')">Cancel</button>
-                <button type="submit" class="btn-primary" id="editCmaSubmitBtn">Save Changes</button>
+                <button type="button" class="btn-secondary" onclick="closeCmaModal('editCmaUserModal')">Cancel</button>
+                <button type="submit" class="btn-primary">Update User</button>
               </div>
             </form>
           </div>
         </div>
 
+        <!-- MODAL: HIERARCHICAL MULTI-COMPANY USER ACCESS MAPPING (SECTIONS 9 - 17) -->
+        <div id="cmaAccessMappingModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(3, 27, 51, 0.6); z-index: 1050; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+          <div class="cost360-modal-content" style="background: var(--color-card-surface, #ffffff); border-radius: 12px; width: 100%; max-width: 740px; box-shadow: 0 20px 40px rgba(0,0,0,0.25); border: 1px solid var(--color-card-border, #E2E8F0); overflow: hidden; display: flex; flex-direction: column; max-height: 92vh;">
+            <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-card-border, #E2E8F0); display: flex; justify-content: space-between; align-items: center; background: #FAFCFE;">
+              <div>
+                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary-blue);">Organizational Access Configurator</span>
+                <h2 style="font-size: 1.25rem; color: var(--color-deep-navy); margin: 0.2rem 0 0 0;" id="cmaAccessModalTitle">User Access Mapping</h2>
+              </div>
+              <button type="button" onclick="closeCmaModal('cmaAccessMappingModal')" style="background: none; border: none; cursor: pointer; color: var(--color-secondary-text); padding: 4px;">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <div style="overflow-y: auto; flex: 1; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem;">
+              <div id="cmaAccessModalAlert" style="display: none; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600;"></div>
+
+              <!-- User Header Card -->
+              <div style="padding: 0.85rem 1.15rem; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                <div>
+                  <div style="font-size: 0.95rem; font-weight: 700; color: #033665;" id="cmaAccessTargetUserName">-</div>
+                  <div style="font-size: 0.78rem; color: #64748B;" id="cmaAccessTargetUserEmail">-</div>
+                </div>
+                <div style="font-size: 0.8rem; font-weight: 600; padding: 0.25rem 0.65rem; border-radius: 6px; background: #E0F2FE; color: #0369A1;" id="cmaAccessCustomerBadge">
+                  Customer Organization
+                </div>
+              </div>
+
+              <!-- Access Mappings Section -->
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                  <h3 style="font-size: 0.95rem; font-weight: 700; color: #033665; margin: 0;">Configured Access Mappings</h3>
+                  <button type="button" class="btn-secondary" onclick="addAccessMappingRow()" style="font-size: 0.82rem; padding: 0.35rem 0.75rem;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px; vertical-align: middle;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <span>+ Add Access</span>
+                  </button>
+                </div>
+
+                <div id="cmaAccessMappingsList" style="display: flex; flex-direction: column; gap: 0.85rem;">
+                  <!-- Dynamic Mapping Cards Injected Here -->
+                </div>
+              </div>
+
+              <!-- Live Access Summary / Preview -->
+              <div style="background: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 8px; padding: 1rem;">
+                <div style="font-size: 0.82rem; font-weight: 700; color: #334155; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                  <span>Effective Organizational Scope Preview</span>
+                </div>
+                <div id="cmaAccessEffectivePreview" style="font-size: 0.82rem; color: #0369A1; line-height: 1.4;">
+                  Configure mappings above to view inherited scope.
+                </div>
+              </div>
+            </div>
+
+            <div style="padding: 1rem 1.5rem; background: var(--color-bg-light, #F8FAFC); border-top: 1px solid var(--color-card-border, #E2E8F0); display: flex; justify-content: flex-end; gap: 0.75rem;">
+              <button type="button" class="btn-secondary" onclick="closeCmaModal('cmaAccessMappingModal')">Cancel</button>
+              <button type="button" class="btn-primary" id="saveCmaAccessBtn" onclick="submitSaveCmaUserAccess()">Save Access</button>
+            </div>
+          </div>
+        </div>
+
+        <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.default.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
         <script>
-          let cmaCache = [];
-          let customersCache = [];
-
+          // Local fallback in case global escapeHtml is not loaded
           if (typeof escapeHtml !== 'function') {
             window.escapeHtml = function(str) {
-              if (str === null || str === undefined) return '';
-              return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
+              if (!str) return '';
+              return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
             };
           }
 
-          function getCmaApiUrl(params = '') {
+          let cmaUsersCache = [];
+          let cmaHierarchyCache = { companies: [], divisions: [], plants: [], warehouses: [] };
+          let currentMappingUserId = 0;
+          let currentActiveMappings = [];
+          let cmaSearchDebounce = null;
+
+          function getCmaApiUrl(action) {
             const prefix = window.cost360BaseUrlPrefix || '';
-            return prefix + 'admin/cma/api.php' + (params ? '?' + params : '');
+            return prefix + 'admin/cma/api.php?action=' + action;
           }
 
           function showCmaToast(msg, isSuccess = true) {
@@ -7614,262 +8307,606 @@ if (!function_exists('formatMenuRouteUrl')) {
             setTimeout(() => { toast.style.display = 'none'; }, 4000);
           }
 
-          function openCreateCmaModal() {
-            document.getElementById('createCmaErrorBox').style.display = 'none';
-            document.getElementById('createCmaForm').reset();
-            populateCustomerSelects();
-            document.getElementById('createCmaModal').style.display = 'flex';
-          }
-
           function closeCmaModal(id) {
-            document.getElementById(id).style.display = 'none';
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
           }
 
-          async function preloadCustomers() {
-            try {
-              const res = await fetch(getCmaApiUrl('action=get_customers'));
-              const data = await res.json();
-              if (data.success) {
-                customersCache = data.customers || [];
-                populateCustomerSelects();
-              }
-            } catch (e) {
-              console.error('Error preloading customers:', e);
-            }
+          function openCreateCmaUserModal() {
+            document.getElementById('createCmaUserForm').reset();
+            document.getElementById('createCmaUserError').style.display = 'none';
+            document.getElementById('createCmaUserModal').style.display = 'flex';
           }
 
-          function populateCustomerSelects() {
-            const selects = ['cmaCustomerFilter', 'newCmaCustomerId', 'editCmaCustomerId'];
-            selects.forEach(id => {
-              const el = document.getElementById(id);
-              if (!el) return;
-              const curVal = el.value;
-              const isFilter = (id === 'cmaCustomerFilter');
-              el.innerHTML = isFilter ? '<option value="0">All Customers</option>' : '<option value="">-- Select Customer --</option>';
-              customersCache.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.customer_id;
-                opt.textContent = `${c.customer_name} (${c.customer_code})`;
-                el.appendChild(opt);
-              });
-              if (curVal) el.value = curVal;
-            });
+          function handleCmaUserSearchKeyup(e) {
+            clearTimeout(cmaSearchDebounce);
+            cmaSearchDebounce = setTimeout(() => {
+              loadCmaUsersTable();
+            }, 300);
           }
 
-          async function loadCmaAdminsTable() {
-            const tbody = document.getElementById('cmaAdminsTableBody');
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);"><span>Fetching administrators...</span></td></tr>`;
-            const search = encodeURIComponent(document.getElementById('cmaSearchInput')?.value || '');
-            const custId = document.getElementById('cmaCustomerFilter')?.value || 0;
-            const status = document.getElementById('cmaStatusFilter')?.value || 'ALL';
+          async function loadCmaUsersTable() {
+            const tbody = document.getElementById('cmaUsersTableBody');
+            if (!tbody) return;
+
+            const search = document.getElementById('cmaUserSearchInput')?.value || '';
+            const status = document.getElementById('cmaUserStatusFilter')?.value || 'ALL';
+
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--color-secondary-text);">
+                  Loading CMA Users...
+                </td>
+              </tr>
+            `;
 
             try {
-              const res = await fetch(getCmaApiUrl(`action=list&search=${search}&customer_id=${custId}&status=${status}`));
+              const res = await fetch(getCmaApiUrl(`list_users&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`));
               const data = await res.json();
+
               if (!data.success) {
-                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2rem; color: #DC2626;">${escapeHtml(data.error || 'Failed to load CMA Admins.')}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2rem; color: #DC2626;">${escapeHtml(data.error || 'Failed to load users.')}</td></tr>`;
                 return;
               }
 
-              cmaCache = data.admins || [];
-              if (data.kpis) {
-                document.getElementById('kpiTotalCma').textContent = data.kpis.total || 0;
-                document.getElementById('kpiActiveCma').textContent = data.kpis.active || 0;
-                document.getElementById('kpiInactiveCma').textContent = data.kpis.inactive || 0;
-                document.getElementById('kpiCoveredCustomers').textContent = data.kpis.customers_covered || 0;
+              cmaUsersCache = data.users || [];
+
+              // Render Subscription Metrics
+              const sub = data.subscription || {};
+              const cust = data.customer || {};
+
+              document.getElementById('cmaSubTenantName').textContent = cust.customer_name ? (cust.customer_name + (cust.customer_code ? ' (' + cust.customer_code + ')' : '')) : 'Customer Organization';
+              document.getElementById('cmaSubPlanBadge').textContent = 'Plan: ' + (sub.plan_name || 'No Plan');
+              document.getElementById('cmaSubQuotaBadge').textContent = `${sub.current_users || 0} / ${sub.max_users || 0} Users`;
+              document.getElementById('cmaSubAvailableSlots').textContent = `${sub.available_users || 0} Available`;
+
+              const maxU = parseInt(sub.max_users || 0, 10);
+              const curU = parseInt(sub.current_users || 0, 10);
+              const pct = maxU > 0 ? Math.min(100, Math.round((curU / maxU) * 100)) : 100;
+              const bar = document.getElementById('cmaSubProgressBar');
+              if (bar) {
+                bar.style.width = pct + '%';
+                bar.style.background = pct >= 100 ? '#DC2626' : (pct >= 80 ? '#D97706' : '#059669');
               }
 
-              if (cmaCache.length === 0) {
+              // Alert Banner if limit is reached or Free tier
+              const alertBanner = document.getElementById('cmaQuotaAlertBanner');
+              const alertMsg = document.getElementById('cmaQuotaAlertMessage');
+              const createBtn = document.getElementById('createCmaUserBtn');
+
+              if (!sub.allowed) {
+                alertBanner.style.display = 'block';
+                alertMsg.textContent = sub.reason || 'User limit reached for your active subscription plan.';
+                if (createBtn) {
+                  createBtn.style.opacity = '0.6';
+                  createBtn.title = sub.reason || 'User limit reached.';
+                }
+              } else {
+                alertBanner.style.display = 'none';
+                if (createBtn) {
+                  createBtn.style.opacity = '1';
+                  createBtn.title = '';
+                }
+              }
+
+              // Render Table Rows
+              if (cmaUsersCache.length === 0) {
                 tbody.innerHTML = `
                   <tr>
-                    <td colspan="7" style="text-align: center; padding: 3rem 1rem; color: var(--color-secondary-text);">
-                      <div style="font-weight: 700; color: var(--color-primary-text); margin-bottom: 0.35rem;">No CMA Administrators Found</div>
-                      <div style="font-size: 0.82rem;">Click "Create CMA Admin" above to provision the first Cost Management Administrator.</div>
+                    <td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--color-secondary-text);">
+                      No CMA users found for this customer organization.
                     </td>
                   </tr>
                 `;
                 return;
               }
 
-              tbody.innerHTML = cmaCache.map(a => {
-                const isActive = (a.status === 'ACTIVE');
-                const statusBadge = isActive 
-                  ? `<span style="background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; padding: 0.2rem 0.55rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 700;">ACTIVE</span>`
-                  : `<span style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; padding: 0.2rem 0.55rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 700;">INACTIVE</span>`;
-                const planBadge = a.subscription_plan ? `<span style="font-size: 0.78rem; font-weight: 600; color: var(--color-deep-navy);">${escapeHtml(a.subscription_plan)}</span>` : `<span style="color: var(--color-secondary-text); font-size: 0.75rem;">None</span>`;
+              tbody.innerHTML = cmaUsersCache.map(u => {
+                const isActive = (String(u.status || '').toUpperCase() === 'ACTIVE');
+                const createdDate = u.created_at ? new Date(u.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
 
                 return `
                   <tr style="border-bottom: 1px solid var(--color-card-border);">
                     <td style="padding: 0.85rem 1rem;">
-                      <div style="font-weight: 700; color: var(--color-deep-navy);">${escapeHtml(a.full_name || a.username)}</div>
-                      <div style="font-size: 0.75rem; color: var(--color-secondary-text);">Role: CMA_ADMIN</div>
+                      <div style="font-weight: 700; color: var(--color-deep-navy);">${escapeHtml(u.full_name || (u.first_name + ' ' + (u.last_name || '')))}</div>
+                      <div style="font-size: 0.76rem; color: var(--color-secondary-text);">${escapeHtml(u.role_name || 'CMA User')}</div>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; font-family: monospace; font-size: 0.82rem; color: #0070BA;">
+                      ${escapeHtml(u.username)}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: var(--color-primary-text);">
+                      ${escapeHtml(u.email)}
                     </td>
                     <td style="padding: 0.85rem 1rem;">
-                      <div style="font-family: monospace; font-size: 0.82rem; font-weight: 600;">${escapeHtml(a.username)}</div>
-                      <div style="font-size: 0.78rem; color: var(--color-secondary-text);">${escapeHtml(a.email)}</div>
+                      <span class="status-badge" style="background: ${isActive ? 'rgba(5, 150, 105, 0.1)' : 'rgba(220, 38, 38, 0.1)'}; color: ${isActive ? '#059669' : '#DC2626'}; border: 1px solid ${isActive ? 'rgba(5, 150, 105, 0.3)' : 'rgba(220, 38, 38, 0.3)'};">
+                        ${isActive ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
                     </td>
                     <td style="padding: 0.85rem 1rem;">
-                      <div style="font-weight: 600;">${escapeHtml(a.customer_name || 'Unassigned')}</div>
-                      <div style="font-size: 0.74rem; color: var(--color-secondary-text);">${escapeHtml(a.customer_code || '')}</div>
+                      <span style="display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; background: #F1F5F9; color: #1E293B; border: 1px solid #CBD5E1;">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        <span>${escapeHtml(u.access_summary || 'No Access Configured')}</span>
+                      </span>
                     </td>
-                    <td style="padding: 0.85rem 1rem;">${planBadge}</td>
-                    <td style="padding: 0.85rem 1rem;">${statusBadge}</td>
-                    <td style="padding: 0.85rem 1rem; font-size: 0.8rem; color: var(--color-secondary-text);">${escapeHtml(a.created_at ? a.created_at.substring(0, 10) : '-')}</td>
-                    <td style="padding: 0.85rem 1rem; text-align: right;">
-                      <button type="button" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditCmaModal(${a.user_id})">Edit</button>
-                      <button type="button" class="${isActive ? 'btn-secondary' : 'btn-primary'}" style="padding: 0.35rem 0.65rem; font-size: 0.78rem; ${isActive ? 'color: #DC2626;' : ''}" onclick="toggleCmaStatus(${a.user_id}, '${isActive ? 'INACTIVE' : 'ACTIVE'}')">
+                    <td style="padding: 0.85rem 1rem; font-size: 0.8rem; color: var(--color-secondary-text);">
+                      ${createdDate}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: right; white-space: nowrap;">
+                      <button type="button" class="btn-secondary" onclick="openManageAccessForUser(${u.user_id})" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; margin-right: 4px; color: #0070BA; border-color: #BAE6FD; background: #F0F9FF;">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 3px; vertical-align: text-bottom;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        Manage Access
+                      </button>
+                      <button type="button" class="btn-secondary" onclick="openEditCmaUserModal(${u.user_id})" style="padding: 0.35rem 0.6rem; font-size: 0.8rem; margin-right: 4px;">
+                        Edit
+                      </button>
+                      <button type="button" class="btn-secondary" onclick="toggleCmaUserStatus(${u.user_id})" style="padding: 0.35rem 0.6rem; font-size: 0.8rem; color: ${isActive ? '#DC2626' : '#059669'};">
                         ${isActive ? 'Deactivate' : 'Activate'}
                       </button>
                     </td>
                   </tr>
                 `;
               }).join('');
+
             } catch (err) {
-              console.error('Error loading CMA admins table:', err);
-              tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2rem; color: #DC2626;">Network error occurred while fetching CMA administrators.</td></tr>`;
+              tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2rem; color: #DC2626;">Network error while loading users.</td></tr>`;
             }
           }
 
-          async function submitCreateCma(e) {
+          async function submitCreateCmaUser(e) {
             e.preventDefault();
-            const btn = document.getElementById('createCmaSubmitBtn');
-            const errBox = document.getElementById('createCmaErrorBox');
+            const errBox = document.getElementById('createCmaUserError');
             errBox.style.display = 'none';
 
-            const formData = new FormData();
-            formData.append('action', 'create');
-            formData.append('customer_id', document.getElementById('newCmaCustomerId').value);
-            formData.append('first_name', document.getElementById('newCmaFirstName').value.trim());
-            formData.append('last_name', document.getElementById('newCmaLastName').value.trim());
-            formData.append('username', document.getElementById('newCmaUsername').value.trim());
-            formData.append('email', document.getElementById('newCmaEmail').value.trim());
-            formData.append('password', document.getElementById('newCmaPassword').value);
-            formData.append('status', document.getElementById('newCmaStatus').value);
-
-            btn.disabled = true;
-            btn.textContent = 'Creating...';
+            const form = e.target;
+            const formData = new FormData(form);
 
             try {
-              const res = await fetch(getCmaApiUrl(), { method: 'POST', body: formData });
+              const res = await fetch(getCmaApiUrl('create_user'), {
+                method: 'POST',
+                body: formData
+              });
               const data = await res.json();
+
               if (data.success) {
-                closeCmaModal('createCmaModal');
-                showCmaToast(data.message || 'CMA Admin created successfully.', true);
-                loadCmaAdminsTable();
+                closeCmaModal('createCmaUserModal');
+                showCmaToast(data.message || 'CMA User created successfully.', true);
+                loadCmaUsersTable();
               } else {
-                errBox.textContent = data.error || 'Failed to create CMA Admin.';
+                errBox.textContent = data.error || 'Failed to create user.';
                 errBox.style.display = 'block';
               }
             } catch (err) {
-              errBox.textContent = 'Network error while creating CMA Admin.';
+              errBox.textContent = 'Connection error occurred.';
               errBox.style.display = 'block';
-            } finally {
-              btn.disabled = false;
-              btn.textContent = 'Create CMA Admin';
             }
           }
 
-          async function openEditCmaModal(userId) {
-            const admin = cmaCache.find(a => a.user_id == userId);
-            if (!admin) return;
-            document.getElementById('editCmaErrorBox').style.display = 'none';
-            document.getElementById('editCmaUserId').value = admin.user_id;
-            document.getElementById('editCmaFirstName').value = admin.first_name || '';
-            document.getElementById('editCmaLastName').value = admin.last_name || '';
-            document.getElementById('editCmaUsername').value = admin.username || '';
-            document.getElementById('editCmaEmail').value = admin.email || '';
-            document.getElementById('editCmaPassword').value = '';
-            document.getElementById('editCmaStatus').value = admin.status || 'ACTIVE';
-            document.getElementById('editCmaCustomerId').value = admin.customer_id || '';
-            document.getElementById('editCmaModal').style.display = 'flex';
+          function openEditCmaUserModal(userId) {
+            const u = cmaUsersCache.find(x => parseInt(x.user_id, 10) === parseInt(userId, 10));
+            if (!u) return;
+
+            document.getElementById('editCmaUserError').style.display = 'none';
+            document.getElementById('editCmaUserId').value = u.user_id;
+            document.getElementById('editCmaUserFirstName').value = u.first_name || '';
+            document.getElementById('editCmaUserLastName').value = u.last_name || '';
+            document.getElementById('editCmaUserEmail').value = u.email || '';
+            document.getElementById('editCmaUserPhone').value = u.phone || '';
+            document.getElementById('editCmaUserStatus').value = (String(u.status || '').toUpperCase() === 'ACTIVE') ? 'ACTIVE' : 'INACTIVE';
+
+            document.getElementById('editCmaUserModal').style.display = 'flex';
           }
 
-          async function submitEditCma(e) {
+          async function submitEditCmaUser(e) {
             e.preventDefault();
-            const btn = document.getElementById('editCmaSubmitBtn');
-            const errBox = document.getElementById('editCmaErrorBox');
+            const errBox = document.getElementById('editCmaUserError');
             errBox.style.display = 'none';
 
-            const formData = new FormData();
-            formData.append('action', 'update');
-            formData.append('user_id', document.getElementById('editCmaUserId').value);
-            formData.append('customer_id', document.getElementById('editCmaCustomerId').value);
-            formData.append('first_name', document.getElementById('editCmaFirstName').value.trim());
-            formData.append('last_name', document.getElementById('editCmaLastName').value.trim());
-            formData.append('email', document.getElementById('editCmaEmail').value.trim());
-            formData.append('status', document.getElementById('editCmaStatus').value);
-            const pwd = document.getElementById('editCmaPassword').value;
-            if (pwd) formData.append('password', pwd);
+            const form = e.target;
+            const formData = new FormData(form);
+
+            try {
+              const res = await fetch(getCmaApiUrl('update_user'), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                closeCmaModal('editCmaUserModal');
+                showCmaToast('User updated successfully.', true);
+                loadCmaUsersTable();
+              } else {
+                errBox.textContent = data.error || 'Failed to update user.';
+                errBox.style.display = 'block';
+              }
+            } catch (err) {
+              errBox.textContent = 'Connection error occurred.';
+              errBox.style.display = 'block';
+            }
+          }
+
+          async function toggleCmaUserStatus(userId) {
+            const u = cmaUsersCache.find(x => parseInt(x.user_id, 10) === parseInt(userId, 10));
+            const isCurrentlyActive = (u && String(u.status || '').toUpperCase() === 'ACTIVE');
+            const actionVerb = isCurrentlyActive ? 'deactivate' : 'activate';
+
+            if (!confirm(`Are you sure you want to ${actionVerb} this user?`)) {
+              return;
+            }
+
+            try {
+              const formData = new FormData();
+              formData.append('user_id', userId);
+
+              const res = await fetch(getCmaApiUrl('toggle_status'), {
+                method: 'POST',
+                body: formData
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                showCmaToast(data.message || `User status updated.`, true);
+                loadCmaUsersTable();
+              } else {
+                alert(data.error || 'Failed to toggle status.');
+              }
+            } catch (err) {
+              alert('Network error occurred.');
+            }
+          }
+
+          /* ============================================================
+             HIERARCHICAL MULTI-COMPANY ACCESS CONFIGURATOR (SECTIONS 9 - 17)
+             ============================================================ */
+          async function preloadCmaHierarchy() {
+            try {
+              const res = await fetch(getCmaApiUrl('get_hierarchy'));
+              const data = await res.json();
+              if (data.success) {
+                cmaHierarchyCache = data;
+              }
+            } catch (err) {
+              console.error('Failed to load hierarchy:', err);
+            }
+          }
+
+          async function openManageAccessForUser(userId) {
+            currentMappingUserId = userId;
+            const alertBox = document.getElementById('cmaAccessModalAlert');
+            alertBox.style.display = 'none';
+
+            await preloadCmaHierarchy();
+
+            try {
+              const res = await fetch(getCmaApiUrl(`get_user_access&user_id=${userId}`));
+              const data = await res.json();
+
+              if (!data.success) {
+                alert(data.error || 'Failed to fetch access mappings.');
+                return;
+              }
+
+              const u = data.user || {};
+              document.getElementById('cmaAccessTargetUserName').textContent = u.full_name || u.username;
+              document.getElementById('cmaAccessTargetUserEmail').textContent = u.email;
+
+              currentActiveMappings = (data.mappings || []).map(m => ({
+                company_id: m.company_id,
+                level: m.level || 'COMPANY', // 'COMPANY', 'DIVISION', 'LOCATION'
+                division_id: m.division_id || 0,
+                location_type: m.location_type || 'PLANT', // 'PLANT' or 'WAREHOUSE'
+                location_id: m.location_id || 0
+              }));
+
+              if (currentActiveMappings.length === 0 && cmaHierarchyCache.companies.length > 0) {
+                // If user has no mappings, default to first company with full access
+                currentActiveMappings.push({
+                  company_id: cmaHierarchyCache.companies[0].company_id,
+                  level: 'COMPANY',
+                  division_id: 0,
+                  location_type: 'PLANT',
+                  location_id: 0
+                });
+              }
+
+              renderAccessMappingRows();
+              updateEffectivePreview();
+              document.getElementById('cmaAccessMappingModal').style.display = 'flex';
+
+            } catch (err) {
+              alert('Network error while loading access.');
+            }
+          }
+
+          function addAccessMappingRow() {
+            if (cmaHierarchyCache.companies.length === 0) {
+              alert('No companies available under this customer organization.');
+              return;
+            }
+
+            currentActiveMappings.push({
+              company_id: cmaHierarchyCache.companies[0].company_id,
+              level: 'COMPANY',
+              division_id: 0,
+              location_type: 'PLANT',
+              location_id: 0
+            });
+
+            renderAccessMappingRows();
+            updateEffectivePreview();
+          }
+
+          function removeAccessMappingRow(index) {
+            currentActiveMappings.splice(index, 1);
+            renderAccessMappingRows();
+            updateEffectivePreview();
+          }
+
+          function onMappingCompanyChange(index, companyId) {
+            currentActiveMappings[index].company_id = parseInt(companyId, 10);
+            currentActiveMappings[index].division_id = 0;
+            currentActiveMappings[index].location_id = 0;
+            renderAccessMappingRows();
+            updateEffectivePreview();
+          }
+
+          function onMappingLevelChange(index, level) {
+            currentActiveMappings[index].level = level;
+            currentActiveMappings[index].division_id = 0;
+            currentActiveMappings[index].location_id = 0;
+            renderAccessMappingRows();
+            updateEffectivePreview();
+          }
+
+          function onMappingDivisionChange(index, divisionId) {
+            currentActiveMappings[index].division_id = parseInt(divisionId, 10);
+            currentActiveMappings[index].location_id = 0;
+            renderAccessMappingRows();
+            updateEffectivePreview();
+          }
+
+          function onMappingLocationTypeChange(index, locType) {
+            currentActiveMappings[index].location_type = locType;
+            currentActiveMappings[index].location_id = 0;
+            renderAccessMappingRows();
+            updateEffectivePreview();
+          }
+
+          function onMappingLocationChange(index, locId) {
+            currentActiveMappings[index].location_id = parseInt(locId, 10);
+            updateEffectivePreview();
+          }
+
+          function renderAccessMappingRows() {
+            const container = document.getElementById('cmaAccessMappingsList');
+            if (!container) return;
+
+            if (currentActiveMappings.length === 0) {
+              container.innerHTML = `
+                <div style="text-align: center; padding: 1.5rem; background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 8px; color: #64748B; font-size: 0.85rem;">
+                  No access mappings configured. Click <strong>+ Add Access</strong> to grant company access.
+                </div>
+              `;
+              return;
+            }
+
+            container.innerHTML = currentActiveMappings.map((m, idx) => {
+              const compOptions = cmaHierarchyCache.companies.map(c => `
+                <option value="${c.company_id}" ${parseInt(c.company_id, 10) === parseInt(m.company_id, 10) ? 'selected' : ''}>
+                  ${escapeHtml(c.company_name)} (${escapeHtml(c.company_code || 'COMP')})
+                </option>
+              `).join('');
+
+              // Filter divisions for selected company
+              const companyDivisions = cmaHierarchyCache.divisions.filter(d => parseInt(d.company_id, 10) === parseInt(m.company_id, 10));
+              if ((m.level === 'DIVISION' || m.level === 'LOCATION') && (!m.division_id || m.division_id === 0 || !companyDivisions.some(d => parseInt(d.division_id, 10) === parseInt(m.division_id, 10))) && companyDivisions.length > 0) {
+                m.division_id = companyDivisions[0].division_id;
+              }
+              const divOptions = companyDivisions.map(d => `
+                <option value="${d.division_id}" ${parseInt(d.division_id, 10) === parseInt(m.division_id, 10) ? 'selected' : ''}>
+                  ${escapeHtml(d.division_name)} (${escapeHtml(d.division_code || 'DIV')})
+                </option>
+              `).join('');
+
+              // Filter locations for selected division
+              let locOptions = '';
+              if (m.level === 'LOCATION') {
+                const locType = m.location_type || 'PLANT';
+                if (locType === 'PLANT') {
+                  const divPlants = cmaHierarchyCache.plants.filter(p => parseInt(p.division_id, 10) === parseInt(m.division_id, 10));
+                  if ((!m.location_id || m.location_id === 0 || !divPlants.some(p => parseInt(p.plant_id, 10) === parseInt(m.location_id, 10))) && divPlants.length > 0) {
+                    m.location_id = divPlants[0].plant_id;
+                  }
+                  locOptions = divPlants.map(p => `
+                    <option value="${p.plant_id}" ${parseInt(p.plant_id, 10) === parseInt(m.location_id, 10) ? 'selected' : ''}>
+                      🏭 Plant: ${escapeHtml(p.plant_name)} (${escapeHtml(p.plant_code || 'PLANT')})
+                    </option>
+                  `).join('');
+                } else {
+                  const divWhs = cmaHierarchyCache.warehouses.filter(w => parseInt(w.division_id, 10) === parseInt(m.division_id, 10));
+                  if ((!m.location_id || m.location_id === 0 || !divWhs.some(w => parseInt(w.warehouse_id, 10) === parseInt(m.location_id, 10))) && divWhs.length > 0) {
+                    m.location_id = divWhs[0].warehouse_id;
+                  }
+                  locOptions = divWhs.map(w => `
+                    <option value="${w.warehouse_id}" ${parseInt(w.warehouse_id, 10) === parseInt(m.location_id, 10) ? 'selected' : ''}>
+                      📦 Warehouse: ${escapeHtml(w.warehouse_name)} (${escapeHtml(w.warehouse_code || 'WH')})
+                    </option>
+                  `).join('');
+                }
+              }
+
+              return `
+                <div style="background: #FFFFFF; border: 1px solid #D8E6F0; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid #F1F5F9; padding-bottom: 0.4rem;">
+                    <div style="font-size: 0.82rem; font-weight: 700; color: #0284C7; display: flex; align-items: center; gap: 0.35rem;">
+                      <span>Mapping #${idx + 1}</span>
+                    </div>
+                    <button type="button" onclick="removeAccessMappingRow(${idx})" style="background: none; border: none; color: #DC2626; cursor: pointer; font-size: 0.78rem; font-weight: 600; padding: 2px 6px;">
+                      &times; Remove
+                    </button>
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div>
+                      <label style="display: block; font-size: 0.76rem; font-weight: 700; margin-bottom: 0.25rem; color: #334155;">Company *</label>
+                      <select class="cost360-select cma-ts-select" onchange="onMappingCompanyChange(${idx}, this.value)" style="width: 100%;">
+                        ${compOptions}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style="display: block; font-size: 0.76rem; font-weight: 700; margin-bottom: 0.25rem; color: #334155;">Access Level *</label>
+                      <select class="cost360-select cma-ts-select" onchange="onMappingLevelChange(${idx}, this.value)" style="width: 100%;">
+                        <option value="COMPANY" ${m.level === 'COMPANY' ? 'selected' : ''}>Full Company Access</option>
+                        <option value="DIVISION" ${m.level === 'DIVISION' ? 'selected' : ''}>Division Access</option>
+                        <option value="LOCATION" ${m.level === 'LOCATION' ? 'selected' : ''}>Physical Location (Plant / Warehouse)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  ${m.level !== 'COMPANY' ? `
+                    <div style="display: grid; grid-template-columns: ${m.level === 'LOCATION' ? '1fr 1fr' : '1fr'}; gap: 0.75rem; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed #E2E8F0;">
+                      <div>
+                        <label style="display: block; font-size: 0.76rem; font-weight: 700; margin-bottom: 0.25rem; color: #334155;">Division *</label>
+                        <select class="cost360-select cma-ts-select" onchange="onMappingDivisionChange(${idx}, this.value)" style="width: 100%;">
+                          ${divOptions || '<option value="">No divisions under this company</option>'}
+                        </select>
+                      </div>
+
+                      ${m.level === 'LOCATION' ? `
+                        <div>
+                          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                            <label style="font-size: 0.76rem; font-weight: 700; color: #334155;">Location Type & Selection *</label>
+                            <span style="font-size: 0.72rem; color: #64748B;">
+                              <label style="cursor: pointer; margin-right: 6px;"><input type="radio" name="locType_${idx}" value="PLANT" ${(!m.location_type || m.location_type === 'PLANT') ? 'checked' : ''} onchange="onMappingLocationTypeChange(${idx}, 'PLANT')"> Plant</label>
+                              <label style="cursor: pointer;"><input type="radio" name="locType_${idx}" value="WAREHOUSE" ${m.location_type === 'WAREHOUSE' ? 'checked' : ''} onchange="onMappingLocationTypeChange(${idx}, 'WAREHOUSE')"> Warehouse</label>
+                            </span>
+                          </div>
+                          <select class="cost360-select cma-ts-select" onchange="onMappingLocationChange(${idx}, this.value)" style="width: 100%;">
+                            ${locOptions || '<option value="">No locations under this division</option>'}
+                          </select>
+                        </div>
+                      ` : ''}
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            }).join('');
+
+            // Initialize TomSelect for searchable dropdowns
+            setTimeout(() => {
+              document.querySelectorAll('#cmaAccessMappingsList .cma-ts-select').forEach(el => {
+                if (el.tomselect) el.tomselect.destroy();
+                new TomSelect(el, {
+                  create: false,
+                  maxOptions: null
+                });
+              });
+            }, 10);
+          }
+
+          function updateEffectivePreview() {
+            const preview = document.getElementById('cmaAccessEffectivePreview');
+            if (!preview) return;
+
+            if (currentActiveMappings.length === 0) {
+              preview.innerHTML = '<span style="color: #64748B;">User will have default organizational access with no assigned operational company units.</span>';
+              return;
+            }
+
+            const previewLines = currentActiveMappings.map((m, i) => {
+              const comp = cmaHierarchyCache.companies.find(c => parseInt(c.company_id, 10) === parseInt(m.company_id, 10));
+              const compName = comp ? comp.company_name : `Company ${m.company_id}`;
+
+              if (m.level === 'COMPANY') {
+                return `<strong>${i + 1}. ${escapeHtml(compName)}</strong>: <span style="color: #059669; font-weight: 600;">Full Company Access</span> &rarr; (All Divisions, Plants & Warehouses)`;
+              } else if (m.level === 'DIVISION') {
+                const div = cmaHierarchyCache.divisions.find(d => parseInt(d.division_id, 10) === parseInt(m.division_id, 10));
+                const divName = div ? div.division_name : `Division ${m.division_id}`;
+                return `<strong>${i + 1}. ${escapeHtml(compName)}</strong> &rarr; <strong>${escapeHtml(divName)}</strong>: <span style="color: #0284C7; font-weight: 600;">Division Access</span> &rarr; (All Plants & Warehouses in Division)`;
+              } else {
+                const div = cmaHierarchyCache.divisions.find(d => parseInt(d.division_id, 10) === parseInt(m.division_id, 10));
+                const divName = div ? div.division_name : `Division ${m.division_id}`;
+                let locName = 'Specific Location';
+                if (m.location_type === 'WAREHOUSE') {
+                  const wh = cmaHierarchyCache.warehouses.find(w => parseInt(w.warehouse_id, 10) === parseInt(m.location_id, 10));
+                  locName = wh ? `Warehouse: ${wh.warehouse_name}` : `Warehouse ${m.location_id}`;
+                } else {
+                  const p = cmaHierarchyCache.plants.find(x => parseInt(x.plant_id, 10) === parseInt(m.location_id, 10));
+                  locName = p ? `Plant: ${p.plant_name}` : `Plant ${m.location_id}`;
+                }
+                return `<strong>${i + 1}. ${escapeHtml(compName)}</strong> &rarr; <strong>${escapeHtml(divName)}</strong> &rarr; <span style="color: #7C3AED; font-weight: 600;">${escapeHtml(locName)}</span>`;
+              }
+            });
+
+            preview.innerHTML = previewLines.join('<br>');
+          }
+
+          async function submitSaveCmaUserAccess() {
+            if (!currentMappingUserId || currentMappingUserId <= 0) return;
+
+            const btn = document.getElementById('saveCmaAccessBtn');
+            const alertBox = document.getElementById('cmaAccessModalAlert');
+            alertBox.style.display = 'none';
 
             btn.disabled = true;
             btn.textContent = 'Saving...';
 
             try {
-              const res = await fetch(getCmaApiUrl(), { method: 'POST', body: formData });
+              const formData = new FormData();
+              formData.append('user_id', currentMappingUserId);
+              formData.append('mappings', JSON.stringify(currentActiveMappings));
+
+              const res = await fetch(getCmaApiUrl('save_user_access'), {
+                method: 'POST',
+                body: formData
+              });
               const data = await res.json();
+
               if (data.success) {
-                closeCmaModal('editCmaModal');
-                showCmaToast(data.message || 'CMA Admin updated successfully.', true);
-                loadCmaAdminsTable();
+                closeCmaModal('cmaAccessMappingModal');
+                showCmaToast('Organizational access mappings saved successfully.', true);
+                loadCmaUsersTable();
               } else {
-                errBox.textContent = data.error || 'Failed to update CMA Admin.';
-                errBox.style.display = 'block';
+                alertBox.className = 'error-box';
+                alertBox.style.background = '#FEE2E2';
+                alertBox.style.color = '#991B1B';
+                alertBox.textContent = data.error || 'Failed to save access.';
+                alertBox.style.display = 'block';
               }
             } catch (err) {
-              errBox.textContent = 'Network error while updating CMA Admin.';
-              errBox.style.display = 'block';
+              alertBox.style.background = '#FEE2E2';
+              alertBox.style.color = '#991B1B';
+              alertBox.textContent = 'Connection error while saving access.';
+              alertBox.style.display = 'block';
             } finally {
               btn.disabled = false;
-              btn.textContent = 'Save Changes';
+              btn.textContent = 'Save Access';
             }
           }
 
-          async function toggleCmaStatus(userId, newStatus) {
-            if (!confirm(`Are you sure you want to mark this CMA Admin as ${newStatus}?`)) return;
-            const formData = new FormData();
-            formData.append('action', 'toggle_status');
-            formData.append('user_id', userId);
-            formData.append('status', newStatus);
-
-            try {
-              const res = await fetch(getCmaApiUrl(), { method: 'POST', body: formData });
-              const data = await res.json();
-              if (data.success) {
-                showCmaToast(data.message || 'Status updated.', true);
-                loadCmaAdminsTable();
-              } else {
-                alert(data.error || 'Failed to toggle status.');
-              }
-            } catch (e) {
-              alert('Network error while toggling status.');
-            }
-          }
-
-          // Initial load
           document.addEventListener('DOMContentLoaded', () => {
-            preloadCustomers();
-            loadCmaAdminsTable();
+            loadCmaUsersTable();
           });
           if (document.readyState === 'complete' || document.readyState === 'interactive') {
-            preloadCustomers();
-            loadCmaAdminsTable();
+            loadCmaUsersTable();
           }
         </script>
 
-      <?php elseif ($currentPage === 'user-access'): ?>
+            <?php elseif ($currentPage === 'user-access'): ?>
         <!-- ============================================================
              USER ACCESS MANAGEMENT MODULE (PHASES 9-13)
              ============================================================ -->
         <section class="section-card" style="margin-bottom: 1.5rem;">
           <div class="breadcrumb" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--color-secondary-text); margin-bottom: 0.75rem;">
-            <span>Access Management</span>
+            <span>CMA User Management</span>
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            <span style="color: var(--color-bright-cyan); font-weight: 600;">User Access</span>
+            <span style="color: var(--color-bright-cyan); font-weight: 600;">User Access Mapping</span>
           </div>
 
           <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
             <div>
-              <h2 class="section-title" style="margin-bottom: 0.25rem;">User Access Management</h2>
+              <h2 class="section-title" style="margin-bottom: 0.25rem;">User Access Mapping</h2>
               <p style="font-size: 0.88rem; color: var(--color-secondary-text); margin: 0;">
                 Map users to organizational hierarchy (Company, Division, Plant) and view inherited Effective Access.
               </p>
@@ -10795,222 +11832,6 @@ if (!function_exists('formatMenuRouteUrl')) {
         <!-- ============================================================
              DEFAULT DASHBOARD OVERVIEW PAGE MODULE
              ============================================================ -->
-        <?php if (isCmaAdmin($user['user_id'])): ?>
-          <?php
-          $cmaCustomerId = getCmaAdminCustomerId($user['user_id']);
-          $cmaCustName = 'Customer Organization';
-          $cmaCustCode = '';
-          $cmaPlanName = 'No Active Plan';
-          $cmaMaxUsers = 0;
-          $cmaCurrentUsers = 0;
-          $cmaAvailableUsers = 0;
-          $cmaTotalCompanies = 0;
-          $cmaTotalDivisions = 0;
-          $cmaTotalPlants = 0;
-          $cmaRecentUsers = [];
-
-          if ($cmaCustomerId) {
-              $pdo = getDbConnection();
-              $custStmt = $pdo->prepare("SELECT customer_name, customer_code FROM customers WHERE customer_id = ?");
-              $custStmt->execute([$cmaCustomerId]);
-              $custInfo = $custStmt->fetch(PDO::FETCH_ASSOC);
-              if ($custInfo) {
-                  $cmaCustName = $custInfo['customer_name'];
-                  $cmaCustCode = $custInfo['customer_code'];
-              }
-
-              require_once __DIR__ . '/config/subscription.php';
-              $subInfo = getActiveCustomerSubscription($cmaCustomerId);
-              if ($subInfo) {
-                  $cmaPlanName = $subInfo['plan_name'] ?? 'Active Plan';
-                  $cmaMaxUsers = (int)($subInfo['max_users'] ?? 0);
-              }
-
-              $limitCheck = checkUserLimit($cmaCustomerId);
-              $cmaCurrentUsers = (int)($limitCheck['current_users'] ?? 0);
-              $cmaAvailableUsers = max(0, $cmaMaxUsers - $cmaCurrentUsers);
-
-              $compStmt = $pdo->prepare("SELECT COUNT(*) FROM companies WHERE customer_id = ? AND UPPER(status) = 'ACTIVE'");
-              $compStmt->execute([$cmaCustomerId]);
-              $cmaTotalCompanies = (int)$compStmt->fetchColumn();
-
-              $divStmt = $pdo->prepare("
-                  SELECT COUNT(*) 
-                  FROM divisions d 
-                  JOIN companies c ON d.company_id = c.company_id 
-                  WHERE c.customer_id = ? AND UPPER(d.status) = 'ACTIVE' AND UPPER(c.status) = 'ACTIVE'
-              ");
-              $divStmt->execute([$cmaCustomerId]);
-              $cmaTotalDivisions = (int)$divStmt->fetchColumn();
-
-              $plantStmt = $pdo->prepare("
-                  SELECT COUNT(*) 
-                  FROM plants p 
-                  JOIN divisions d ON p.division_id = d.division_id 
-                  JOIN companies c ON d.company_id = c.company_id 
-                  WHERE c.customer_id = ? AND UPPER(p.status) = 'ACTIVE' AND UPPER(d.status) = 'ACTIVE' AND UPPER(c.status) = 'ACTIVE'
-              ");
-              $plantStmt->execute([$cmaCustomerId]);
-              $cmaTotalPlants = (int)$plantStmt->fetchColumn();
-
-              $recentStmt = $pdo->prepare("
-                  SELECT DISTINCT u.user_id, u.username, u.first_name, u.last_name, u.email, u.status, r.role_name
-                  FROM users u
-                  INNER JOIN user_organization_access uoa ON u.user_id = uoa.user_id
-                  LEFT JOIN user_roles ur ON u.user_id = ur.user_id
-                  LEFT JOIN roles r ON ur.role_id = r.role_id
-                  WHERE uoa.customer_id = ?
-                  ORDER BY u.user_id DESC
-                  LIMIT 5
-              ");
-              $recentStmt->execute([$cmaCustomerId]);
-              $cmaRecentUsers = $recentStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-          }
-          $usagePct = $cmaMaxUsers > 0 ? min(100, round(($cmaCurrentUsers / $cmaMaxUsers) * 100)) : 0;
-          ?>
-
-          <!-- CMA ADMIN WELCOME HERO -->
-          <section class="section-card" style="margin-bottom: 1.5rem; background: linear-gradient(135deg, rgba(6,61,112,0.9) 0%, rgba(3,54,101,0.95) 100%); border: 1px solid rgba(0,207,239,0.3);">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-              <div>
-                <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-bright-cyan); font-weight: 700; margin-bottom: 0.25rem;">
-                  Cost Management Administration
-                </div>
-                <h1 style="font-size: 1.6rem; font-weight: 700; margin: 0 0 0.4rem 0; color: #FFFFFF;">
-                  Welcome, <?php echo htmlspecialchars(($user['first_name'] ? $user['first_name'] . ' ' . $user['last_name'] : $user['username'])); ?>
-                </h1>
-                <p style="font-size: 0.9rem; color: rgba(255,255,255,0.8); margin: 0;">
-                  Customer Tenant: <strong style="color: #FFFFFF;"><?php echo htmlspecialchars($cmaCustName); ?></strong>
-                  <?php if ($cmaCustCode): ?><code style="background: rgba(0,0,0,0.25); color: var(--color-bright-cyan); padding: 0.15rem 0.4rem; border-radius: 4px; margin-left: 0.35rem; font-size: 0.8rem;"><?php echo htmlspecialchars($cmaCustCode); ?></code><?php endif; ?>
-                </p>
-              </div>
-              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                <a href="<?php echo htmlspecialchars(renderMenuHref('cma/users/')); ?>" class="btn-primary" style="display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
-                  <span>User Master</span>
-                </a>
-                <a href="<?php echo htmlspecialchars(renderMenuHref('organization/companies/')); ?>" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
-                  <span>Companies</span>
-                </a>
-                <a href="<?php echo htmlspecialchars(renderMenuHref('cma/access/')); ?>" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                  <span>User Access</span>
-                </a>
-              </div>
-            </div>
-          </section>
-
-          <!-- TENANT & SUBSCRIPTION METRICS -->
-          <section class="grid-cards" style="margin-bottom: 1.5rem;">
-            <div class="stat-card">
-              <div class="stat-header"><span class="stat-label">Customer Organization</span></div>
-              <div class="stat-number" style="font-size: 1.25rem; line-height: 1.4; color: var(--color-bright-cyan);"><?php echo htmlspecialchars($cmaCustName); ?></div>
-              <div class="stat-desc">Scoped Tenant ID: <?php echo htmlspecialchars($cmaCustomerId ?: 'N/A'); ?></div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-header"><span class="stat-label">Active Subscription</span></div>
-              <div class="stat-number" style="font-size: 1.25rem; line-height: 1.4; color: #10B981;"><?php echo htmlspecialchars($cmaPlanName); ?></div>
-              <div class="stat-desc">Plan Tier: <?php echo $cmaMaxUsers > 0 ? $cmaMaxUsers . ' Max Users' : 'No Limit / Uncapped'; ?></div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-header"><span class="stat-label">User Usage</span></div>
-              <div class="stat-number" style="color: <?php echo ($cmaMaxUsers > 0 && $cmaCurrentUsers >= $cmaMaxUsers) ? '#DC2626' : '#FFFFFF'; ?>;">
-                <?php echo $cmaCurrentUsers; ?> <span style="font-size: 0.95rem; font-weight: 500; color: var(--color-secondary-text);">/ <?php echo $cmaMaxUsers; ?></span>
-              </div>
-              <div style="background: rgba(255,255,255,0.1); border-radius: 9999px; height: 6px; width: 100%; margin-top: 0.5rem; overflow: hidden;">
-                <div style="background: <?php echo $usagePct >= 90 ? '#DC2626' : ($usagePct >= 75 ? '#F59E0B' : '#10B981'); ?>; height: 100%; width: <?php echo $usagePct; ?>%;"></div>
-              </div>
-              <div class="stat-desc" style="margin-top: 0.35rem;"><?php echo $usagePct; ?>% allocation used</div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-header"><span class="stat-label">Available Users</span></div>
-              <div class="stat-number" style="color: <?php echo $cmaAvailableUsers > 0 ? '#10B981' : '#DC2626'; ?>;"><?php echo $cmaAvailableUsers; ?></div>
-              <div class="stat-desc">Slots remaining to provision</div>
-            </div>
-          </section>
-
-          <!-- ORGANIZATION HIERARCHY SUMMARY -->
-          <div style="margin-bottom: 1rem;">
-            <h3 style="font-size: 1rem; font-weight: 700; color: var(--color-primary-text); margin: 0 0 0.75rem 0;">Organization Hierarchy Overview</h3>
-          </div>
-          <section class="grid-cards" style="margin-bottom: 1.5rem;">
-            <div class="stat-card">
-              <div class="stat-header"><span class="stat-label">Companies</span></div>
-              <div class="stat-number"><?php echo $cmaTotalCompanies; ?></div>
-              <div class="stat-desc">Direct corporate entities</div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-header"><span class="stat-label">Divisions</span></div>
-              <div class="stat-number"><?php echo $cmaTotalDivisions; ?></div>
-              <div class="stat-desc">Operational business divisions</div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-header"><span class="stat-label">Plants</span></div>
-              <div class="stat-number"><?php echo $cmaTotalPlants; ?></div>
-              <div class="stat-desc">Manufacturing / facility plants</div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-header"><span class="stat-label">Users</span></div>
-              <div class="stat-number"><?php echo $cmaCurrentUsers; ?></div>
-              <div class="stat-desc">Active users in tenant</div>
-            </div>
-          </section>
-
-          <!-- RECENT USERS TABLE -->
-          <section class="section-card">
-            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-              <h2 class="section-title">Tenant Users</h2>
-              <a href="<?php echo htmlspecialchars(renderMenuHref('cma/users/')); ?>" style="font-size: 0.85rem; color: var(--color-bright-cyan); text-decoration: none; font-weight: 600;">View All Users &rarr;</a>
-            </div>
-            <div class="table-responsive">
-              <?php if (!empty($cmaRecentUsers)): ?>
-                <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
-                  <thead>
-                    <tr style="border-bottom: 1px solid var(--color-card-border); text-align: left; color: var(--color-secondary-text);">
-                      <th style="padding: 0.65rem 0.85rem;">Name</th>
-                      <th style="padding: 0.65rem 0.85rem;">Username / Email</th>
-                      <th style="padding: 0.65rem 0.85rem;">Role</th>
-                      <th style="padding: 0.65rem 0.85rem;">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <?php foreach ($cmaRecentUsers as $ru): ?>
-                      <tr style="border-bottom: 1px solid var(--color-card-border);">
-                        <td style="padding: 0.65rem 0.85rem; font-weight: 600; color: var(--color-primary-text);">
-                          <?php echo htmlspecialchars(($ru['first_name'] ? $ru['first_name'] . ' ' . $ru['last_name'] : $ru['username'])); ?>
-                        </td>
-                        <td style="padding: 0.65rem 0.85rem;">
-                          <code><?php echo htmlspecialchars($ru['username']); ?></code>
-                          <div style="font-size: 0.78rem; color: var(--color-secondary-text);"><?php echo htmlspecialchars($ru['email']); ?></div>
-                        </td>
-                        <td style="padding: 0.65rem 0.85rem;">
-                          <span style="background: rgba(0,207,239,0.12); color: var(--color-bright-cyan); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
-                            <?php echo htmlspecialchars($ru['role_name'] ?: 'User'); ?>
-                          </span>
-                        </td>
-                        <td style="padding: 0.65rem 0.85rem;">
-                          <span class="status-badge <?php echo strtoupper($ru['status']) === 'ACTIVE' ? 'status-active' : 'status-inactive'; ?>">
-                            <?php echo htmlspecialchars($ru['status']); ?>
-                          </span>
-                        </td>
-                      </tr>
-                    <?php endforeach; ?>
-                  </tbody>
-                </table>
-              <?php else: ?>
-                <div class="empty-state">No users provisioned in this customer organization yet.</div>
-              <?php endif; ?>
-            </div>
-          </section>
-
-        <?php else: ?>
         <section class="grid-cards">
           <div class="stat-card">
             <div class="stat-header"><span class="stat-label">Accessible Menus</span></div>
@@ -11065,7 +11886,7 @@ if (!function_exists('formatMenuRouteUrl')) {
 
         <?php endif; ?>
 
-      <?php endif; ?>
+      
 
     </main>
 
@@ -11136,8 +11957,8 @@ if (!function_exists('formatMenuRouteUrl')) {
           : '<span class="status-badge" style="background: #FEE2E2; color: #DC2626;">Inactive</span>';
 
         // Derive plan or fallback
-        const subPlan = c.subscription_plan || (idx % 2 === 0 ? 'Enterprise' : 'Professional');
-        const subClass = subPlan === 'Enterprise' ? 'perm-create' : (subPlan === 'Professional' ? 'perm-read' : 'perm-update');
+        const subPlan = c.subscription_plan || 'Free Starter Plan';
+        const subClass = subPlan.toLowerCase().includes('enterprise') ? 'perm-create' : (subPlan.toLowerCase().includes('pro') ? 'perm-read' : 'perm-update');
 
         html += `
           <tr>
@@ -11199,10 +12020,37 @@ if (!function_exists('formatMenuRouteUrl')) {
       renderCustomersRows(allCustomersData);
     }
 
+    async function loadSubscriptionPlansForWizard() {
+      const select = document.getElementById('wizSubPlan');
+      if (!select) return;
+
+      try {
+        const res = await fetch('api/subscriptions_api.php?action=list_plans');
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.plans) && data.plans.length > 0) {
+          select.innerHTML = data.plans.map(p => {
+            const priceVal = parseFloat(p.price || 0);
+            const priceStr = priceVal > 0 
+              ? `${p.currency === 'USD' ? '$' : '₹'}${priceVal.toLocaleString()} / ${(p.billing_cycle || 'MONTHLY').toLowerCase()}`
+              : 'Free';
+            const usersStr = p.max_users > 0 ? `${p.max_users} Users` : 'Unlimited / Starter';
+            return `<option value="${p.plan_id}">${escapeHtml(p.plan_name)} (${usersStr} - ${priceStr})</option>`;
+          }).join('');
+        } else {
+          select.innerHTML = '<option value="">No active subscription plans available</option>';
+        }
+      } catch (err) {
+        console.error('Failed to load subscription plans for wizard:', err);
+        select.innerHTML = '<option value="">Error loading subscription plans</option>';
+      }
+    }
+
     /* WIZARD LOGIC */
-    function openAddCustomerWizard() {
+    async function openAddCustomerWizard() {
       document.getElementById('addCustomerForm').reset();
       currentWizStep = 1;
+      await loadSubscriptionPlansForWizard();
       renderWizStep();
       document.getElementById('addCustomerWizardModal').style.display = 'flex';
     }
@@ -11271,7 +12119,10 @@ if (!function_exists('formatMenuRouteUrl')) {
       const name = document.getElementById('wizCustomerName').value.trim();
       const contactPerson = document.getElementById('wizContactPerson').value.trim();
       const contactEmail = document.getElementById('wizContactEmail').value.trim();
-      const subPlan = document.getElementById('wizSubPlan').value;
+      const subPlanSelect = document.getElementById('wizSubPlan');
+      const subPlan = subPlanSelect && subPlanSelect.options[subPlanSelect.selectedIndex] 
+        ? subPlanSelect.options[subPlanSelect.selectedIndex].text 
+        : 'Default Plan';
       const adminName = document.getElementById('wizAdminName').value.trim();
       const adminEmail = document.getElementById('wizAdminEmail').value.trim();
       const compCode = document.getElementById('wizCompCode').value.trim();
@@ -11285,7 +12136,7 @@ if (!function_exists('formatMenuRouteUrl')) {
           </div>
           <div>
             <strong>Subscription Plan:</strong> ${escapeHtml(subPlan)}<br>
-            <strong>Provisioning DB:</strong> Neon Global Database (Connected)
+            <strong>Provisioning DB:</strong> Dedicated PostgreSQL Customer DB (cust&lt;ID&gt;)
           </div>
           <div style="grid-column: span 2; border-top: 1px solid var(--color-border); padding-top: 0.75rem; margin-top: 0.5rem;">
             <strong>Customer Administrator:</strong> ${escapeHtml(adminName)} (${escapeHtml(adminEmail)})<br>
@@ -11324,7 +12175,7 @@ if (!function_exists('formatMenuRouteUrl')) {
           return;
         }
 
-        alert(`Customer Created Successfully!\nCustomer Code: ${res.customer_code}\nAdmin Email: ${res.admin_email}`);
+        alert(`Customer Created & Provisioned Successfully!\nCustomer Code: ${res.customer_code}\nDatabase: ${res.database_name || 'cust' + res.customer_id}\nAdmin Email: ${res.admin_email}`);
         closeModal('addCustomerWizardModal');
         loadCustomersTable();
       } catch (err) {

@@ -250,6 +250,13 @@ if (!function_exists('getSubscriptionPlanByCode')) {
    2. GET CUSTOMER ACTIVE SUBSCRIPTION & HISTORY
    ============================================================ */
 
+if (!function_exists('getActiveCustomerSubscription')) {
+    function getActiveCustomerSubscription(int $customerId): ?array
+    {
+        return getCustomerActiveSubscription($customerId);
+    }
+}
+
 if (!function_exists('getCustomerActiveSubscription')) {
     /**
      * Retrieve the single active subscription for a customer.
@@ -799,7 +806,7 @@ if (!function_exists('calculateAvailableUserSlots')) {
                 'current_active_users' => $currentUsers,
                 'available_users' => 0,
                 'allowed' => false,
-                'reason' => 'User limit reached. Your current subscription allows a maximum of 0 users. Please contact the Project Administrator to upgrade your subscription.'
+                'reason' => 'User limit reached. Your current subscription allows a maximum limit of 0 users. Please contact the Project Administrator to upgrade your subscription.'
             ];
         }
 

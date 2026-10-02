@@ -13,5 +13,5 @@ if (!isPlatformAdmin() && !isCmaAdmin()) {
     exit;
 }
 
-$_GET['page'] = 'users';
+$_GET['page'] = 'cma-users';
 require_once __DIR__ . '/../../dashboard.php';

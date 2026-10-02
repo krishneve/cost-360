@@ -2273,6 +2273,41 @@ if (!function_exists('getUserAuthorizedMenus')) {
                 return $cachedMenusMap[$userId];
             }
 
+            if (isCmaAdmin($userId)) {
+                $stmt = $pdo->prepare("
+                    SELECT DISTINCT
+                        m.menu_id,
+                        m.parent_menu_id,
+                        m.menu_code,
+                        m.menu_name,
+                        m.menu_type,
+                        m.route,
+                        m.icon,
+                        m.display_order,
+                        m.status,
+                        TRUE AS can_view,
+                        TRUE AS can_create,
+                        TRUE AS can_edit,
+                        TRUE AS can_delete,
+                        TRUE AS can_upload,
+                        TRUE AS can_download,
+                        TRUE AS can_approve,
+                        TRUE AS can_export,
+                        TRUE AS can_print,
+                        TRUE AS can_configure
+                    FROM menus m
+                    INNER JOIN role_menu rm ON rm.menu_id = m.menu_id
+                    INNER JOIN roles r ON r.role_id = rm.role_id
+                    WHERE r.role_code = 'CMA_ADMIN'
+                      AND UPPER(m.status) = 'ACTIVE'
+                    ORDER BY m.display_order ASC, m.menu_id ASC
+                ");
+                $stmt->execute();
+                $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $cachedMenusMap[$userId] = $menus ?: [];
+                return $cachedMenusMap[$userId];
+            }
+
             $sql = "
 
                 WITH RECURSIVE authorized_menu_tree AS (

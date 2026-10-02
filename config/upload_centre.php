@@ -1,14 +1,14 @@
 <?php
 /**
  * Cost360 - Upload Centre Core Service & Helpers
- * Handles file ingestion, keyword classification, database discovery, column mapping,
- * data validation, batch importing, import history, and audit logging.
+ * Handles file ingestion, keyword classification, customer database resolution, column mapping,
+ * data validation, batch importing into dedicated customer databases (cust<ID>), import history, and audit logging.
  */
 
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/auth.php';
 
-// Helper function for database execution
+// Helper function for global database execution
 if (!function_exists('dbQuery')) {
     function dbQuery($sql, $params = []) {
         $pdo = getDbConnection();
@@ -40,6 +40,82 @@ function clearUploadCentreCache() {
         if (strpos($key, 'recent_uploads_cache_') === 0) {
             unset($_SESSION[$key]);
         }
+    }
+}
+
+/**
+ * Resolves the authenticated user's dedicated Customer Database context.
+ * Performs secure backend resolution exclusively from session/user context.
+ * Never trusts frontend-supplied customer_id or database_name.
+ */
+if (!function_exists('getUserCustomerDbContext')) {
+    function getUserCustomerDbContext(?array $user = null): array {
+        if (!$user) {
+            $user = getAuthUser();
+        }
+        $userId = (int)($user['user_id'] ?? ($_SESSION['user_id'] ?? 0));
+        if ($userId <= 0) {
+            throw new Exception("Unauthenticated user context.");
+        }
+
+        $globalPdo = getDbConnection();
+
+        // 1. Resolve Customer ID
+        $customerId = null;
+        if (isset($_SESSION['active_customer_id']) && $_SESSION['active_customer_id'] !== 'ALL' && is_numeric($_SESSION['active_customer_id'])) {
+            $customerId = (int)$_SESSION['active_customer_id'];
+        }
+
+        if (!$customerId) {
+            $stmt = $globalPdo->prepare("
+                SELECT uoa.customer_id
+                FROM user_organization_access uoa
+                WHERE uoa.user_id = :uid AND UPPER(uoa.status) = 'ACTIVE' AND uoa.customer_id IS NOT NULL
+                ORDER BY uoa.access_id ASC LIMIT 1
+            ");
+            $stmt->execute([':uid' => $userId]);
+            $customerId = (int)($stmt->fetchColumn() ?: 0);
+        }
+
+        if (!$customerId || $customerId <= 0) {
+            if (isPlatformAdmin($userId)) {
+                $stmtFirst = $globalPdo->query("SELECT customer_id FROM customers WHERE UPPER(status) = 'ACTIVE' ORDER BY customer_id ASC LIMIT 1");
+                $customerId = (int)($stmtFirst->fetchColumn() ?: 1);
+            } else {
+                throw new Exception("Unable to identify customer organization for logged-in user.");
+            }
+        }
+
+        // 2. Retrieve database_name from customer_databases table in Global DB
+        $stmtDb = $globalPdo->prepare("
+            SELECT database_name, status
+            FROM customer_databases
+            WHERE customer_id = :cid AND UPPER(status) = 'ACTIVE'
+            LIMIT 1
+        ");
+        $stmtDb->execute([':cid' => $customerId]);
+        $dbRecord = $stmtDb->fetch(PDO::FETCH_ASSOC);
+
+        if (!$dbRecord || empty($dbRecord['database_name'])) {
+            // Auto-provision if missing
+            $provisionRes = provisionCustomerDatabase($globalPdo, $customerId);
+            if ($provisionRes['success']) {
+                $dbName = $provisionRes['database_name'];
+            } else {
+                throw new Exception("Customer database is not provisioned or active for Customer ID {$customerId}: " . ($provisionRes['error'] ?? ''));
+            }
+        } else {
+            $dbName = $dbRecord['database_name'];
+        }
+
+        // 3. Connect to dedicated Customer Database
+        $custPdo = getCustomerDbConnection($dbName);
+
+        return [
+            'customer_id'   => $customerId,
+            'database_name' => $dbName,
+            'pdo'           => $custPdo
+        ];
     }
 }
 
@@ -131,11 +207,13 @@ function getRecentUploads($userId = null, $limit = 8) {
     return $recent;
 }
 
-// Dynamically discover columns and data types of target tables in public schema
-function getTargetTableColumns($tableName, $customerId = null) {
+// Dynamically discover columns and data types of target tables in customer or global schema
+function getTargetTableColumns($tableName, $pdoOrCustomerId = null) {
     try {
-        if ($customerId !== null && $customerId > 0) {
-            $pdo = getCustomerDbConnection($customerId);
+        if ($pdoOrCustomerId instanceof PDO) {
+            $pdo = $pdoOrCustomerId;
+        } elseif (!empty($pdoOrCustomerId)) {
+            $pdo = getCustomerDbConnection($pdoOrCustomerId);
         } elseif (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['active_customer_id'])) {
             $pdo = getCustomerDbConnection((int)$_SESSION['active_customer_id']);
         } else {
@@ -145,16 +223,16 @@ function getTargetTableColumns($tableName, $customerId = null) {
         $stmt = $pdo->prepare("
             SELECT column_name, data_type, is_nullable 
             FROM information_schema.columns 
-            WHERE table_schema = 'public' AND table_name = ?
+            WHERE table_schema = 'public' AND table_name = :tname
             ORDER BY ordinal_position
         ");
-        $stmt->execute([$tableName]);
+        $stmt->execute([':tname' => $tableName]);
         $cols = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         if (empty($cols)) {
-            $altTable = ($tableName === 'item_master') ? 'items' : (($tableName === 'items') ? 'item_master' : null);
+            $altTable = ($tableName === 'item_master') ? 'items' : (($tableName === 'items') ? 'item_master' : (($tableName === 'period') ? 'periods' : (($tableName === 'periods') ? 'period' : null)));
             if ($altTable) {
-                $stmt->execute([$altTable]);
+                $stmt->execute([':tname' => $altTable]);
                 $cols = $stmt->fetchAll(PDO::FETCH_ASSOC);
             }
         }
@@ -310,6 +388,9 @@ function analyzeUploadedFiles($files, $user) {
         $haystack = strtolower(implode(' ', array_merge([$name], $headers)));
         
         $classificationRules = [
+            ['uom', 'Item Master', 'UOM Master', 98],
+            ['unit of measure', 'Item Master', 'UOM Master', 98],
+            ['period', 'Period Master', 'Period Master', 98],
             ['purchase', 'Stock Ledger', 'Purchase Transaction', 98],
             ['consumption', 'Stock Ledger', 'Consumption Transaction', 98],
             ['production', 'Stock Ledger', 'Production Transaction', 98],
@@ -437,7 +518,7 @@ function updateFileClassification($fileId, $subCategoryId) {
 }
 
 // Fetch File Rows Preview
-function getFilePreviewData($fileId) {
+function getFilePreviewData($fileId, ?array $user = null) {
     $file = dbQuery("SELECT * FROM public.upload_files WHERE id = ?", [$fileId])->fetch(PDO::FETCH_ASSOC);
     if (!$file) {
         return ['ok' => false, 'message' => 'Upload file not found.'];
@@ -465,15 +546,28 @@ function getFilePreviewData($fileId) {
         }
     }
 
-    $targetTable = 'item_master';
+    // Resolve Customer DB context securely
+    $custDbContext = getUserCustomerDbContext($user);
+    $custPdo = $custDbContext['pdo'];
+
+    $targetTable = 'items';
     if (!empty($file['sub_category_id'])) {
         $tName = dbQuery("SELECT te.table_name FROM public.sub_categories sc JOIN public.target_entities te ON te.id = sc.target_entity_id WHERE sc.id = ?", [$file['sub_category_id']])->fetchColumn();
         if ($tName) {
-            $targetTable = $tName;
+            $rawTable = strtolower(trim($tName));
+            if (in_array($rawTable, ['item_master', 'product_master', 'items', 'item'], true)) {
+                $targetTable = 'items';
+            } elseif (in_array($rawTable, ['uom_master', 'uoms', 'uom'], true)) {
+                $targetTable = 'uoms';
+            } elseif (in_array($rawTable, ['period_master', 'periods', 'period'], true)) {
+                $targetTable = 'period';
+            } else {
+                $targetTable = $rawTable;
+            }
         }
     }
 
-    $targetCols = getTargetTableColumns($targetTable);
+    $targetCols = getTargetTableColumns($targetTable, $custPdo);
 
     return [
         'ok' => true,
@@ -481,11 +575,13 @@ function getFilePreviewData($fileId) {
         'headers' => $headers,
         'data' => $data,
         'target_table' => $targetTable,
+        'database_name' => $custDbContext['database_name'],
+        'customer_id' => $custDbContext['customer_id'],
         'target_columns' => array_column($targetCols, 'column_name')
     ];
 }
 
-// Validate & Perform Real Import into Target Customer DB
+// Validate & Perform Real Import into Dedicated Customer Database (cust<ID>)
 function executeDataImport($uploadId, $user) {
     $userId = $user['user_id'] ?? null;
     $username = $user['email'] ?? ($user['username'] ?? 'User');
@@ -500,63 +596,76 @@ function executeDataImport($uploadId, $user) {
         return ['ok' => false, 'message' => 'No upload files found to import.'];
     }
 
-    // Resolve active upload scope
-    $scope = dbQuery("SELECT * FROM public.upload_scopes WHERE upload_id = ?", [$uploadId])->fetch(PDO::FETCH_ASSOC);
-    $targetCustomerId = $scope['customer_id'] ?? (function_exists('getUserCustomerTenantId') ? getUserCustomerTenantId($userId) : 1);
-    $targetCompanyId = $scope['company_id'] ?? ($_SESSION['active_company_id'] ?? null);
-    $targetLocationType = $scope['location_type'] ?? 'PLANT';
-    $targetLocationId = $scope['location_id'] ?? ($_SESSION['active_plant_id'] ?? $_SESSION['active_warehouse_id'] ?? null);
-    $targetPeriodId = $scope['period_id'] ?? ($_SESSION['active_period_id'] ?? null);
+    // Resolve Customer DB context securely for this user
+    $custDbContext = getUserCustomerDbContext($user);
+    $custPdo = $custDbContext['pdo'];
+    $custDbName = $custDbContext['database_name'];
+    $customerId = $custDbContext['customer_id'];
 
-    // Backend scope authorization validation
-    if ($userId && function_exists('isPlatformAdmin') && !isPlatformAdmin($userId) && !isCmaAdmin($userId)) {
-        if ($targetCompanyId && function_exists('userCanAccessCompany') && !userCanAccessCompany($userId, $targetCompanyId)) {
-            return ['ok' => false, 'message' => 'Authorization Error: Access denied to target company scope.'];
-        }
-        if ($targetLocationId && function_exists('userCanAccessLocation') && !userCanAccessLocation($userId, $targetCompanyId, $targetDivisionId ?? null, $targetLocationType, $targetLocationId)) {
-            return ['ok' => false, 'message' => 'Authorization Error: Access denied to target location scope.'];
-        }
-        if ($targetPeriodId && function_exists('userCanAccessPeriod') && !userCanAccessPeriod($targetPeriodId, $userId)) {
-            return ['ok' => false, 'message' => 'Authorization Error: Access denied to target period scope.'];
-        }
-    }
-
-    logUploadAudit($userId, $username, 'IMPORT_STARTED', 'Upload Centre', null, 'In Progress', ['upload_id' => $uploadId, 'customer_id' => $targetCustomerId]);
+    logUploadAudit($userId, $username, 'IMPORT_STARTED', 'Upload Centre', null, 'In Progress', [
+        'upload_id' => $uploadId,
+        'customer_id' => $customerId,
+        'database_name' => $custDbName
+    ]);
 
     $totalImported = 0;
     $totalSkipped = 0;
     $totalFailed = 0;
-
-    // Resolve Customer DB PDO handle strictly
-    try {
-        $pdo = getCustomerDbConnection($targetCustomerId, $userId);
-    } catch (Throwable $e) {
-        logUploadAudit($userId, $username, 'IMPORT_FAILED', 'Upload Centre', null, 'Failed', ['upload_id' => $uploadId, 'error' => $e->getMessage()]);
-        return ['ok' => false, 'message' => 'Customer Database Routing Error: ' . $e->getMessage()];
-    }
 
     foreach ($files as $f) {
         $headers = json_decode($f['headers'] ?? '[]', true) ?: [];
         $subCatId = $f['sub_category_id'];
         
         // Find target table
-        $targetTable = 'item_master';
+        $targetTable = 'items';
         if ($subCatId) {
             $tName = dbQuery("SELECT te.table_name FROM public.sub_categories sc JOIN public.target_entities te ON te.id = sc.target_entity_id WHERE sc.id = ?", [$subCatId])->fetchColumn();
             if ($tName) {
-                $targetTable = $tName;
+                $rawTable = strtolower(trim($tName));
+                if (in_array($rawTable, ['item_master', 'product_master', 'items', 'item'], true)) {
+                    $targetTable = 'items';
+                } elseif (in_array($rawTable, ['uom_master', 'uoms', 'uom'], true)) {
+                    $targetTable = 'uoms';
+                } elseif (in_array($rawTable, ['period_master', 'periods', 'period'], true)) {
+                    $targetTable = 'period';
+                } else {
+                    $targetTable = $rawTable;
+                }
             }
         }
 
-        // Discover dynamic target columns for this table from customer DB
-        $dbCols = getTargetTableColumns($targetTable, $targetCustomerId);
-        if (empty($dbCols) && $targetTable === 'item_master') {
-            $targetTable = 'items';
-            $dbCols = getTargetTableColumns('items', $targetCustomerId);
-        } elseif (empty($dbCols) && $targetTable === 'items') {
-            $targetTable = 'item_master';
-            $dbCols = getTargetTableColumns('item_master', $targetCustomerId);
+        // Check physically if $targetTable exists in customer database
+        $chkTable = $custPdo->prepare("
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = :tname 
+            LIMIT 1
+        ");
+        $chkTable->execute([':tname' => $targetTable]);
+        if (!$chkTable->fetch()) {
+            if ($targetTable === 'period') {
+                $chkAlt = $custPdo->query("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'periods' LIMIT 1");
+                if ($chkAlt && $chkAlt->fetch()) {
+                    $targetTable = 'periods';
+                }
+            }
         }
+
+        // Final physical table existence check
+        $chkTableFinal = $custPdo->prepare("
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = :tname 
+            LIMIT 1
+        ");
+        $chkTableFinal->execute([':tname' => $targetTable]);
+        if (!$chkTableFinal->fetch()) {
+            return [
+                'ok' => false,
+                'message' => "Target table '{$targetTable}' does not exist in customer database ({$custDbName}). Please select an available customer data type (Items, UOMs, Periods)."
+            ];
+        }
+
+        // Discover dynamic target columns for this table in $custPdo
+        $dbCols = getTargetTableColumns($targetTable, $custPdo);
         $dbColNames = array_column($dbCols, 'column_name');
 
         if (!file_exists($f['storage_path'])) {
@@ -571,130 +680,116 @@ function executeDataImport($uploadId, $user) {
         $rawHeaders = fgetcsv($handle);
         $rowNum = 0;
 
-        while (($row = fgetcsv($handle)) !== false) {
-            $rowNum++;
-            if (empty(array_filter($row))) {
-                $totalSkipped++;
-                continue;
-            }
+        // Perform import in atomic transaction on Customer DB
+        $custPdo->beginTransaction();
 
-            $aliasMap = [
-                'cc_code'             => 'work_center_code',
-                'cost_center_code'    => 'work_center_code',
-                'std_machine_hr_rate' => 'hourly_rate',
-                'machine_rate'        => 'hourly_rate',
-                'std_hr_rate'         => 'hourly_rate',
-                'desc'                => 'item_description',
-                'description'         => 'item_description',
-                'unit_rate'           => 'rate',
-                'unit_cost'           => 'rate',
-                'item'                => 'item_code',
-                'material_code'       => 'item_code',
-                'material_name'       => 'item_name',
-                'product_code'        => 'item_code',
-                'product_name'        => 'item_name',
-                'type'                => 'item_type',
-                'uom_code'            => 'uom'
-            ];
+        try {
+            while (($row = fgetcsv($handle)) !== false) {
+                $rowNum++;
+                if (empty(array_filter($row))) {
+                    $totalSkipped++;
+                    continue;
+                }
 
-            $mappedData = [];
-            foreach ($headers as $idx => $headerName) {
-                $cleanCol = preg_replace('/[^a-z0-9_]/', '', strtolower(str_replace(' ', '_', trim($headerName))));
-                
-                if (in_array($cleanCol, $dbColNames, true)) {
-                    $mappedData[$cleanCol] = $row[$idx] ?? null;
-                } elseif (isset($aliasMap[$cleanCol]) && in_array($aliasMap[$cleanCol], $dbColNames, true)) {
-                    $mappedData[$aliasMap[$cleanCol]] = $row[$idx] ?? null;
-                }
-            }
+                $aliasMap = [
+                    'cc_code'             => 'work_center_code',
+                    'cost_center_code'    => 'work_center_code',
+                    'std_machine_hr_rate' => 'hourly_rate',
+                    'machine_rate'        => 'hourly_rate',
+                    'std_hr_rate'         => 'hourly_rate',
+                    'desc'                => 'description',
+                    'description'         => 'description',
+                    'item_desc'           => 'item_name',
+                    'uom'                 => 'uom_code',
+                    'unit_rate'           => 'rate',
+                    'unit_cost'           => 'rate'
+                ];
 
-            // Customer items table specific field adapters and FK lookups
-            if ($targetTable === 'items') {
-                if (empty($mappedData['item_name']) && !empty($mappedData['item_description'])) {
-                    $mappedData['item_name'] = $mappedData['item_description'];
+                $mappedData = [];
+                foreach ($headers as $idx => $headerName) {
+                    $cleanCol = preg_replace('/[^a-z0-9_]/', '', strtolower(str_replace(' ', '_', trim($headerName))));
+                    
+                    if (in_array($cleanCol, $dbColNames, true)) {
+                        $mappedData[$cleanCol] = $row[$idx] ?? null;
+                    } elseif (isset($aliasMap[$cleanCol]) && in_array($aliasMap[$cleanCol], $dbColNames, true)) {
+                        $mappedData[$aliasMap[$cleanCol]] = $row[$idx] ?? null;
+                    } elseif ($targetTable === 'items' && ($cleanCol === 'uom' || $cleanCol === 'uom_code')) {
+                        $mappedData['uom_code'] = $row[$idx] ?? null;
+                    }
                 }
-                if (empty($mappedData['item_type'])) {
-                    $mappedData['item_type'] = 'Raw Material';
+
+                // Foreign Key Resolution for items table (uom_code -> uom_id)
+                if ($targetTable === 'items') {
+                    if (!empty($mappedData['uom_code']) && empty($mappedData['uom_id'])) {
+                        $uStmt = $custPdo->prepare("SELECT uom_id FROM uoms WHERE UPPER(uom_code) = UPPER(:ucode) LIMIT 1");
+                        $uStmt->execute([':ucode' => trim($mappedData['uom_code'])]);
+                        $uId = $uStmt->fetchColumn();
+                        if (!$uId) {
+                            $insUom = $custPdo->prepare("INSERT INTO uoms (uom_code, uom_name) VALUES (:code, :name) RETURNING uom_id");
+                            $insUom->execute([':code' => strtoupper(trim($mappedData['uom_code'])), ':name' => trim($mappedData['uom_code'])]);
+                            $uId = $insUom->fetchColumn();
+                        }
+                        $mappedData['uom_id'] = $uId;
+                        unset($mappedData['uom_code']);
+                    } elseif (empty($mappedData['uom_id'])) {
+                        $defUomId = $custPdo->query("SELECT uom_id FROM uoms ORDER BY uom_id ASC LIMIT 1")->fetchColumn();
+                        if (!$defUomId) {
+                            $insDef = $custPdo->query("INSERT INTO uoms (uom_code, uom_name, description) VALUES ('PCS', 'Pieces', 'Default Piece Unit') RETURNING uom_id");
+                            $defUomId = $insDef->fetchColumn();
+                        }
+                        $mappedData['uom_id'] = $defUomId;
+                    }
                 }
-                if (empty($mappedData['status'])) {
-                    $mappedData['status'] = 'Active';
-                }
-                if (empty($mappedData['uom_id'])) {
-                    $uomCandidate = !empty($mappedData['uom']) ? trim($mappedData['uom']) : 'PCS';
-                    foreach ($headers as $hIdx => $hName) {
-                        if (stripos($hName, 'uom') !== false || stripos($hName, 'unit') !== false) {
-                            if (!empty($row[$hIdx])) {
-                                $uomCandidate = trim($row[$hIdx]);
-                                break;
-                            }
+
+                // Enforce strict schema validation: filter out any key not physically present in $dbColNames
+                $mappedData = array_filter($mappedData, fn($k) => in_array($k, $dbColNames, true), ARRAY_FILTER_USE_KEY);
+
+                // Determine primary non-null identifier column for this table
+                $primaryCol = $dbColNames[1] ?? ($dbColNames[0] ?? null);
+                if ($primaryCol && empty($mappedData[$primaryCol])) {
+                    foreach ($dbColNames as $col) {
+                        if (!in_array($col, ['id', 'created_at', 'created_by', 'item_id', 'uom_id', 'period_id'], true) && !empty($mappedData[$col])) {
+                            $primaryCol = $col;
+                            break;
                         }
                     }
-                    $uomCodeVal = strtoupper($uomCandidate);
-                    try {
-                        $uomStmt = $pdo->prepare("SELECT uom_id FROM uoms WHERE UPPER(uom_code) = :code LIMIT 1");
-                        $uomStmt->execute([':code' => $uomCodeVal]);
-                        $resolvedUomId = $uomStmt->fetchColumn();
-                        if (!$resolvedUomId) {
-                            $insUom = $pdo->prepare("INSERT INTO uoms (uom_code, uom_name, description, status) VALUES (:code, :name, 'Auto-created on import', 'Active') RETURNING uom_id");
-                            $insUom->execute([':code' => $uomCodeVal, ':name' => ucfirst(strtolower($uomCodeVal))]);
-                            $resolvedUomId = $insUom->fetchColumn();
-                        }
-                    } catch (Throwable $uEx) {
-                        $resolvedUomId = 1;
-                    }
-                    $mappedData['uom_id'] = $resolvedUomId;
+                }
+
+                if ($primaryCol && empty($mappedData[$primaryCol])) {
+                    $totalFailed++;
+                    dbQuery("
+                        INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
+                        VALUES(?, ?, ?, ?, 'Missing Required Field', 'Row missing required identifier', 'High')
+                    ", [$uploadId, $f['id'], $rowNum, $primaryCol]);
+                    continue;
+                }
+
+                $colsToInsert = array_keys($mappedData);
+                $colList = implode(', ', $colsToInsert);
+                $placeholders = implode(', ', array_fill(0, count($colsToInsert), '?'));
+                $values = array_values($mappedData);
+
+                try {
+                    $insertSql = "INSERT INTO public.{$targetTable} ({$colList}) VALUES ({$placeholders}) ON CONFLICT DO NOTHING";
+                    $stmt = $custPdo->prepare($insertSql);
+                    $stmt->execute($values);
+                    $totalImported++;
+                } catch (Throwable $e) {
+                    $totalFailed++;
+                    dbQuery("
+                        INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
+                        VALUES(?, ?, ?, ?, 'Database Constraint Failure', ?, 'Critical')
+                    ", [$uploadId, $f['id'], $rowNum, $primaryCol, $e->getMessage()]);
                 }
             }
+            fclose($handle);
 
-            // Enforce strict schema validation: filter out any key not physically present in $dbColNames
-            $mappedData = array_filter($mappedData, fn($k) => in_array($k, $dbColNames, true), ARRAY_FILTER_USE_KEY);
-
-            // Determine primary non-null identifier column for this table
-            $primaryCol = $dbColNames[1] ?? ($dbColNames[0] ?? null);
-            if ($primaryCol && !array_key_exists($primaryCol, $mappedData)) {
-                // Primary column wasn't mapped from CSV headers at all — try to find an alternative identifier
-                foreach ($dbColNames as $col) {
-                    if ($col !== 'id' && $col !== 'created_at' && $col !== 'created_by' && !empty($mappedData[$col])) {
-                        $primaryCol = $col;
-                        break;
-                    }
-                }
-            }
-
-            if ($primaryCol && empty($mappedData[$primaryCol])) {
-                $totalFailed++;
-                dbQuery("
-                    INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
-                    VALUES(?, ?, ?, ?, 'Missing Required Field', 'Row missing required identifier', 'High')
-                ", [$uploadId, $f['id'], $rowNum, $primaryCol]);
-                continue;
-            }
-
-            // Build dynamic parameterised INSERT statement
-            $colsToInsert = array_keys($mappedData);
-            if (!in_array('created_by', $colsToInsert, true) && in_array('created_by', $dbColNames, true)) {
-                $colsToInsert[] = 'created_by';
-                $mappedData['created_by'] = $userId;
-            }
-
-            $colList = implode(', ', $colsToInsert);
-            $placeholders = implode(', ', array_fill(0, count($colsToInsert), '?'));
-            $values = array_values($mappedData);
-
-            try {
-                $insertSql = "INSERT INTO public.{$targetTable} ({$colList}) VALUES ({$placeholders}) ON CONFLICT DO NOTHING";
-                $stmt = $pdo->prepare($insertSql);
-                $stmt->execute($values);
-                $totalImported++;
-            } catch (Throwable $e) {
-                $totalFailed++;
-                dbQuery("
-                    INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
-                    VALUES(?, ?, ?, ?, 'Database Constraint Failure', ?, 'Critical')
-                ", [$uploadId, $f['id'], $rowNum, $primaryCol, $e->getMessage()]);
-            }
+            $custPdo->commit();
+        } catch (Throwable $txErr) {
+            $custPdo->rollBack();
+            fclose($handle);
+            throw $txErr;
         }
-        fclose($handle);
     }
 
     $finalStatus = ($totalFailed === 0) ? 'Completed' : 'Completed with Errors';
@@ -706,19 +801,23 @@ function executeDataImport($uploadId, $user) {
     ", [$finalStatus, $totalImported, $totalSkipped, $totalFailed, $uploadId]);
 
     logUploadAudit($userId, $username, 'IMPORT_COMPLETED', 'Upload Centre', null, 'Success', [
-        'imported' => $totalImported,
-        'skipped' => $totalSkipped,
-        'failed' => $totalFailed
+        'imported'      => $totalImported,
+        'skipped'       => $totalSkipped,
+        'failed'        => $totalFailed,
+        'customer_id'   => $customerId,
+        'database_name' => $custDbName
     ]);
 
     clearUploadCentreCache();
 
     return [
-        'ok' => true,
-        'imported' => $totalImported,
-        'skipped' => $totalSkipped,
-        'failed' => $totalFailed,
-        'status' => $finalStatus
+        'ok'            => true,
+        'imported'      => $totalImported,
+        'skipped'       => $totalSkipped,
+        'failed'        => $totalFailed,
+        'status'        => $finalStatus,
+        'database_name' => $custDbName,
+        'message'       => "Data imported successfully into dedicated Customer Database '{$custDbName}'."
     ];
 }
 
@@ -787,3 +886,4 @@ function getImportErrorsByUploadId($uploadId) {
         return [];
     }
 }
+

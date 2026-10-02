@@ -131,6 +131,8 @@ try {
                     c.contact_phone,
                     c.status,
                     TO_CHAR(c.created_at, 'DD Mon YYYY, HH24:MI') AS created_at_formatted,
+                    sp.plan_name AS subscription_plan,
+                    sp.plan_code AS subscription_plan_code,
                     COALESCE(comp_cnt.total_companies, 0) AS total_companies,
                     COALESCE(plt_cnt.total_plants, 0) AS total_plants,
                     COALESCE(wh_cnt.total_warehouses, 0) AS total_warehouses,
@@ -138,6 +140,8 @@ try {
                     admin_u.full_name AS admin_name,
                     admin_u.email AS admin_email
                 FROM customers c
+                LEFT JOIN customer_subscriptions cs ON c.customer_id = cs.customer_id AND UPPER(cs.status) = 'ACTIVE'
+                LEFT JOIN subscription_plans sp ON cs.plan_id = sp.plan_id
                 
                 -- Aggregated companies count
                 LEFT JOIN (
@@ -629,12 +633,40 @@ try {
                     }
                 }
 
-                // 7. Automatically Assign Default FREE Subscription
+                // 7. Assign Selected Subscription Plan (from subscription_plans table)
                 require_once __DIR__ . '/../../config/subscription.php';
-                $subResult = assignDefaultCustomerSubscription($newCustomerId, $authUserId);
-                if (!$subResult['success']) {
-                    throw new Exception("Failed to assign default subscription: " . ($subResult['error'] ?? ''));
+
+                $selectedPlanId = (int)($_POST['plan_id'] ?? 0);
+                $selectedPlanCodeOrName = trim($_POST['subscription_plan'] ?? '');
+
+                if ($selectedPlanId <= 0 && !empty($selectedPlanCodeOrName)) {
+                    $stmtP = $pdo->prepare("SELECT plan_id FROM subscription_plans WHERE UPPER(plan_code) = UPPER(:val) OR UPPER(plan_name) LIKE UPPER(:likeVal) LIMIT 1");
+                    $stmtP->execute([':val' => $selectedPlanCodeOrName, ':likeVal' => '%' . $selectedPlanCodeOrName . '%']);
+                    $selectedPlanId = (int)$stmtP->fetchColumn();
                 }
+
+                $subStartDate = !empty($_POST['sub_start_date']) ? $_POST['sub_start_date'] : date('Y-m-d');
+                $subEndDate = !empty($_POST['sub_end_date']) ? $_POST['sub_end_date'] : null;
+
+                if ($selectedPlanId > 0) {
+                    $subResult = assignSubscription($newCustomerId, $selectedPlanId, [
+                        'start_date' => $subStartDate,
+                        'end_date' => $subEndDate,
+                        'assigned_by' => $authUserId,
+                        'notes' => 'Subscription plan selected during customer onboarding'
+                    ]);
+                } else {
+                    $subResult = assignDefaultCustomerSubscription($newCustomerId, $authUserId);
+                }
+
+                if (!$subResult['success']) {
+                    throw new Exception("Failed to assign subscription plan: " . ($subResult['error'] ?? ''));
+                }
+
+                $planName = $subResult['plan_name'] ?? $subResult['plan']['plan_name'] ?? 'Assigned Plan';
+                $planCode = $subResult['plan_code'] ?? $subResult['plan']['plan_code'] ?? 'ASSIGNED';
+                $maxUsers = $subResult['max_users'] ?? $subResult['plan']['max_users'] ?? 0;
+                $subStatus = $subResult['status'] ?? $subResult['plan']['status'] ?? 'ACTIVE';
 
                 // 8. Audit Log
                 logAudit(
@@ -651,39 +683,37 @@ try {
                         'admin_user_id' => $newAdminUserId,
                         'admin_email'   => $adminEmail,
                         'company_id'    => $createdCompanyId,
-                        'subscription'  => $subResult['plan_name']
+                        'subscription'  => $planName
                     ])
                 );
 
                 $pdo->commit();
 
-                // 9. Automatically Provision Dedicated PostgreSQL Customer Database
-                $dbProvisionInfo = null;
-                try {
-                    $dbProvisionInfo = provisionCustomerDatabase($newCustomerId);
-                } catch (Throwable $provEx) {
-                    error_log("Customer DB Provisioning Warning for Customer ID {$newCustomerId}: " . $provEx->getMessage());
-                    $dbProvisionInfo = [
-                        'success'       => false,
+                // 9. Provision Dedicated Isolated Customer Database (cust<ID>)
+                $dbProvisionResult = provisionCustomerDatabase($pdo, $newCustomerId, $customerCode);
+                $dbName = $dbProvisionResult['database_name'] ?? ('cust' . $newCustomerId);
+                if (!$dbProvisionResult['success']) {
+                    sendApiResponse(false, 'Customer tenant created, but Customer Database Provisioning failed: ' . ($dbProvisionResult['error'] ?? ''), [
                         'customer_id'   => $newCustomerId,
-                        'database_name' => 'cust_' . $newCustomerId,
-                        'error'         => $provEx->getMessage()
-                    ];
+                        'customer_code' => $customerCode,
+                        'database_name' => $dbName
+                    ], 500);
                 }
 
-                sendApiResponse(true, 'Customer tenant and Customer Administrator created successfully with dedicated database provisioning.', [
+                sendApiResponse(true, "Customer tenant '{$customerName}' and dedicated database '{$dbName}' created and provisioned successfully.", [
                     'customer_id'   => $newCustomerId,
                     'customer_code' => $customerCode,
                     'customer_name' => $customerName,
+                    'database_name' => $dbName,
                     'admin_user_id' => $newAdminUserId,
                     'admin_email'   => $adminEmail,
                     'status'        => 'Active',
                     'subscription'  => [
-                        'subscription_id' => $subResult['subscription_id'],
-                        'plan_code'       => $subResult['plan_code'],
-                        'plan_name'       => $subResult['plan_name'],
-                        'max_users'       => $subResult['max_users'],
-                        'status'          => $subResult['status']
+                        'subscription_id' => $subResult['subscription_id'] ?? null,
+                        'plan_code'       => $planCode,
+                        'plan_name'       => $planName,
+                        'max_users'       => $maxUsers,
+                        'status'          => $subStatus
                     ]
                 ]);
 

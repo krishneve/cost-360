@@ -507,6 +507,119 @@ try {
             break;
 
         /* ============================================================
+           ACTION: GET USER ACCESS CONFIG (FOR MANAGE ACCESS MODAL)
+           ============================================================ */
+        case 'get_user_access_config':
+            $targetUserId = (int)($_GET['user_id'] ?? 0);
+            if ($targetUserId <= 0) {
+                accessJsonResponse(false, 'Invalid user ID.', [], 400);
+            }
+
+            // Fetch target user info
+            $stmtUser = $pdo->prepare("SELECT user_id, full_name, email, username FROM users WHERE user_id = :uid");
+            $stmtUser->execute([':uid' => $targetUserId]);
+            $userInfo = $stmtUser->fetch(PDO::FETCH_ASSOC);
+            if (!$userInfo) {
+                accessJsonResponse(false, 'User not found.', [], 404);
+            }
+
+            // Fetch active mappings
+            $stmtMappings = $pdo->prepare("
+                SELECT access_id, customer_id, company_id, division_id, plant_id,
+                       CASE 
+                           WHEN plant_id IS NOT NULL THEN 'PLANT'
+                           WHEN division_id IS NOT NULL THEN 'DIVISION'
+                           WHEN company_id IS NOT NULL THEN 'COMPANY'
+                           ELSE 'CUSTOMER'
+                       END as access_level
+                FROM user_organization_access
+                WHERE user_id = :uid AND UPPER(status) = 'ACTIVE'
+            ");
+            $stmtMappings->execute([':uid' => $targetUserId]);
+            $rawMappings = $stmtMappings->fetchAll(PDO::FETCH_ASSOC);
+
+            $accessMode = 'SELECTED';
+            foreach ($rawMappings as $m) {
+                if ($m['access_level'] === 'CUSTOMER') {
+                    $accessMode = 'FULL';
+                    break;
+                }
+            }
+
+            // Fetch full company hierarchy under customer scope
+            $sqlComp = "
+                SELECT c.company_id, c.company_code, c.company_name,
+                       d.division_id, d.division_code, d.division_name,
+                       p.plant_id, p.plant_code, p.plant_name
+                FROM companies c
+                LEFT JOIN divisions d ON d.company_id = c.company_id AND UPPER(d.status) = 'ACTIVE'
+                LEFT JOIN plants p ON p.division_id = d.division_id AND UPPER(p.status) = 'ACTIVE'
+                WHERE UPPER(c.status) = 'ACTIVE'
+            ";
+            $cParams = [];
+            if ($scopedCustomerId && $scopedCustomerId > 0) {
+                $sqlComp .= " AND c.customer_id = :cid";
+                $cParams[':cid'] = $scopedCustomerId;
+            }
+            $sqlComp .= " ORDER BY c.company_name ASC, d.division_name ASC, p.plant_name ASC";
+            $stmtC = $pdo->prepare($sqlComp);
+            $stmtC->execute($cParams);
+            $rows = $stmtC->fetchAll(PDO::FETCH_ASSOC);
+
+            $companyMap = [];
+            foreach ($rows as $r) {
+                $cid = (int)$r['company_id'];
+                if (!isset($companyMap[$cid])) {
+                    $companyMap[$cid] = [
+                        'company_id' => $cid,
+                        'company_code' => $r['company_code'],
+                        'company_name' => $r['company_name'],
+                        'divisions' => []
+                    ];
+                }
+                if (!empty($r['division_id'])) {
+                    $did = (int)$r['division_id'];
+                    if (!isset($companyMap[$cid]['divisions'][$did])) {
+                        $companyMap[$cid]['divisions'][$did] = [
+                            'division_id' => $did,
+                            'division_code' => $r['division_code'],
+                            'division_name' => $r['division_name'],
+                            'plants' => []
+                        ];
+                    }
+                    if (!empty($r['plant_id'])) {
+                        $pid = (int)$r['plant_id'];
+                        $companyMap[$cid]['divisions'][$did]['plants'][$pid] = [
+                            'plant_id' => $pid,
+                            'plant_code' => $r['plant_code'],
+                            'plant_name' => $r['plant_name']
+                        ];
+                    }
+                }
+            }
+
+            // Convert map to indexed arrays
+            $companiesList = [];
+            foreach ($companyMap as $c) {
+                $divList = [];
+                foreach ($c['divisions'] as $d) {
+                    $d['plants'] = array_values($d['plants']);
+                    $divList[] = $d;
+                }
+                $c['divisions'] = $divList;
+                $companiesList[] = $c;
+            }
+
+            accessJsonResponse(true, '', [
+                'user' => $userInfo,
+                'access_mode' => $accessMode,
+                'mappings' => $rawMappings,
+                'companies' => $companiesList
+            ]);
+            break;
+
+
+        /* ============================================================
            ACTION: SAVE USER ACCESS MAPPING (PHASE 12 & 13 VALIDATION)
            ============================================================ */
         case 'save':
@@ -672,6 +785,148 @@ try {
 
             accessJsonResponse(true, "{$accessLevel} access successfully assigned to user.", [
                 'access_id' => $newAccessId
+            ]);
+            break;
+
+        /* ============================================================
+           ACTION: SAVE FULL USER ACCESS CONFIGURATION (FULL or SELECTED MULTI-COMPANY)
+           ============================================================ */
+        case 'save_user_access_config':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                accessJsonResponse(false, 'Method not allowed.', [], 405);
+            }
+
+            // Accept JSON or POST form data
+            $rawInput = file_get_contents('php://input');
+            $jsonData = json_decode($rawInput, true);
+
+            $targetUserId = (int)($jsonData['user_id'] ?? $_POST['user_id'] ?? 0);
+            $accessMode = strtoupper(trim($jsonData['access_mode'] ?? $_POST['access_mode'] ?? 'SELECTED'));
+            $rawMappings = $jsonData['mappings'] ?? (isset($_POST['mappings']) ? json_decode($_POST['mappings'], true) : []);
+
+            if ($targetUserId <= 0) {
+                accessJsonResponse(false, 'Invalid user selected.', [], 400);
+            }
+
+            // Verify target user exists
+            $stmtChkUser = $pdo->prepare("SELECT user_id, full_name, email FROM users WHERE user_id = :uid");
+            $stmtChkUser->execute([':uid' => $targetUserId]);
+            $targetUserObj = $stmtChkUser->fetch(PDO::FETCH_ASSOC);
+            if (!$targetUserObj) {
+                accessJsonResponse(false, 'Target user not found.', [], 404);
+            }
+
+            $effectiveCustId = $scopedCustomerId;
+            if (!$effectiveCustId || $effectiveCustId <= 0) {
+                // Fetch user's customer ID if platform admin didn't pass one
+                $stmtUserCust = $pdo->prepare("SELECT customer_id FROM user_organization_access WHERE user_id = :uid AND customer_id IS NOT NULL LIMIT 1");
+                $stmtUserCust->execute([':uid' => $targetUserId]);
+                $effectiveCustId = (int)$stmtUserCust->fetchColumn();
+            }
+
+            if ($effectiveCustId <= 0) {
+                accessJsonResponse(false, 'Unable to determine customer organization for this operation.', [], 400);
+            }
+
+            $pdo->beginTransaction();
+
+            // Deactivate existing access records for this user
+            $stmtDeactivate = $pdo->prepare("UPDATE user_organization_access SET status = 'Inactive' WHERE user_id = :uid AND UPPER(status) = 'ACTIVE'");
+            $stmtDeactivate->execute([':uid' => $targetUserId]);
+
+            $savedCount = 0;
+
+            if ($accessMode === 'FULL') {
+                // Insert full access record
+                $stmtInsertFull = $pdo->prepare("
+                    INSERT INTO user_organization_access (
+                        user_id, customer_id, company_id, division_id, plant_id, warehouse_id, valid_from, status
+                    ) VALUES (
+                        :uid, :cid, NULL, NULL, NULL, NULL, CURRENT_DATE, 'Active'
+                    )
+                ");
+                $stmtInsertFull->execute([':uid' => $targetUserId, ':cid' => $effectiveCustId]);
+                $savedCount = 1;
+            } else {
+                // Selected organizations mapping
+                if (!is_array($rawMappings) || empty($rawMappings)) {
+                    $pdo->rollBack();
+                    accessJsonResponse(false, 'Please select at least one organization for custom access mapping.', [], 400);
+                }
+
+                $stmtInsertMapping = $pdo->prepare("
+                    INSERT INTO user_organization_access (
+                        user_id, customer_id, company_id, division_id, plant_id, warehouse_id, valid_from, status
+                    ) VALUES (
+                        :uid, :cid, :comp_id, :div_id, :plant_id, NULL, CURRENT_DATE, 'Active'
+                    )
+                ");
+
+                foreach ($rawMappings as $m) {
+                    $compId = (int)($m['company_id'] ?? 0);
+                    $level = strtoupper(trim($m['access_level'] ?? 'COMPANY'));
+                    $divId = !empty($m['division_id']) ? (int)$m['division_id'] : null;
+                    $plantId = !empty($m['plant_id']) ? (int)$m['plant_id'] : null;
+
+                    if ($compId <= 0) continue;
+
+                    // Verify company belongs to tenant
+                    $stmtC = $pdo->prepare("SELECT company_id FROM companies WHERE company_id = :cid AND customer_id = :cust_id AND UPPER(status) = 'ACTIVE'");
+                    $stmtC->execute([':cid' => $compId, ':cust_id' => $effectiveCustId]);
+                    if (!$stmtC->fetch()) continue;
+
+                    if ($level === 'DIVISION') {
+                        if ($divId) {
+                            $stmtD = $pdo->prepare("SELECT division_id FROM divisions WHERE division_id = :did AND company_id = :cid AND UPPER(status) = 'ACTIVE'");
+                            $stmtD->execute([':did' => $divId, ':cid' => $compId]);
+                            if (!$stmtD->fetch()) $divId = null;
+                        }
+                        $plantId = null;
+                    } elseif ($level === 'PLANT') {
+                        if ($divId && $plantId) {
+                            $stmtP = $pdo->prepare("SELECT plant_id FROM plants WHERE plant_id = :pid AND division_id = :did AND UPPER(status) = 'ACTIVE'");
+                            $stmtP->execute([':pid' => $plantId, ':did' => $divId]);
+                            if (!$stmtP->fetch()) $plantId = null;
+                        }
+                    } else {
+                        // COMPANY level
+                        $divId = null;
+                        $plantId = null;
+                    }
+
+                    $stmtInsertMapping->execute([
+                        ':uid'      => $targetUserId,
+                        ':cid'      => $effectiveCustId,
+                        ':comp_id'  => $compId,
+                        ':div_id'   => $divId,
+                        ':plant_id' => $plantId
+                    ]);
+                    $savedCount++;
+                }
+            }
+
+            // Audit
+            $stmtAudit = $pdo->prepare("
+                INSERT INTO audit_log (user_id, entity_name, entity_id, action, old_value, new_value, timestamp, ip_address)
+                VALUES (:uid, 'user_organization_access', :eid, 'USER_ACCESS_UPDATED', NULL, :new_val, CURRENT_TIMESTAMP, :ip)
+            ");
+            $stmtAudit->execute([
+                ':uid'     => $currentUserId,
+                ':eid'     => $targetUserId,
+                ':new_val' => json_encode([
+                    'user_id'     => $targetUserId,
+                    'access_mode' => $accessMode,
+                    'saved_count' => $savedCount
+                ], JSON_UNESCAPED_UNICODE),
+                ':ip'      => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'
+            ]);
+
+            $pdo->commit();
+
+            accessJsonResponse(true, 'User access configuration updated successfully.', [
+                'user_id' => $targetUserId,
+                'access_mode' => $accessMode,
+                'mappings_saved' => $savedCount
             ]);
             break;
 

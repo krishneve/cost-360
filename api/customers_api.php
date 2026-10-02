@@ -4,6 +4,7 @@
  * Handles Customer CRUD, Tenant Provisioning, Customer Admin Creation, Organization Scope & Audit Logging.
  */
 
+ob_start();
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../config/database.php';
@@ -42,9 +43,13 @@ try {
                 c.address,
                 c.status,
                 c.created_at,
+                sp.plan_name AS subscription_plan,
+                sp.plan_code AS subscription_plan_code,
                 (SELECT COUNT(*) FROM companies comp WHERE comp.customer_id = c.customer_id AND comp.status = 'Active') AS company_count,
                 (SELECT COUNT(DISTINCT uoa.user_id) FROM user_organization_access uoa WHERE uoa.customer_id = c.customer_id AND uoa.status = 'Active') AS user_count
             FROM customers c
+            LEFT JOIN customer_subscriptions cs ON c.customer_id = cs.customer_id AND UPPER(cs.status) = 'ACTIVE'
+            LEFT JOIN subscription_plans sp ON cs.plan_id = sp.plan_id
             WHERE 1=1
         ";
 
@@ -426,12 +431,40 @@ try {
             ':cid' => $newCustomerId
         ]);
 
-        // 6. Automatically Assign Default FREE Subscription
+        // 6. Assign Selected Subscription Plan (from subscription_plans table)
         require_once __DIR__ . '/../config/subscription.php';
-        $subResult = assignDefaultCustomerSubscription((int)$newCustomerId, (int)$currentUser['user_id']);
-        if (!$subResult['success']) {
-            throw new Exception("Customer created, but failed to assign default FREE subscription: " . ($subResult['error'] ?? ''));
+
+        $selectedPlanId = (int)($_POST['plan_id'] ?? 0);
+        $selectedPlanCodeOrName = trim($_POST['subscription_plan'] ?? '');
+
+        if ($selectedPlanId <= 0 && !empty($selectedPlanCodeOrName)) {
+            $stmtP = $pdo->prepare("SELECT plan_id FROM subscription_plans WHERE UPPER(plan_code) = UPPER(:val) OR UPPER(plan_name) LIKE UPPER(:likeVal) LIMIT 1");
+            $stmtP->execute([':val' => $selectedPlanCodeOrName, ':likeVal' => '%' . $selectedPlanCodeOrName . '%']);
+            $selectedPlanId = (int)$stmtP->fetchColumn();
         }
+
+        $subStartDate = !empty($_POST['sub_start_date']) ? $_POST['sub_start_date'] : date('Y-m-d');
+        $subEndDate = !empty($_POST['sub_end_date']) ? $_POST['sub_end_date'] : null;
+
+        if ($selectedPlanId > 0) {
+            $subResult = assignSubscription((int)$newCustomerId, $selectedPlanId, [
+                'start_date' => $subStartDate,
+                'end_date' => $subEndDate,
+                'assigned_by' => (int)$currentUser['user_id'],
+                'notes' => 'Subscription plan selected during customer onboarding'
+            ]);
+        } else {
+            $subResult = assignDefaultCustomerSubscription((int)$newCustomerId, (int)$currentUser['user_id']);
+        }
+
+        if (!$subResult['success']) {
+            throw new Exception("Customer created, but failed to assign subscription plan: " . ($subResult['error'] ?? ''));
+        }
+
+        $planName = $subResult['plan_name'] ?? $subResult['plan']['plan_name'] ?? 'Assigned Plan';
+        $planCode = $subResult['plan_code'] ?? $subResult['plan']['plan_code'] ?? 'ASSIGNED';
+        $maxUsers = $subResult['max_users'] ?? $subResult['plan']['max_users'] ?? 0;
+        $subStatus = $subResult['status'] ?? $subResult['plan']['status'] ?? 'ACTIVE';
 
         // 7. Record Audit Log
         $insAudit = $pdo->prepare("
@@ -441,28 +474,44 @@ try {
         $insAudit->execute([
             ':uid' => $currentUser['user_id'],
             ':eid' => $newCustomerId,
-            ':new_val' => "Customer created: {$customerName} ({$customerCode}), Admin: {$adminFullName} ({$adminEmail}), Subscription: {$subResult['plan_name']}",
+            ':new_val' => "Customer created: {$customerName} ({$customerCode}), Admin: {$adminFullName} ({$adminEmail}), Subscription: {$planName}",
             ':ip' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'
         ]);
 
         $pdo->commit();
 
+        // 8. Provision Dedicated Isolated Customer Database (cust<ID>)
+        $dbProvisionResult = provisionCustomerDatabase($pdo, (int)$newCustomerId, $customerCode);
+        if (!$dbProvisionResult['success']) {
+            if (ob_get_length()) ob_clean();
+            echo json_encode([
+                'success' => false,
+                'customer_id' => $newCustomerId,
+                'customer_code' => $customerCode,
+                'error' => 'Customer account created, but Customer Database Provisioning failed: ' . ($dbProvisionResult['error'] ?? '')
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if (ob_get_length()) ob_clean();
         echo json_encode([
             'success' => true,
-            'message' => 'Customer created successfully with default FREE subscription.',
+            'message' => "Customer created and dedicated database '{$dbProvisionResult['database_name']}' provisioned successfully.",
             'customer_id' => $newCustomerId,
             'customer_code' => $customerCode,
             'customer_name' => $customerName,
+            'database_name' => $dbProvisionResult['database_name'],
             'admin_name' => $adminFullName,
             'admin_email' => $adminEmail,
             'subscription' => [
-                'subscription_id' => $subResult['subscription_id'],
-                'plan_code'       => $subResult['plan_code'],
-                'plan_name'       => $subResult['plan_name'],
-                'max_users'       => $subResult['max_users'],
-                'status'          => $subResult['status']
+                'subscription_id' => $subResult['subscription_id'] ?? null,
+                'plan_code'       => $planCode,
+                'plan_name'       => $planName,
+                'max_users'       => $maxUsers,
+                'status'          => $subStatus
             ]
         ]);
+        exit;
         exit;
     }
 

@@ -849,6 +849,80 @@ try {
 
             $formattedUsers = [];
 
+            require_once __DIR__ . '/../../config/subscription.php';
+
+            // Pre-fetch access summaries for all listed users
+            $userAccessSummaries = [];
+            $userIdsList = array_column($users, 'user_id');
+            if (!empty($userIdsList)) {
+                $inUids = implode(',', array_map('intval', $userIdsList));
+                $stmtAccSummary = $pdo->prepare("
+                    SELECT 
+                        uoa.user_id,
+                        uoa.customer_id,
+                        uoa.company_id,
+                        c.company_name,
+                        uoa.division_id,
+                        d.division_name,
+                        uoa.plant_id,
+                        p.plant_name
+                    FROM user_organization_access uoa
+                    LEFT JOIN companies c ON c.company_id = uoa.company_id
+                    LEFT JOIN divisions d ON d.division_id = uoa.division_id
+                    LEFT JOIN plants p ON p.plant_id = uoa.plant_id
+                    WHERE uoa.user_id IN ($inUids) AND UPPER(uoa.status) = 'ACTIVE'
+                ");
+                $stmtAccSummary->execute();
+                $accRows = $stmtAccSummary->fetchAll(PDO::FETCH_ASSOC);
+
+                $userAccGroup = [];
+                foreach ($accRows as $ar) {
+                    $uid = (int)$ar['user_id'];
+                    if (!isset($userAccGroup[$uid])) $userAccGroup[$uid] = [];
+                    $userAccGroup[$uid][] = $ar;
+                }
+
+                foreach ($userIdsList as $uid) {
+                    $uRecs = $userAccGroup[$uid] ?? [];
+                    if (empty($uRecs)) {
+                        $userAccessSummaries[$uid] = 'No Access';
+                        continue;
+                    }
+
+                    $hasFullAccess = false;
+                    $compNames = [];
+                    $divNames = [];
+                    $plantNames = [];
+
+                    foreach ($uRecs as $r) {
+                        if (empty($r['company_id']) && empty($r['division_id']) && empty($r['plant_id'])) {
+                            $hasFullAccess = true;
+                            break;
+                        }
+                        if (!empty($r['company_name'])) $compNames[$r['company_name']] = true;
+                        if (!empty($r['division_name'])) $divNames[$r['division_name']] = true;
+                        if (!empty($r['plant_name'])) $plantNames[$r['plant_name']] = true;
+                    }
+
+                    if ($hasFullAccess) {
+                        $userAccessSummaries[$uid] = 'Full Access';
+                    } elseif (count($compNames) > 1) {
+                        $userAccessSummaries[$uid] = count($compNames) . ' Companies';
+                    } elseif (count($compNames) === 1) {
+                        $cName = array_keys($compNames)[0];
+                        if (!empty($plantNames)) {
+                            $userAccessSummaries[$uid] = array_keys($plantNames)[0];
+                        } elseif (!empty($divNames)) {
+                            $userAccessSummaries[$uid] = array_keys($divNames)[0];
+                        } else {
+                            $userAccessSummaries[$uid] = $cName . ' (Full)';
+                        }
+                    } else {
+                        $userAccessSummaries[$uid] = 'Custom Scope';
+                    }
+                }
+            }
+
 
             foreach ($users as $user) {
 
@@ -886,11 +960,13 @@ try {
                         $user['username'] ?? '';
                 }
 
+                $uidInt = (int)$user['user_id'];
+
 
                 $formattedUsers[] = [
 
                     'user_id' =>
-                        (int)$user['user_id'],
+                        $uidInt,
 
                     'username' =>
                         $user['username'] ?? '',
@@ -928,6 +1004,9 @@ try {
                     'role_name' =>
                         $user['role_name']
                             ?? 'No Role Assigned',
+
+                    'access_summary' =>
+                        $userAccessSummaries[$uidInt] ?? 'No Access',
 
                     'created_at' =>
                         !empty(
@@ -971,6 +1050,15 @@ try {
                 ];
             }
 
+            // Subscription limit payload for CMA Admin / Tenant awareness
+            $subLimitInfo = null;
+            if (isCmaAdmin($currentUserId)) {
+                $cmaCustId = getCmaAdminCustomerId($currentUserId);
+                if ($cmaCustId) {
+                    $subLimitInfo = checkUserLimit($cmaCustId);
+                }
+            }
+
 
             jsonResponse(
                 true,
@@ -980,7 +1068,10 @@ try {
                         count($formattedUsers),
 
                     'users' =>
-                        $formattedUsers
+                        $formattedUsers,
+
+                    'subscription_limit' =>
+                        $subLimitInfo
                 ]
             );
 
@@ -1331,7 +1422,8 @@ try {
                 $targetCustomerId = (int)($stmtScope->fetchColumn() ?: 0);
             }
 
-            if ($targetCustomerId > 0) {
+            $isCmaUserCreation = (strtoupper($role['role_code'] ?? '') === 'CMA_USER') || isCmaAdmin($currentUserId);
+            if ($targetCustomerId > 0 && $isCmaUserCreation) {
                 require_once __DIR__ . '/../../config/subscription.php';
                 $limitCheck = checkUserLimit($targetCustomerId);
                 if (!$limitCheck['allowed']) {
@@ -2132,6 +2224,59 @@ try {
                 'User details updated successfully.'
             );
 
+            break;
+
+
+        /* ======================================================
+           TOGGLE USER STATUS (ACTIVATE / DEACTIVATE)
+           ====================================================== */
+
+        case 'toggle_status':
+            requireUserMasterPermission('EDIT');
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                throw new Exception('Invalid request method.');
+            }
+            $userId = (int)($_POST['user_id'] ?? 0);
+            if ($userId <= 0) {
+                throw new Exception('Invalid user ID.');
+            }
+            $oldUser = getUser($pdo, $userId);
+            if (!$oldUser) {
+                throw new Exception('User not found.');
+            }
+
+            if (isCmaAdmin($currentUserId)) {
+                $cmaCustId = getCmaAdminCustomerId($currentUserId);
+                $stmtCheckScope = $pdo->prepare("
+                    SELECT 1 FROM user_organization_access 
+                    WHERE user_id = :uid AND customer_id = :cid AND UPPER(status) = 'ACTIVE'
+                ");
+                $stmtCheckScope->execute([':uid' => $userId, ':cid' => $cmaCustId]);
+                if (!$stmtCheckScope->fetch() && $userId !== $currentUserId) {
+                    throw new Exception('Access denied: Cannot modify user outside your customer organization.');
+                }
+            }
+
+            $currentStatus = strtoupper(trim($oldUser['status'] ?? 'ACTIVE'));
+            $newStatus = ($currentStatus === 'ACTIVE') ? 'INACTIVE' : 'ACTIVE';
+            $isActive = ($newStatus === 'ACTIVE');
+
+            $pdo->beginTransaction();
+            $stmtUpd = $pdo->prepare("
+                UPDATE users 
+                SET status = :status, is_active = :is_active, updated_at = CURRENT_TIMESTAMP 
+                WHERE user_id = :user_id
+            ");
+            $stmtUpd->execute([
+                ':status' => $newStatus,
+                ':is_active' => $isActive ? 1 : 0,
+                ':user_id' => $userId
+            ]);
+
+            writeAuditLog($pdo, $currentUserId, $userId, 'UPDATE', $oldUser, array_merge($oldUser, ['status' => $newStatus]));
+            $pdo->commit();
+
+            jsonResponse(true, "User '{$oldUser['username']}' is now {$newStatus}.", ['user_id' => $userId, 'status' => $newStatus]);
             break;
 
 
