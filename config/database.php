@@ -433,8 +433,6 @@ if (!function_exists('getCustomerDbConnection')) {
                     PDO::ATTR_TIMEOUT => 5,
                 ]);
 
-                // Ensure customer tables exist automatically on connection
-                ensureCustomerTablesExist($custPdo);
 
                 $customerPdos[$dbName] = $custPdo;
                 if ($cid !== null) {
@@ -453,12 +451,9 @@ if (!function_exists('getCustomerDbConnection')) {
 
 if (!function_exists('provisionCustomerDatabase')) {
     /**
-     * Provisions a dedicated Customer Database for a given customer_id,
-     * initializes initial empty tables (period, periods, uoms, items, bom_headers, bom_details, transactions, standard_cost),
-     * and records/updates the mapping in customer_databases table in the Global DB.
-     * Supports flexible argument signatures:
-     * - provisionCustomerDatabase($globalPdo, $customerId, $customerCode)
-     * - provisionCustomerDatabase($customerId)
+     * Provisions a dedicated Customer Database for a given customer_id.
+     * The customer database remains completely empty initially (no business tables or schemas created).
+     * Records/updates the mapping in customer_databases table in the Global DB.
      *
      * @param PDO|int $globalPdoOrCustomerId
      * @param int|null $customerId
@@ -494,94 +489,10 @@ if (!function_exists('provisionCustomerDatabase')) {
                 $globalPdo->exec("CREATE DATABASE \"{$dbName}\"");
             }
 
-            // 2. Connect to the newly created Customer Database
-            $custPdo = getCustomerDbConnection($dbName);
+            // 2. IMPORTANT: Database remains completely empty.
+            // DO NOT create any business schemas, tables, or sample records during customer creation.
 
-            // 3. Initialize customer tables: period, periods, uoms, items, bom_headers, bom_details, transactions, standard_cost
-            $custPdo->exec("
-                CREATE TABLE IF NOT EXISTS period (
-                    period_id       BIGSERIAL PRIMARY KEY,
-                    period_name     VARCHAR(50) NOT NULL,
-                    start_date      DATE NOT NULL,
-                    end_date        DATE NOT NULL,
-                    is_locked       BOOLEAN NOT NULL DEFAULT FALSE,
-                    status          VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive')),
-                    CHECK (end_date >= start_date)
-                );
-
-                CREATE TABLE IF NOT EXISTS periods (
-                    period_id       BIGSERIAL PRIMARY KEY,
-                    period_name     VARCHAR(50) NOT NULL,
-                    start_date      DATE NOT NULL,
-                    end_date        DATE NOT NULL,
-                    is_locked       BOOLEAN NOT NULL DEFAULT FALSE,
-                    status          VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive')),
-                    CHECK (end_date >= start_date)
-                );
-
-                CREATE TABLE IF NOT EXISTS uoms (
-                    uom_id          BIGSERIAL PRIMARY KEY,
-                    uom_code        VARCHAR(20) NOT NULL UNIQUE,
-                    uom_name        VARCHAR(50) NOT NULL,
-                    description     VARCHAR(255),
-                    status          VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive'))
-                );
-
-                CREATE TABLE IF NOT EXISTS items (
-                    item_id         BIGSERIAL PRIMARY KEY,
-                    item_code       VARCHAR(50)  NOT NULL UNIQUE,
-                    item_name       VARCHAR(150) NOT NULL,
-                    item_type       VARCHAR(30) NOT NULL DEFAULT 'Raw Material'
-                                        CHECK (item_type IN ('Raw Material','Finished Good','Semi-Finished','Consumable','Service')),
-                    uom_id          BIGINT NOT NULL REFERENCES uoms(uom_id),
-                    status          VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive'))
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_items_uom ON items(uom_id);
-
-                CREATE TABLE IF NOT EXISTS bom_headers (
-                    bom_id          BIGSERIAL PRIMARY KEY,
-                    item_id         BIGINT NOT NULL REFERENCES items(item_id),
-                    revision_no     VARCHAR(20) NOT NULL DEFAULT '1',
-                    effective_from  DATE NOT NULL DEFAULT CURRENT_DATE,
-                    effective_to    DATE,
-                    status          VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive'))
-                );
-
-                CREATE TABLE IF NOT EXISTS bom_details (
-                    bom_detail_id   BIGSERIAL PRIMARY KEY,
-                    bom_id          BIGINT NOT NULL REFERENCES bom_headers(bom_id),
-                    component_item_id BIGINT NOT NULL REFERENCES items(item_id),
-                    quantity        NUMERIC(14,4) NOT NULL,
-                    uom_id          BIGINT NOT NULL REFERENCES uoms(uom_id),
-                    status          VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive'))
-                );
-
-                CREATE TABLE IF NOT EXISTS transactions (
-                    txn_id          BIGSERIAL PRIMARY KEY,
-                    item_id         BIGINT NOT NULL REFERENCES items(item_id),
-                    warehouse_id    BIGINT,
-                    period_id       BIGINT REFERENCES periods(period_id),
-                    txn_date        DATE NOT NULL DEFAULT CURRENT_DATE,
-                    txn_type        VARCHAR(30) NOT NULL CHECK (txn_type IN ('Receipt','Issue','Transfer','Adjustment')),
-                    quantity        NUMERIC(14,4) NOT NULL,
-                    value           NUMERIC(14,2) NOT NULL DEFAULT 0.00,
-                    source_upload_id BIGINT,
-                    status          VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive'))
-                );
-
-                CREATE TABLE IF NOT EXISTS standard_cost (
-                    cost_id         BIGSERIAL PRIMARY KEY,
-                    item_id         BIGINT NOT NULL REFERENCES items(item_id),
-                    cost_component  VARCHAR(50) NOT NULL,
-                    cost_value      NUMERIC(14,4) NOT NULL,
-                    effective_from  DATE NOT NULL DEFAULT CURRENT_DATE,
-                    effective_to    DATE,
-                    status          VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive'))
-                );
-            ");
-
-            // 4. Update or Insert mapping in customer_databases table in Global DB
+            // 3. Update or Insert mapping in customer_databases table in Global DB
             $chkMapping = $globalPdo->prepare("SELECT id FROM customer_databases WHERE customer_id = :cid LIMIT 1");
             $chkMapping->execute([':cid' => $cid]);
             $existingMappingId = $chkMapping->fetchColumn();
@@ -626,34 +537,16 @@ if (!function_exists('provisionCustomerDatabase')) {
                 'customer_id' => $cid,
                 'database_name' => $dbName,
                 'status' => 'Active',
-                'tables' => ['period', 'periods', 'uoms', 'items', 'bom_headers', 'bom_details', 'transactions', 'standard_cost'],
-                'message' => "Customer database '{$dbName}' created and initialized successfully."
+                'tables' => [],
+                'message' => "Customer database '{$dbName}' provisioned successfully (initially empty)."
             ];
-
         } catch (Throwable $e) {
-            error_log("Customer Database Provisioning Failure for Customer ID {$cid}: " . $e->getMessage());
-
-            try {
-                $insFail = $globalPdo->prepare("
-                    INSERT INTO customer_databases (customer_id, database_name, host, port, db_user, status, created_at)
-                    VALUES (:cid, :dbname, :host, :port, :db_user, 'Failed', CURRENT_TIMESTAMP)
-                    ON CONFLICT (customer_id) DO UPDATE SET status = 'Failed'
-                ");
-                $insFail->execute([
-                    ':cid' => $cid,
-                    ':dbname' => $dbName,
-                    ':host' => $host,
-                    ':port' => $port,
-                    ':db_user' => $user
-                ]);
-            } catch (Throwable $ignored) {
-            }
-
+            error_log("Customer Database Provisioning Failure (Customer ID: {$cid}): " . $e->getMessage());
             return [
                 'success' => false,
                 'customer_id' => $cid,
                 'database_name' => $dbName,
-                'error' => "Failed to provision customer database '{$dbName}': " . $e->getMessage()
+                'error' => $e->getMessage()
             ];
         }
     }
