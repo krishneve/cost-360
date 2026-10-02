@@ -983,54 +983,8 @@ function executeDataImport($uploadId, $user) {
             }
         }
 
-        // Ensure core customer tables exist in the customer database
-        if (function_exists('ensureCustomerTablesExist')) {
-            ensureCustomerTablesExist($custPdo);
-        }
-
-        // Check physically if $targetTable exists in customer database
-        $chkTable = $custPdo->prepare("
-            SELECT 1 FROM information_schema.tables 
-            WHERE table_schema = 'public' AND table_name = :tname 
-            LIMIT 1
-        ");
-        $chkTable->execute([':tname' => $targetTable]);
-        if (!$chkTable->fetch()) {
-            if ($targetTable === 'period') {
-                $chkAlt = $custPdo->query("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'periods' LIMIT 1");
-                if ($chkAlt && $chkAlt->fetch()) {
-                    $targetTable = 'periods';
-                }
-            }
-        }
-
-        // Final physical table existence check (if missing, auto-create dynamic table)
-        $chkTableFinal = $custPdo->prepare("
-            SELECT 1 FROM information_schema.tables 
-            WHERE table_schema = 'public' AND table_name = :tname 
-            LIMIT 1
-        ");
-        $chkTableFinal->execute([':tname' => $targetTable]);
-        if (!$chkTableFinal->fetch()) {
-            // Auto-create missing target table in Customer Database on-the-fly
-            try {
-                $custPdo->exec("
-                    CREATE TABLE IF NOT EXISTS public.{$targetTable} (
-                        id BIGSERIAL PRIMARY KEY,
-                        code VARCHAR(100),
-                        name VARCHAR(255),
-                        description TEXT,
-                        status VARCHAR(20) DEFAULT 'Active',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                ");
-            } catch (Throwable $createEx) {
-                return [
-                    'ok' => false,
-                    'message' => "Target table '{$targetTable}' does not exist in customer database ({$custDbName}) and auto-creation failed: " . $createEx->getMessage()
-                ];
-            }
-        }
+        // Dynamically ensure ONLY the requested target table exists in the dedicated customer database
+        ensureTargetTableExistsInCustomerDb($custPdo, $targetTable);
 
         // Discover dynamic target columns for this table in $custPdo
         $dbCols = getTargetTableColumns($targetTable, $custPdo);
@@ -1086,26 +1040,33 @@ function executeDataImport($uploadId, $user) {
                     }
                 }
 
-                // Foreign Key Resolution for items table (uom_code -> uom_id)
-                if ($targetTable === 'items') {
-                    if (!empty($mappedData['uom_code']) && empty($mappedData['uom_id'])) {
-                        $uStmt = $custPdo->prepare("SELECT uom_id FROM uoms WHERE UPPER(uom_code) = UPPER(:ucode) LIMIT 1");
-                        $uStmt->execute([':ucode' => trim($mappedData['uom_code'])]);
-                        $uId = $uStmt->fetchColumn();
-                        if (!$uId) {
-                            $insUom = $custPdo->prepare("INSERT INTO uoms (uom_code, uom_name) VALUES (:code, :name) RETURNING uom_id");
-                            $insUom->execute([':code' => strtoupper(trim($mappedData['uom_code'])), ':name' => trim($mappedData['uom_code'])]);
-                            $uId = $insUom->fetchColumn();
+                // Handle UOM value assignment for item tables safely
+                if (in_array($targetTable, ['items', 'item_master'], true)) {
+                    $uomVal = $mappedData['uom'] ?? ($mappedData['uom_code'] ?? ($mappedData['unit'] ?? 'PCS'));
+                    if (in_array('uom', $dbColNames, true)) {
+                        $mappedData['uom'] = $uomVal;
+                    }
+                    if (in_array('uom_id', $dbColNames, true)) {
+                        ensureTargetTableExistsInCustomerDb($custPdo, 'uoms');
+                        if (!empty($uomVal)) {
+                            try {
+                                $uStmt = $custPdo->prepare("SELECT uom_id FROM uoms WHERE UPPER(uom_code) = UPPER(:ucode) LIMIT 1");
+                                $uStmt->execute([':ucode' => trim($uomVal)]);
+                                $uId = $uStmt->fetchColumn();
+                                if (!$uId) {
+                                    $insUom = $custPdo->prepare("INSERT INTO uoms (uom_code, uom_name) VALUES (:code, :name) ON CONFLICT (uom_code) DO NOTHING RETURNING uom_id");
+                                    $insUom->execute([':code' => strtoupper(trim($uomVal)), ':name' => trim($uomVal)]);
+                                    $uId = $insUom->fetchColumn();
+                                    if (!$uId) {
+                                        $uStmt->execute([':ucode' => trim($uomVal)]);
+                                        $uId = $uStmt->fetchColumn();
+                                    }
+                                }
+                                if ($uId) {
+                                    $mappedData['uom_id'] = $uId;
+                                }
+                            } catch (Throwable $uomErr) {}
                         }
-                        $mappedData['uom_id'] = $uId;
-                        unset($mappedData['uom_code']);
-                    } elseif (empty($mappedData['uom_id'])) {
-                        $defUomId = $custPdo->query("SELECT uom_id FROM uoms ORDER BY uom_id ASC LIMIT 1")->fetchColumn();
-                        if (!$defUomId) {
-                            $insDef = $custPdo->query("INSERT INTO uoms (uom_code, uom_name, description) VALUES ('PCS', 'Pieces', 'Default Piece Unit') RETURNING uom_id");
-                            $defUomId = $insDef->fetchColumn();
-                        }
-                        $mappedData['uom_id'] = $defUomId;
                     }
                 }
 
@@ -1133,16 +1094,29 @@ function executeDataImport($uploadId, $user) {
                 }
 
                 $colsToInsert = array_keys($mappedData);
+                if (empty($colsToInsert)) {
+                    $totalSkipped++;
+                    continue;
+                }
+
                 $colList = implode(', ', $colsToInsert);
                 $placeholders = implode(', ', array_fill(0, count($colsToInsert), '?'));
                 $values = array_values($mappedData);
+
+                // Isolate row insertion with SAVEPOINT to prevent aborted transaction state (SQLSTATE 25P02)
+                $spName = "sp_row_" . $rowNum;
+                $custPdo->exec("SAVEPOINT {$spName}");
 
                 try {
                     $insertSql = "INSERT INTO public.{$targetTable} ({$colList}) VALUES ({$placeholders}) ON CONFLICT DO NOTHING";
                     $stmt = $custPdo->prepare($insertSql);
                     $stmt->execute($values);
+                    $custPdo->exec("RELEASE SAVEPOINT {$spName}");
                     $totalImported++;
                 } catch (Throwable $e) {
+                    try {
+                        $custPdo->exec("ROLLBACK TO SAVEPOINT {$spName}");
+                    } catch (Throwable $rbErr) {}
                     $totalFailed++;
                     dbQuery("
                         INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
