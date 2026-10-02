@@ -198,33 +198,68 @@ function getRecentUploads($userId = null, $limit = 8) {
             ORDER BY u.created_at DESC 
             LIMIT " . (int)$limit;
 
-        $recent = dbQuery($sql, $params)->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = dbQuery($sql, $params);
+        $recent = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
         $_SESSION[$cacheKey] = $recent;
         $_SESSION[$cacheKey . '_time'] = time();
     } catch (Throwable $e) {
-        error_log("Error fetching recent uploads: " . $e->getMessage());
+        error_log("Error getting recent uploads: " . $e->getMessage());
     }
+
     return $recent;
 }
 
-
 /**
- * Returns the predefined SQL CREATE TABLE DDL for a supported business table.
- * Strictly uses backend-controlled schemas matching Cost360 architecture specifications.
+ * Returns predefined table schema DDL for standard business entities in Customer DB.
  */
 function getPredefinedTableSchema(string $tableName): ?string {
-    $clean = strtolower(trim($tableName));
-    switch ($clean) {
+    switch (strtolower(trim($tableName))) {
+        case 'period':
+        case 'periods':
+            return "
+                CREATE TABLE IF NOT EXISTS public.periods (
+                    period_id       BIGSERIAL PRIMARY KEY,
+                    period_code     VARCHAR(50) NOT NULL UNIQUE,
+                    period_name     VARCHAR(100) NOT NULL,
+                    start_date      DATE NOT NULL,
+                    end_date        DATE NOT NULL,
+                    fiscal_year     VARCHAR(20),
+                    status          VARCHAR(20) DEFAULT 'Active'
+                );
+                CREATE TABLE IF NOT EXISTS public.period (
+                    id              BIGSERIAL PRIMARY KEY,
+                    code            VARCHAR(50) NOT NULL,
+                    name            VARCHAR(100),
+                    start_date      DATE,
+                    end_date        DATE,
+                    status          VARCHAR(20) DEFAULT 'Active',
+                    created_at      TIMESTAMPTZ DEFAULT now()
+                );
+            ";
+
+        case 'uoms':
+        case 'uom_master':
+            return "
+                CREATE TABLE IF NOT EXISTS public.uoms (
+                    uom_id          BIGSERIAL PRIMARY KEY,
+                    uom_code        VARCHAR(50) NOT NULL UNIQUE,
+                    uom_name        VARCHAR(100) NOT NULL,
+                    description     VARCHAR(255),
+                    status          VARCHAR(20) DEFAULT 'Active'
+                );
+            ";
+
         case 'items':
             return "
                 CREATE TABLE IF NOT EXISTS public.items (
                     item_id         BIGSERIAL PRIMARY KEY,
-                    item_code       VARCHAR(100) NOT NULL UNIQUE,
+                    item_code       VARCHAR(100) NOT NULL,
                     item_name       VARCHAR(255),
                     item_description TEXT,
-                    item_type       VARCHAR(50) DEFAULT 'Raw Material',
                     category        VARCHAR(100),
                     uom             VARCHAR(50),
+                    uom_code        VARCHAR(50),
                     uom_id          BIGINT,
                     rate            NUMERIC(15,4) DEFAULT 0.0000,
                     status          VARCHAR(20) DEFAULT 'Active',
@@ -238,11 +273,11 @@ function getPredefinedTableSchema(string $tableName): ?string {
             return "
                 CREATE TABLE IF NOT EXISTS public.item_master (
                     id              BIGSERIAL PRIMARY KEY,
-                    item_code       VARCHAR(100) NOT NULL UNIQUE,
+                    item_code       VARCHAR(100) NOT NULL,
                     item_description TEXT,
                     item_name       VARCHAR(255),
                     uom             VARCHAR(50),
-                    rate            NUMERIC(15,4),
+                    rate            NUMERIC(15,4) DEFAULT 0.0000,
                     category        VARCHAR(100),
                     status          VARCHAR(20) DEFAULT 'Active',
                     created_by      BIGINT,
@@ -255,17 +290,20 @@ function getPredefinedTableSchema(string $tableName): ?string {
             return "
                 CREATE TABLE IF NOT EXISTS public.product_master (
                     id              BIGSERIAL PRIMARY KEY,
-                    product_code    VARCHAR(100) NOT NULL UNIQUE,
+                    product_code    VARCHAR(100) NOT NULL,
                     product_name    TEXT,
+                    item_name       TEXT,
                     uom             VARCHAR(50),
                     grade           VARCHAR(50),
                     net_weight_kg   NUMERIC(12,4),
                     pour_weight_kg  NUMERIC(12,4),
                     std_yield_pct   NUMERIC(8,2),
+                    rate            NUMERIC(15,4),
                     status          VARCHAR(20) DEFAULT 'Active',
                     created_by      BIGINT,
                     created_at      TIMESTAMPTZ DEFAULT now()
                 );
+                CREATE INDEX IF NOT EXISTS idx_product_master_code ON public.product_master(product_code);
             ";
 
         case 'standard_cost':
@@ -273,10 +311,12 @@ function getPredefinedTableSchema(string $tableName): ?string {
                 CREATE TABLE IF NOT EXISTS public.standard_cost (
                     id              BIGSERIAL PRIMARY KEY,
                     item_id         BIGINT,
-                    item_code       VARCHAR(100) NOT NULL,
+                    item_code       VARCHAR(100),
+                    product_code    VARCHAR(100),
                     cost_component  VARCHAR(50) DEFAULT 'Total',
                     cost_value      NUMERIC(15,4),
                     standard_rate   NUMERIC(15,4),
+                    rate            NUMERIC(15,4),
                     effective_date  DATE DEFAULT CURRENT_DATE,
                     effective_from  DATE DEFAULT CURRENT_DATE,
                     effective_to    DATE,
@@ -290,14 +330,22 @@ function getPredefinedTableSchema(string $tableName): ?string {
             return "
                 CREATE TABLE IF NOT EXISTS public.bom (
                     id                  BIGSERIAL PRIMARY KEY,
-                    parent_item_code    VARCHAR(100) NOT NULL,
-                    component_item_code VARCHAR(100) NOT NULL,
-                    quantity            NUMERIC(15,4) NOT NULL,
+                    product_code        VARCHAR(100),
+                    parent_item_code    VARCHAR(100),
+                    item_code           VARCHAR(100),
+                    component_item_code VARCHAR(100),
+                    std_qty_per_unit    NUMERIC(15,5),
+                    quantity            NUMERIC(15,5),
                     uom                 VARCHAR(50),
+                    std_rate            NUMERIC(15,4),
+                    rate                NUMERIC(15,4),
+                    std_material_cost   NUMERIC(15,4),
                     scrap_pct           NUMERIC(8,2) DEFAULT 0,
                     status              VARCHAR(20) DEFAULT 'Active',
                     created_at          TIMESTAMPTZ DEFAULT now()
                 );
+                CREATE INDEX IF NOT EXISTS idx_bom_product_code ON public.bom(product_code);
+                CREATE INDEX IF NOT EXISTS idx_bom_item_code ON public.bom(item_code);
             ";
 
         case 'bom_headers':
@@ -331,14 +379,24 @@ function getPredefinedTableSchema(string $tableName): ?string {
             return "
                 CREATE TABLE IF NOT EXISTS public.routing (
                     id                  BIGSERIAL PRIMARY KEY,
-                    item_code           VARCHAR(100) NOT NULL,
-                    operation_seq       INT NOT NULL,
+                    product_code        VARCHAR(100),
+                    item_code           VARCHAR(100),
+                    cc_code             VARCHAR(100),
+                    cost_center_code    VARCHAR(100),
                     work_center_code    VARCHAR(100),
-                    setup_time_mins     NUMERIC(10,2),
-                    run_time_mins       NUMERIC(10,2),
+                    machine_code        VARCHAR(100),
+                    std_machine_hrs     NUMERIC(14,5) DEFAULT 0.00000,
+                    std_labour_hrs      NUMERIC(14,5) DEFAULT 0.00000,
+                    std_machine_hr_rate NUMERIC(14,4) DEFAULT 0.0000,
+                    std_labour_rate     NUMERIC(14,4) DEFAULT 0.0000,
+                    std_conversion_cost NUMERIC(14,4) DEFAULT 0.0000,
+                    operation_seq       INT DEFAULT 1,
+                    setup_time_mins     NUMERIC(10,2) DEFAULT 0.00,
+                    run_time_mins       NUMERIC(10,2) DEFAULT 0.00,
                     status              VARCHAR(20) DEFAULT 'Active',
                     created_at          TIMESTAMPTZ DEFAULT now()
                 );
+                CREATE INDEX IF NOT EXISTS idx_routing_product_code ON public.routing(product_code);
             ";
 
         case 'purchase_transaction':
@@ -362,6 +420,7 @@ function getPredefinedTableSchema(string $tableName): ?string {
                     id              BIGSERIAL PRIMARY KEY,
                     issue_number    VARCHAR(100),
                     cost_center_code VARCHAR(100),
+                    cc_code         VARCHAR(100),
                     item_code       VARCHAR(100) NOT NULL,
                     qty             NUMERIC(15,4) NOT NULL,
                     txn_date        DATE DEFAULT CURRENT_DATE,
@@ -389,16 +448,18 @@ function getPredefinedTableSchema(string $tableName): ?string {
             return "
                 CREATE TABLE IF NOT EXISTS public.machine_master (
                     id                  BIGSERIAL PRIMARY KEY,
-                    machine_code        VARCHAR(100) NOT NULL UNIQUE,
+                    machine_code        VARCHAR(100) NOT NULL,
                     machine_name        VARCHAR(200),
                     work_center_code    VARCHAR(100),
-                    hourly_rate         NUMERIC(15,4),
+                    cc_code             VARCHAR(100),
+                    hourly_rate         NUMERIC(15,4) DEFAULT 0.0000,
+                    std_machine_hr_rate NUMERIC(15,4) DEFAULT 0.0000,
                     status              VARCHAR(20) DEFAULT 'Active',
                     created_at          TIMESTAMPTZ DEFAULT now()
                 );
                 CREATE TABLE IF NOT EXISTS public.work_centers (
                     work_center_id      BIGSERIAL PRIMARY KEY,
-                    work_center_code    VARCHAR(100) NOT NULL UNIQUE,
+                    work_center_code    VARCHAR(100) NOT NULL,
                     work_center_name    VARCHAR(200),
                     hourly_rate         NUMERIC(15,4) DEFAULT 0.00,
                     status              VARCHAR(20) DEFAULT 'Active'
@@ -410,7 +471,7 @@ function getPredefinedTableSchema(string $tableName): ?string {
             return "
                 CREATE TABLE IF NOT EXISTS public.vendor_master (
                     id              BIGSERIAL PRIMARY KEY,
-                    vendor_code     VARCHAR(100) NOT NULL UNIQUE,
+                    vendor_code     VARCHAR(100) NOT NULL,
                     vendor_name     VARCHAR(200) NOT NULL,
                     contact_email   VARCHAR(150),
                     status          VARCHAR(20) DEFAULT 'Active',
@@ -418,7 +479,7 @@ function getPredefinedTableSchema(string $tableName): ?string {
                 );
                 CREATE TABLE IF NOT EXISTS public.vendors (
                     vendor_id       BIGSERIAL PRIMARY KEY,
-                    vendor_code     VARCHAR(100) NOT NULL UNIQUE,
+                    vendor_code     VARCHAR(100) NOT NULL,
                     vendor_name     VARCHAR(200) NOT NULL,
                     status          VARCHAR(20) DEFAULT 'Active'
                 );
@@ -442,62 +503,30 @@ function getPredefinedTableSchema(string $tableName): ?string {
             return "
                 CREATE TABLE IF NOT EXISTS public.cost_center_master (
                     id                  BIGSERIAL PRIMARY KEY,
-                    cost_center_code    VARCHAR(100) NOT NULL UNIQUE,
-                    cost_center_name    VARCHAR(200) NOT NULL,
+                    cost_center_code    VARCHAR(100),
+                    cc_code             VARCHAR(100),
+                    cost_center_name    VARCHAR(200),
+                    name                VARCHAR(200),
                     department          VARCHAR(100),
                     status              VARCHAR(20) DEFAULT 'Active',
                     created_at          TIMESTAMPTZ DEFAULT now()
                 );
                 CREATE TABLE IF NOT EXISTS public.cost_centers (
                     cost_center_id      BIGSERIAL PRIMARY KEY,
-                    cost_center_code    VARCHAR(100) NOT NULL UNIQUE,
+                    cost_center_code    VARCHAR(100) NOT NULL,
                     cost_center_name    VARCHAR(200) NOT NULL,
+                    department          VARCHAR(100),
                     status              VARCHAR(20) DEFAULT 'Active'
-                );
-            ";
-
-        case 'uoms':
-            return "
-                CREATE TABLE IF NOT EXISTS public.uoms (
-                    uom_id          BIGSERIAL PRIMARY KEY,
-                    uom_code        VARCHAR(50) NOT NULL UNIQUE,
-                    uom_name        VARCHAR(100) NOT NULL,
-                    description     VARCHAR(255),
-                    status          VARCHAR(20) DEFAULT 'Active'
-                );
-            ";
-
-        case 'period':
-        case 'periods':
-            return "
-                CREATE TABLE IF NOT EXISTS public.period (
-                    period_id       BIGSERIAL PRIMARY KEY,
-                    period_name     VARCHAR(50) NOT NULL,
-                    start_date      DATE NOT NULL,
-                    end_date        DATE NOT NULL,
-                    is_locked       BOOLEAN NOT NULL DEFAULT FALSE,
-                    status          VARCHAR(20) DEFAULT 'Active'
-                );
-                CREATE TABLE IF NOT EXISTS public.periods (
-                    period_id       BIGSERIAL PRIMARY KEY,
-                    period_name     VARCHAR(50) NOT NULL,
-                    start_date      DATE NOT NULL,
-                    end_date        DATE NOT NULL,
-                    is_locked       BOOLEAN NOT NULL DEFAULT FALSE,
-                    status          VARCHAR(20) DEFAULT 'Active'
                 );
             ";
 
         case 'transactions':
             return "
                 CREATE TABLE IF NOT EXISTS public.transactions (
-                    txn_id          BIGSERIAL PRIMARY KEY,
+                    transaction_id  BIGSERIAL PRIMARY KEY,
+                    transaction_type VARCHAR(50) NOT NULL,
                     item_id         BIGINT,
-                    item_code       VARCHAR(100),
-                    warehouse_id    BIGINT,
                     period_id       BIGINT,
-                    txn_date        DATE NOT NULL DEFAULT CURRENT_DATE,
-                    txn_type        VARCHAR(30) NOT NULL,
                     quantity        NUMERIC(14,4) NOT NULL,
                     value           NUMERIC(14,2) NOT NULL DEFAULT 0.00,
                     source_upload_id BIGINT,
@@ -511,8 +540,8 @@ function getPredefinedTableSchema(string $tableName): ?string {
 }
 
 /**
- * Dynamically creates ONLY the required target table inside the customer's dedicated database on-demand.
- * Does not create unnecessary tables or schemas.
+ * Dynamically creates ONLY the required target table inside the customer's dedicated database on-demand,
+ * and ensures all necessary columns exist.
  */
 function ensureTargetTableExistsInCustomerDb(PDO $custPdo, string $tableName): bool {
     $clean = strtolower(trim($tableName));
@@ -527,27 +556,98 @@ function ensureTargetTableExistsInCustomerDb(PDO $custPdo, string $tableName): b
             LIMIT 1
         ");
         $chk->execute([':tname' => $clean]);
-        if ($chk->fetch()) {
-            return true;
+        $tableExists = (bool)$chk->fetch();
+
+        if (!$tableExists) {
+            $ddl = getPredefinedTableSchema($clean);
+            if ($ddl) {
+                $custPdo->exec($ddl);
+            } else {
+                // Generic fallback for any other registered target entity
+                $custPdo->exec("
+                    CREATE TABLE IF NOT EXISTS public.{$clean} (
+                        id          BIGSERIAL PRIMARY KEY,
+                        code        VARCHAR(100),
+                        name        VARCHAR(255),
+                        description TEXT,
+                        status      VARCHAR(20) DEFAULT 'Active',
+                        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                ");
+            }
         }
 
-        $ddl = getPredefinedTableSchema($clean);
-        if ($ddl) {
-            $custPdo->exec($ddl);
-            return true;
+        // Schema evolution: ensure specific critical columns exist if table was created in older version
+        if ($clean === 'routing') {
+            $colsToAdd = [
+                'product_code VARCHAR(100)',
+                'item_code VARCHAR(100)',
+                'cc_code VARCHAR(100)',
+                'cost_center_code VARCHAR(100)',
+                'work_center_code VARCHAR(100)',
+                'machine_code VARCHAR(100)',
+                'std_machine_hrs NUMERIC(14,5) DEFAULT 0.00000',
+                'std_labour_hrs NUMERIC(14,5) DEFAULT 0.00000',
+                'std_machine_hr_rate NUMERIC(14,4) DEFAULT 0.0000',
+                'std_labour_rate NUMERIC(14,4) DEFAULT 0.0000',
+                'std_conversion_cost NUMERIC(14,4) DEFAULT 0.0000',
+                'operation_seq INT DEFAULT 1',
+                'setup_time_mins NUMERIC(10,2) DEFAULT 0.00',
+                'run_time_mins NUMERIC(10,2) DEFAULT 0.00',
+                'status VARCHAR(20) DEFAULT \'Active\'',
+                'created_at TIMESTAMPTZ DEFAULT now()'
+            ];
+            foreach ($colsToAdd as $cDef) {
+                try { $custPdo->exec("ALTER TABLE public.routing ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
+            }
+        } elseif ($clean === 'bom') {
+            $colsToAdd = [
+                'product_code VARCHAR(100)',
+                'parent_item_code VARCHAR(100)',
+                'item_code VARCHAR(100)',
+                'component_item_code VARCHAR(100)',
+                'std_qty_per_unit NUMERIC(15,5)',
+                'quantity NUMERIC(15,5)',
+                'uom VARCHAR(50)',
+                'std_rate NUMERIC(15,4)',
+                'rate NUMERIC(15,4)',
+                'std_material_cost NUMERIC(15,4)',
+                'scrap_pct NUMERIC(8,2) DEFAULT 0',
+                'status VARCHAR(20) DEFAULT \'Active\'',
+                'created_at TIMESTAMPTZ DEFAULT now()'
+            ];
+            foreach ($colsToAdd as $cDef) {
+                try { $custPdo->exec("ALTER TABLE public.bom ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
+            }
+        } elseif ($clean === 'machine_master') {
+            $colsToAdd = [
+                'machine_code VARCHAR(100)',
+                'machine_name VARCHAR(200)',
+                'work_center_code VARCHAR(100)',
+                'cc_code VARCHAR(100)',
+                'hourly_rate NUMERIC(15,4) DEFAULT 0.0000',
+                'std_machine_hr_rate NUMERIC(15,4) DEFAULT 0.0000',
+                'status VARCHAR(20) DEFAULT \'Active\''
+            ];
+            foreach ($colsToAdd as $cDef) {
+                try { $custPdo->exec("ALTER TABLE public.machine_master ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
+            }
+        } elseif ($clean === 'items') {
+            $colsToAdd = [
+                'item_code VARCHAR(100)',
+                'item_name VARCHAR(255)',
+                'item_description TEXT',
+                'category VARCHAR(100)',
+                'uom VARCHAR(50)',
+                'uom_code VARCHAR(50)',
+                'rate NUMERIC(15,4) DEFAULT 0.0000',
+                'status VARCHAR(20) DEFAULT \'Active\''
+            ];
+            foreach ($colsToAdd as $cDef) {
+                try { $custPdo->exec("ALTER TABLE public.items ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
+            }
         }
 
-        // Generic fallback for any other registered target entity
-        $custPdo->exec("
-            CREATE TABLE IF NOT EXISTS public.{$clean} (
-                id          BIGSERIAL PRIMARY KEY,
-                code        VARCHAR(100),
-                name        VARCHAR(255),
-                description TEXT,
-                status      VARCHAR(20) DEFAULT 'Active',
-                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        ");
         return true;
     } catch (Throwable $e) {
         error_log("Dynamic Table Creation Error for table '{$clean}': " . $e->getMessage());
@@ -729,43 +829,71 @@ function analyzeUploadedFiles($files, $user) {
         $totalRunRows += $rows;
 
         // Keyword & Header Classification Rules
+        $lowerName = strtolower($name);
+        $headersStr = strtolower(implode(' ', $headers));
+        
         $masterName = null;
         $subName = null;
         $confidence = 0;
 
-        $haystack = strtolower(implode(' ', array_merge([$name], $headers)));
-        
-        $classificationRules = [
-            ['uom', 'Item Master', 'UOM Master', 98],
-            ['unit of measure', 'Item Master', 'UOM Master', 98],
-            ['period', 'Period Master', 'Period Master', 98],
-            ['purchase', 'Stock Ledger', 'Purchase Transaction', 98],
-            ['consumption', 'Stock Ledger', 'Consumption Transaction', 98],
-            ['production', 'Stock Ledger', 'Production Transaction', 98],
-            ['machine', 'Work Center Master', 'Machine Master', 94],
-            ['vendor', 'Account Master', 'Vendor Master', 98],
-            ['cost', 'Cost Center Master', 'Cost Center Master', 92],
-            ['overhead', 'Account Master', 'Overhead Ledger', 98],
-            ['bom', 'BOM', 'BOM', 98],
-            ['routing', 'BOM', 'Routing', 98],
-            ['standard', 'Item Master', 'Standard Cost', 98],
-            ['product', 'Item Master', 'Product Master', 98],
-            ['item', 'Item Master', 'Item Master', 96]
-        ];
-
-        foreach ($classificationRules as $rule) {
-            if (str_contains($haystack, $rule[0])) {
-                $masterName = $rule[1];
-                $subName = $rule[2];
-                $confidence = $rule[3];
-                break;
-            }
+        // 1. Priority 1: High Precision Filename Matching
+        if (str_contains($lowerName, 'routing') || str_contains($lowerName, 'route')) {
+            $masterName = 'BOM'; $subName = 'Routing'; $confidence = 99;
+        } elseif (str_contains($lowerName, 'bom') || str_contains($lowerName, 'bill_of_material')) {
+            $masterName = 'BOM'; $subName = 'BOM'; $confidence = 99;
+        } elseif (str_contains($lowerName, 'cost_center') || str_contains($lowerName, 'cc_master') || str_starts_with($lowerName, '09_') || str_starts_with($lowerName, '08_')) {
+            $masterName = 'Cost Center Master'; $subName = 'Cost Center Master'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'machine') || str_contains($lowerName, 'work_center') || str_contains($lowerName, 'wc_')) {
+            $masterName = 'Work Center Master'; $subName = 'Machine Master'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'vendor')) {
+            $masterName = 'Account Master'; $subName = 'Vendor Master'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'overhead')) {
+            $masterName = 'Account Master'; $subName = 'Overhead Ledger'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'purchase') || str_contains($lowerName, 'po_')) {
+            $masterName = 'Stock Ledger'; $subName = 'Purchase Transaction'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'consumption') || str_contains($lowerName, 'issue')) {
+            $masterName = 'Stock Ledger'; $subName = 'Consumption Transaction'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'production') || str_contains($lowerName, 'wo_')) {
+            $masterName = 'Stock Ledger'; $subName = 'Production Transaction'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'standard_cost') || str_contains($lowerName, 'std_cost')) {
+            $masterName = 'Item Master'; $subName = 'Standard Cost'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'product_master') || str_contains($lowerName, 'product')) {
+            $masterName = 'Item Master'; $subName = 'Product Master'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'uom')) {
+            $masterName = 'Item Master'; $subName = 'UOM Master'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'item')) {
+            $masterName = 'Item Master'; $subName = 'Item Master'; $confidence = 98;
         }
 
+        // 2. Priority 2: Header Specifics
         if (!$masterName) {
-            $masterName = 'Item Master';
-            $subName = 'Item Master';
-            $confidence = 75;
+            if (str_contains($headersStr, 'std_conversion_cost') || str_contains($headersStr, 'std_machine_hrs') || str_contains($headersStr, 'std_labour_hrs')) {
+                $masterName = 'BOM'; $subName = 'Routing'; $confidence = 97;
+            } elseif (str_contains($headersStr, 'std_material_cost') || str_contains($headersStr, 'std_qty_per_unit')) {
+                $masterName = 'BOM'; $subName = 'BOM'; $confidence = 97;
+            } elseif (str_contains($headersStr, 'po_number') || str_contains($headersStr, 'vendor_code') && str_contains($headersStr, 'unit_price')) {
+                $masterName = 'Stock Ledger'; $subName = 'Purchase Transaction'; $confidence = 97;
+            } elseif (str_contains($headersStr, 'issue_number')) {
+                $masterName = 'Stock Ledger'; $subName = 'Consumption Transaction'; $confidence = 97;
+            } elseif (str_contains($headersStr, 'produced_qty') || str_contains($headersStr, 'rejected_qty')) {
+                $masterName = 'Stock Ledger'; $subName = 'Production Transaction'; $confidence = 97;
+            } elseif (str_contains($headersStr, 'hourly_rate') || (str_contains($headersStr, 'machine_code') && str_contains($headersStr, 'machine_name'))) {
+                $masterName = 'Work Center Master'; $subName = 'Machine Master'; $confidence = 95;
+            } elseif (str_contains($headersStr, 'account_code') && str_contains($headersStr, 'amount')) {
+                $masterName = 'Account Master'; $subName = 'Overhead Ledger'; $confidence = 95;
+            } elseif (str_contains($headersStr, 'cost_center_code') || str_contains($headersStr, 'cc_code')) {
+                $masterName = 'Cost Center Master'; $subName = 'Cost Center Master'; $confidence = 95;
+            } elseif (str_contains($headersStr, 'uom_code') || str_contains($headersStr, 'unit_of_measure')) {
+                $masterName = 'Item Master'; $subName = 'UOM Master'; $confidence = 95;
+            } elseif (str_contains($headersStr, 'product_code') && (str_contains($headersStr, 'net_weight') || str_contains($headersStr, 'grade'))) {
+                $masterName = 'Item Master'; $subName = 'Product Master'; $confidence = 95;
+            } elseif (str_contains($headersStr, 'cost_component') || str_contains($headersStr, 'standard_rate')) {
+                $masterName = 'Item Master'; $subName = 'Standard Cost'; $confidence = 95;
+            } elseif (str_contains($headersStr, 'item_code') || str_contains($headersStr, 'item_description')) {
+                $masterName = 'Item Master'; $subName = 'Item Master'; $confidence = 90;
+            } else {
+                $masterName = 'Item Master'; $subName = 'Item Master'; $confidence = 75;
+            }
         }
 
         // Look up IDs from DB
@@ -1008,7 +1136,7 @@ function executeDataImport($uploadId, $user) {
         try {
             while (($row = fgetcsv($handle)) !== false) {
                 $rowNum++;
-                if (empty(array_filter($row))) {
+                if (empty(array_filter($row, fn($v) => trim((string)$v) !== ''))) {
                     $totalSkipped++;
                     continue;
                 }
@@ -1024,19 +1152,28 @@ function executeDataImport($uploadId, $user) {
                     'item_desc'           => 'item_name',
                     'uom'                 => 'uom_code',
                     'unit_rate'           => 'rate',
-                    'unit_cost'           => 'rate'
+                    'unit_cost'           => 'rate',
+                    'price'               => 'rate',
+                    'parent_item'         => 'parent_item_code',
+                    'component_item'      => 'component_item_code',
+                    'qty'                 => 'quantity',
+                    'std_qty'             => 'std_qty_per_unit'
                 ];
 
                 $mappedData = [];
                 foreach ($headers as $idx => $headerName) {
                     $cleanCol = preg_replace('/[^a-z0-9_]/', '', strtolower(str_replace(' ', '_', trim($headerName))));
+                    $val = isset($row[$idx]) ? trim((string)$row[$idx]) : null;
+                    if ($val === '') {
+                        $val = null;
+                    }
                     
                     if (in_array($cleanCol, $dbColNames, true)) {
-                        $mappedData[$cleanCol] = $row[$idx] ?? null;
+                        $mappedData[$cleanCol] = $val;
                     } elseif (isset($aliasMap[$cleanCol]) && in_array($aliasMap[$cleanCol], $dbColNames, true)) {
-                        $mappedData[$aliasMap[$cleanCol]] = $row[$idx] ?? null;
+                        $mappedData[$aliasMap[$cleanCol]] = $val;
                     } elseif ($targetTable === 'items' && ($cleanCol === 'uom' || $cleanCol === 'uom_code')) {
-                        $mappedData['uom_code'] = $row[$idx] ?? null;
+                        $mappedData['uom_code'] = $val;
                     }
                 }
 
@@ -1073,24 +1210,50 @@ function executeDataImport($uploadId, $user) {
                 // Enforce strict schema validation: filter out any key not physically present in $dbColNames
                 $mappedData = array_filter($mappedData, fn($k) => in_array($k, $dbColNames, true), ARRAY_FILTER_USE_KEY);
 
-                // Determine primary non-null identifier column for this table
-                $primaryCol = $dbColNames[1] ?? ($dbColNames[0] ?? null);
-                if ($primaryCol && empty($mappedData[$primaryCol])) {
-                    foreach ($dbColNames as $col) {
-                        if (!in_array($col, ['id', 'created_at', 'created_by', 'item_id', 'uom_id', 'period_id'], true) && !empty($mappedData[$col])) {
-                            $primaryCol = $col;
-                            break;
-                        }
+                // Check if row has any non-empty data
+                $hasValues = false;
+                foreach ($mappedData as $k => $v) {
+                    if ($v !== null && $v !== '') {
+                        $hasValues = true;
+                        break;
                     }
                 }
 
-                if ($primaryCol && empty($mappedData[$primaryCol])) {
-                    $totalFailed++;
-                    dbQuery("
-                        INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
-                        VALUES(?, ?, ?, ?, 'Missing Required Field', 'Row missing required identifier', 'High')
-                    ", [$uploadId, $f['id'], $rowNum, $primaryCol]);
+                if (!$hasValues) {
+                    $totalSkipped++;
                     continue;
+                }
+
+                // Validate primary mandatory identifier if defined for entity
+                $candidateIds = ['product_code', 'item_code', 'machine_code', 'cost_center_code', 'cc_code', 'vendor_code', 'account_code', 'po_number', 'wo_number', 'issue_number', 'code'];
+                $primaryCol = null;
+                foreach ($candidateIds as $cId) {
+                    if (in_array($cId, $dbColNames, true)) {
+                        $primaryCol = $cId;
+                        break;
+                    }
+                }
+                if (!$primaryCol) {
+                    $primaryCol = $dbColNames[1] ?? ($dbColNames[0] ?? 'code');
+                }
+
+                // If specific identifier column exists in schema and is empty, check for alias or report error
+                if (in_array($primaryCol, ['item_code', 'product_code', 'machine_code', 'vendor_code', 'account_code', 'cost_center_code', 'code'], true) 
+                    && in_array($primaryCol, $dbColNames, true) 
+                    && empty($mappedData[$primaryCol])) {
+                    
+                    if ($primaryCol === 'product_code' && !empty($mappedData['item_code'])) {
+                        $mappedData['product_code'] = $mappedData['item_code'];
+                    } elseif ($primaryCol === 'item_code' && !empty($mappedData['product_code'])) {
+                        $mappedData['item_code'] = $mappedData['product_code'];
+                    } else {
+                        $totalFailed++;
+                        dbQuery("
+                            INSERT INTO public.import_errors(upload_id, upload_file_id, row_number, field, error_type, error_message, severity)
+                            VALUES(?, ?, ?, ?, 'Missing Required Field', 'Row missing required identifier', 'High')
+                        ", [$uploadId, $f['id'], $rowNum, $primaryCol]);
+                        continue;
+                    }
                 }
 
                 $colsToInsert = array_keys($mappedData);
@@ -1108,7 +1271,7 @@ function executeDataImport($uploadId, $user) {
                 $custPdo->exec("SAVEPOINT {$spName}");
 
                 try {
-                    $insertSql = "INSERT INTO public.{$targetTable} ({$colList}) VALUES ({$placeholders}) ON CONFLICT DO NOTHING";
+                    $insertSql = "INSERT INTO public.{$targetTable} ({$colList}) VALUES ({$placeholders})";
                     $stmt = $custPdo->prepare($insertSql);
                     $stmt->execute($values);
                     $custPdo->exec("RELEASE SAVEPOINT {$spName}");
@@ -1228,4 +1391,3 @@ function getImportErrorsByUploadId($uploadId) {
         return [];
     }
 }
-
