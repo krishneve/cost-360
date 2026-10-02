@@ -176,21 +176,34 @@ function analyzeUploadedFiles($files, $user) {
 
     // Backend Organizational Scope Validation
     $orgContext = getActiveOrganizationContext();
-    $customerId = $orgContext['customer_id'] ?? null;
-    $companyId = $orgContext['company_id'] ?? null;
-    $divisionId = $orgContext['division_id'] ?? null;
+    $customerId = $orgContext['customer_id'] ?? ($_SESSION['active_customer_id'] ?? null);
+    $companyId = $orgContext['company_id'] ?? ($_SESSION['active_company_id'] ?? null);
+    $divisionId = $orgContext['division_id'] ?? ($_SESSION['active_division_id'] ?? null);
     $activeLoc = getActiveOperationalLocation();
-    $locationType = $activeLoc['type_code'] ?? 'plant';
-    $locationId = $activeLoc['id'] ?? null;
-    $periodId = $orgContext['period_id'] ?? null;
+    $locationType = $activeLoc['type_code'] ?? ($_SESSION['active_location_type'] ?? 'plant');
+    $locationId = $activeLoc['id'] ?? ($_SESSION['active_plant_id'] ?? $_SESSION['active_warehouse_id'] ?? null);
+    $periodId = $orgContext['period_id'] ?? ($_SESSION['active_period_id'] ?? null);
+
+    if (!$customerId && $userId && function_exists('getUserCustomerTenantId')) {
+        $customerId = getUserCustomerTenantId($userId);
+    }
 
     if (!$companyId || !$locationId || !$periodId) {
         return ['ok' => false, 'message' => 'Validation Error: Active scope (Company, Location, and Period) must be selected before uploading files.'];
     }
 
-    if ($userId && !isPlatformAdmin($userId)) {
-        if (!userCanAccessCompany($companyId, $userId) || !userCanAccessLocation($locationType, $locationId, $userId) || !userCanAccessPeriod($periodId, $userId)) {
-            return ['ok' => false, 'message' => 'Authorization Error: You are not authorized to upload data for the selected organizational scope.'];
+    if ($userId && !isPlatformAdmin($userId) && !isCmaAdmin($userId)) {
+        if ($customerId && function_exists('userCanAccessCustomer') && !userCanAccessCustomer($userId, $customerId)) {
+            return ['ok' => false, 'message' => 'Authorization Error: You are not authorized for the selected customer tenant.'];
+        }
+        if ($companyId && function_exists('userCanAccessCompany') && !userCanAccessCompany($userId, $companyId)) {
+            return ['ok' => false, 'message' => 'Authorization Error: You are not authorized to upload data for the selected company scope.'];
+        }
+        if ($locationId && function_exists('userCanAccessLocation') && !userCanAccessLocation($userId, $companyId, $divisionId, $locationType, $locationId)) {
+            return ['ok' => false, 'message' => 'Authorization Error: You are not authorized to upload data for the selected location scope.'];
+        }
+        if ($periodId && function_exists('userCanAccessPeriod') && !userCanAccessPeriod($periodId, $userId)) {
+            return ['ok' => false, 'message' => 'Authorization Error: You are not authorized to upload data for the selected period scope.'];
         }
     }
 
@@ -496,11 +509,11 @@ function executeDataImport($uploadId, $user) {
     $targetPeriodId = $scope['period_id'] ?? ($_SESSION['active_period_id'] ?? null);
 
     // Backend scope authorization validation
-    if ($userId && function_exists('isPlatformAdmin') && !isPlatformAdmin($userId)) {
-        if ($targetCompanyId && function_exists('userCanAccessCompany') && !userCanAccessCompany($targetCompanyId, $userId)) {
+    if ($userId && function_exists('isPlatformAdmin') && !isPlatformAdmin($userId) && !isCmaAdmin($userId)) {
+        if ($targetCompanyId && function_exists('userCanAccessCompany') && !userCanAccessCompany($userId, $targetCompanyId)) {
             return ['ok' => false, 'message' => 'Authorization Error: Access denied to target company scope.'];
         }
-        if ($targetLocationId && function_exists('userCanAccessLocation') && !userCanAccessLocation($targetLocationType, $targetLocationId, $userId)) {
+        if ($targetLocationId && function_exists('userCanAccessLocation') && !userCanAccessLocation($userId, $targetCompanyId, $targetDivisionId ?? null, $targetLocationType, $targetLocationId)) {
             return ['ok' => false, 'message' => 'Authorization Error: Access denied to target location scope.'];
         }
         if ($targetPeriodId && function_exists('userCanAccessPeriod') && !userCanAccessPeriod($targetPeriodId, $userId)) {
