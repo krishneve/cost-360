@@ -101,7 +101,7 @@ CREATE TABLE audit_log (
     user_id         BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
     entity_name     VARCHAR(100) NOT NULL,
     entity_id       BIGINT NOT NULL,
-    action          VARCHAR(20) NOT NULL CHECK (action IN ('INSERT','UPDATE','DELETE')),
+    action          VARCHAR(50) NOT NULL,
     old_value       TEXT,
     new_value       TEXT,
     timestamp       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -152,6 +152,25 @@ if (!function_exists('getCustomerDatabaseMapping')) {
         $mapping = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$mapping || empty($mapping['database_name'])) {
+            // Auto-heal and create mapping if customer exists in customers table
+            $chkCust = $centralPdo->prepare("SELECT customer_id FROM customers WHERE customer_id = :cid LIMIT 1");
+            $chkCust->execute([':cid' => $cid]);
+            if ($chkCust->fetch()) {
+                $dbName = "cust_" . $cid;
+                $insMap = $centralPdo->prepare("
+                    INSERT INTO customer_databases (customer_id, database_name, status, created_at, initialized_at)
+                    VALUES (:cid, :dbname, 'Active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (customer_id) 
+                    DO UPDATE SET database_name = EXCLUDED.database_name, status = 'Active', initialized_at = CURRENT_TIMESTAMP
+                ");
+                $insMap->execute([':cid' => $cid, ':dbname' => $dbName]);
+
+                $stmt->execute([':cid' => $cid]);
+                $mapping = $stmt->fetch(PDO::FETCH_ASSOC);
+            }
+        }
+
+        if (!$mapping || empty($mapping['database_name'])) {
             throw new Exception("Missing customer_database mapping for Customer ID {$cid}.");
         }
 
