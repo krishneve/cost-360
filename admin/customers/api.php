@@ -419,7 +419,7 @@ try {
            ACTION: CREATE CUSTOMER (ATOMIC MULTI-ENTITY PROVISIONING)
            ============================================================ */
         case 'create_customer':
-            if ($userRoleCode !== 'PLATFORM_ADMIN') {
+            if ($userRoleCode !== 'PLATFORM_ADMIN' && $userRoleCode !== 'CMA_ADMIN' && !isPlatformAdmin($authUserId) && !isCmaAdmin($authUserId)) {
                 sendApiResponse(false, 'Access Denied: Only Platform Administrators can onboard new customer tenants.', [], 403);
             }
 
@@ -657,7 +657,21 @@ try {
 
                 $pdo->commit();
 
-                sendApiResponse(true, 'Customer tenant and Customer Administrator created successfully with default FREE subscription.', [
+                // 9. Automatically Provision Dedicated PostgreSQL Customer Database
+                $dbProvisionInfo = null;
+                try {
+                    $dbProvisionInfo = provisionCustomerDatabase($newCustomerId);
+                } catch (Throwable $provEx) {
+                    error_log("Customer DB Provisioning Warning for Customer ID {$newCustomerId}: " . $provEx->getMessage());
+                    $dbProvisionInfo = [
+                        'success'       => false,
+                        'customer_id'   => $newCustomerId,
+                        'database_name' => 'cust_' . $newCustomerId,
+                        'error'         => $provEx->getMessage()
+                    ];
+                }
+
+                sendApiResponse(true, 'Customer tenant and Customer Administrator created successfully with dedicated database provisioning.', [
                     'customer_id'   => $newCustomerId,
                     'customer_code' => $customerCode,
                     'customer_name' => $customerName,

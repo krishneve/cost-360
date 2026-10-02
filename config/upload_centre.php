@@ -132,15 +132,34 @@ function getRecentUploads($userId = null, $limit = 8) {
 }
 
 // Dynamically discover columns and data types of target tables in public schema
-function getTargetTableColumns($tableName) {
+function getTargetTableColumns($tableName, $customerId = null) {
     try {
-        $stmt = dbQuery("
+        if ($customerId !== null && $customerId > 0) {
+            $pdo = getCustomerDbConnection($customerId);
+        } elseif (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['active_customer_id'])) {
+            $pdo = getCustomerDbConnection((int)$_SESSION['active_customer_id']);
+        } else {
+            $pdo = getDbConnection();
+        }
+
+        $stmt = $pdo->prepare("
             SELECT column_name, data_type, is_nullable 
             FROM information_schema.columns 
             WHERE table_schema = 'public' AND table_name = ?
             ORDER BY ordinal_position
-        ", [$tableName]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        ");
+        $stmt->execute([$tableName]);
+        $cols = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($cols)) {
+            $altTable = ($tableName === 'item_master') ? 'items' : (($tableName === 'items') ? 'item_master' : null);
+            if ($altTable) {
+                $stmt->execute([$altTable]);
+                $cols = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
+
+        return $cols;
     } catch (Throwable $e) {
         return [];
     }
@@ -495,12 +514,12 @@ function executeDataImport($uploadId, $user) {
     $totalSkipped = 0;
     $totalFailed = 0;
 
-    // Resolve Customer DB PDO handle
+    // Resolve Customer DB PDO handle strictly
     try {
         $pdo = getCustomerDbConnection($targetCustomerId, $userId);
     } catch (Throwable $e) {
-        error_log("Customer DB Routing Warning (using central connection fallback): " . $e->getMessage());
-        $pdo = getDbConnection();
+        logUploadAudit($userId, $username, 'IMPORT_FAILED', 'Upload Centre', null, 'Failed', ['upload_id' => $uploadId, 'error' => $e->getMessage()]);
+        return ['ok' => false, 'message' => 'Customer Database Routing Error: ' . $e->getMessage()];
     }
 
     foreach ($files as $f) {
@@ -516,8 +535,15 @@ function executeDataImport($uploadId, $user) {
             }
         }
 
-        // Discover dynamic target columns for this table
-        $dbCols = getTargetTableColumns($targetTable);
+        // Discover dynamic target columns for this table from customer DB
+        $dbCols = getTargetTableColumns($targetTable, $targetCustomerId);
+        if (empty($dbCols) && $targetTable === 'item_master') {
+            $targetTable = 'items';
+            $dbCols = getTargetTableColumns('items', $targetCustomerId);
+        } elseif (empty($dbCols) && $targetTable === 'items') {
+            $targetTable = 'item_master';
+            $dbCols = getTargetTableColumns('item_master', $targetCustomerId);
+        }
         $dbColNames = array_column($dbCols, 'column_name');
 
         if (!file_exists($f['storage_path'])) {
@@ -548,7 +574,14 @@ function executeDataImport($uploadId, $user) {
                 'desc'                => 'item_description',
                 'description'         => 'item_description',
                 'unit_rate'           => 'rate',
-                'unit_cost'           => 'rate'
+                'unit_cost'           => 'rate',
+                'item'                => 'item_code',
+                'material_code'       => 'item_code',
+                'material_name'       => 'item_name',
+                'product_code'        => 'item_code',
+                'product_name'        => 'item_name',
+                'type'                => 'item_type',
+                'uom_code'            => 'uom'
             ];
 
             $mappedData = [];
@@ -559,6 +592,44 @@ function executeDataImport($uploadId, $user) {
                     $mappedData[$cleanCol] = $row[$idx] ?? null;
                 } elseif (isset($aliasMap[$cleanCol]) && in_array($aliasMap[$cleanCol], $dbColNames, true)) {
                     $mappedData[$aliasMap[$cleanCol]] = $row[$idx] ?? null;
+                }
+            }
+
+            // Customer items table specific field adapters and FK lookups
+            if ($targetTable === 'items') {
+                if (empty($mappedData['item_name']) && !empty($mappedData['item_description'])) {
+                    $mappedData['item_name'] = $mappedData['item_description'];
+                }
+                if (empty($mappedData['item_type'])) {
+                    $mappedData['item_type'] = 'Raw Material';
+                }
+                if (empty($mappedData['status'])) {
+                    $mappedData['status'] = 'Active';
+                }
+                if (empty($mappedData['uom_id'])) {
+                    $uomCandidate = !empty($mappedData['uom']) ? trim($mappedData['uom']) : 'PCS';
+                    foreach ($headers as $hIdx => $hName) {
+                        if (stripos($hName, 'uom') !== false || stripos($hName, 'unit') !== false) {
+                            if (!empty($row[$hIdx])) {
+                                $uomCandidate = trim($row[$hIdx]);
+                                break;
+                            }
+                        }
+                    }
+                    $uomCodeVal = strtoupper($uomCandidate);
+                    try {
+                        $uomStmt = $pdo->prepare("SELECT uom_id FROM uoms WHERE UPPER(uom_code) = :code LIMIT 1");
+                        $uomStmt->execute([':code' => $uomCodeVal]);
+                        $resolvedUomId = $uomStmt->fetchColumn();
+                        if (!$resolvedUomId) {
+                            $insUom = $pdo->prepare("INSERT INTO uoms (uom_code, uom_name, description, status) VALUES (:code, :name, 'Auto-created on import', 'Active') RETURNING uom_id");
+                            $insUom->execute([':code' => $uomCodeVal, ':name' => ucfirst(strtolower($uomCodeVal))]);
+                            $resolvedUomId = $insUom->fetchColumn();
+                        }
+                    } catch (Throwable $uEx) {
+                        $resolvedUomId = 1;
+                    }
+                    $mappedData['uom_id'] = $resolvedUomId;
                 }
             }
 
