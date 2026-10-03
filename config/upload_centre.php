@@ -494,6 +494,30 @@ function getPredefinedTableSchema(string $tableName): ?string {
                 );
             ";
 
+        case 'scrap_sales':
+        case 'scrap_transaction':
+        case 'scrap_master':
+            return "
+                CREATE TABLE IF NOT EXISTS public.scrap_sales (
+                    id                  BIGSERIAL PRIMARY KEY,
+                    txn_date            DATE DEFAULT CURRENT_DATE,
+                    scrap_code          VARCHAR(100),
+                    item_code           VARCHAR(100),
+                    scrap_name          VARCHAR(255),
+                    item_name           VARCHAR(255),
+                    uom                 VARCHAR(50),
+                    qty                 NUMERIC(15,4) DEFAULT 0.0000,
+                    rate                NUMERIC(15,4) DEFAULT 0.0000,
+                    amount              NUMERIC(15,4) DEFAULT 0.0000,
+                    std_realisation_rate NUMERIC(15,4) DEFAULT 0.0000,
+                    buyer               VARCHAR(255),
+                    customer_name       VARCHAR(255),
+                    status              VARCHAR(20) DEFAULT 'Active',
+                    created_at          TIMESTAMPTZ DEFAULT now()
+                );
+                CREATE INDEX IF NOT EXISTS idx_scrap_sales_code ON public.scrap_sales(scrap_code);
+            ";
+
         case 'overhead_ledger':
             return "
                 CREATE TABLE IF NOT EXISTS public.overhead_ledger (
@@ -910,6 +934,8 @@ function analyzeUploadedFiles($files, $user) {
             $masterName = 'Account Master'; $subName = 'Overhead Ledger'; $confidence = 98;
         } elseif (str_contains($lowerName, 'purchase') || str_contains($lowerName, 'po_')) {
             $masterName = 'Stock Ledger'; $subName = 'Purchase Transaction'; $confidence = 98;
+        } elseif (str_contains($lowerName, 'scrap') || str_starts_with($lowerName, '12_')) {
+            $masterName = 'Stock Ledger'; $subName = 'Production Transaction'; $confidence = 98;
         } elseif (str_contains($lowerName, 'consumption') || str_contains($lowerName, 'issue')) {
             $masterName = 'Stock Ledger'; $subName = 'Consumption Transaction'; $confidence = 98;
         } elseif (str_contains($lowerName, 'production') || str_contains($lowerName, 'wo_')) {
@@ -1222,7 +1248,11 @@ function executeDataImport($uploadId, $user) {
                     'std_material'        => 'std_material_cost',
                     'std_conversion'      => 'std_conversion_cost',
                     'std_total_cost'      => 'cost_value',
-                    'std_rev_date'        => 'effective_date'
+                    'std_rev_date'        => 'effective_date',
+                    'scrap_code'          => 'item_code',
+                    'scrap_name'          => 'item_name',
+                    'std_realisation_rate'=> 'rate',
+                    'buyer'               => 'vendor_name'
                 ];
 
                 $mappedData = [];
@@ -1303,7 +1333,7 @@ function executeDataImport($uploadId, $user) {
                 }
 
                 // Validate primary mandatory identifier if defined for entity
-                $candidateIds = ['product_code', 'item_code', 'machine_code', 'cost_center_code', 'cc_code', 'vendor_code', 'account_code', 'po_number', 'wo_number', 'issue_number', 'code'];
+                $candidateIds = ['product_code', 'item_code', 'scrap_code', 'machine_code', 'cost_center_code', 'cc_code', 'vendor_code', 'account_code', 'po_number', 'wo_number', 'issue_number', 'code'];
                 $primaryCol = null;
                 foreach ($candidateIds as $cId) {
                     if (in_array($cId, $dbColNames, true)) {
@@ -1316,7 +1346,7 @@ function executeDataImport($uploadId, $user) {
                 }
 
                 // If specific identifier column exists in schema and is empty, check for alias or report error
-                if (in_array($primaryCol, ['item_code', 'product_code', 'machine_code', 'vendor_code', 'account_code', 'cost_center_code', 'code'], true) 
+                if (in_array($primaryCol, ['item_code', 'product_code', 'scrap_code', 'machine_code', 'vendor_code', 'account_code', 'cost_center_code', 'code'], true) 
                     && in_array($primaryCol, $dbColNames, true) 
                     && empty($mappedData[$primaryCol])) {
                     
@@ -1324,6 +1354,13 @@ function executeDataImport($uploadId, $user) {
                         $mappedData['product_code'] = $mappedData['item_code'];
                     } elseif ($primaryCol === 'item_code' && !empty($mappedData['product_code'])) {
                         $mappedData['item_code'] = $mappedData['product_code'];
+                    } elseif ($primaryCol === 'item_code' && !empty($mappedData['scrap_code'])) {
+                        $mappedData['item_code'] = $mappedData['scrap_code'];
+                        if (in_array('item_name', $dbColNames, true) && empty($mappedData['item_name']) && !empty($mappedData['scrap_name'])) {
+                            $mappedData['item_name'] = $mappedData['scrap_name'];
+                        }
+                    } elseif ($primaryCol === 'scrap_code' && !empty($mappedData['item_code'])) {
+                        $mappedData['scrap_code'] = $mappedData['item_code'];
                     } else {
                         $totalFailed++;
                         dbQuery("

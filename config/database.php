@@ -444,6 +444,35 @@ if (!function_exists('getCustomerDbConnection')) {
             }
         }
 
+        if ($lastException && (stripos($lastException->getMessage(), 'does not exist') !== false || stripos($lastException->getMessage(), '08006') !== false)) {
+            try {
+                $globalPdo = getDbConnection();
+                $chkDb = $globalPdo->prepare("SELECT 1 FROM pg_database WHERE datname = :dbname");
+                $chkDb->execute([':dbname' => $dbName]);
+                if (!$chkDb->fetch()) {
+                    $globalPdo->exec("CREATE DATABASE \"{$dbName}\"");
+                }
+                foreach ($dsnOptions as $dsn) {
+                    try {
+                        $custPdo = new PDO($dsn, $user, $password, [
+                            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                            PDO::ATTR_EMULATE_PREPARES => false,
+                            PDO::ATTR_TIMEOUT => 5,
+                        ]);
+                        $customerPdos[$dbName] = $custPdo;
+                        if ($cid !== null) {
+                            $customerPdos[$cid] = $custPdo;
+                        }
+                        return $custPdo;
+                    } catch (PDOException $retryEx) {
+                        // continue
+                    }
+                }
+            } catch (Throwable $autoCreateEx) {
+                error_log("Auto-creation of database {$dbName} failed: " . $autoCreateEx->getMessage());
+            }
+        }
         error_log("Customer Database Connection Failure (DB: {$dbName}): " . ($lastException ? $lastException->getMessage() : 'Unknown error'));
         throw new Exception("Failed to connect to customer database '{$dbName}': " . ($lastException ? $lastException->getMessage() : ''));
     }
