@@ -6,7 +6,6 @@
  */
 
 ob_start();
-header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/../config/upload_centre.php';
@@ -15,6 +14,7 @@ require_once __DIR__ . '/../config/upload_centre.php';
 if (!isLoggedIn()) {
     if (ob_get_length()) ob_clean();
     http_response_code(401);
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok' => false, 'message' => 'Unauthorized. Please log in to Cost360.']);
     exit;
 }
@@ -23,6 +23,7 @@ $user = getAuthUser();
 if (!$user) {
     if (ob_get_length()) ob_clean();
     http_response_code(401);
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok' => false, 'message' => 'Unable to identify authenticated user context.']);
     exit;
 }
@@ -38,20 +39,53 @@ $hasUploadAccess = isPlatformAdmin($userId) ||
 if (!$hasUploadAccess) {
     if (ob_get_length()) ob_clean();
     http_response_code(403);
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok' => false, 'message' => 'Access Denied: You do not have permission to access the Upload Centre.']);
+    exit;
+}
+
+$action = $_REQUEST['action'] ?? '';
+
+// Handle CSV Error Export (can be GET request)
+if ($action === 'export_errors') {
+    if (ob_get_length()) ob_clean();
+    $uploadId = (int)($_REQUEST['upload_id'] ?? 0);
+    $errors = getImportErrorsByUploadId($uploadId);
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="import_errors_' . $uploadId . '_' . date('Ymd_His') . '.csv"');
+
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Error ID', 'Upload Run ID', 'Worksheet', 'Line / Row Number', 'Column / Field', 'Error Type', 'Error Message', 'Severity', 'Logged Timestamp']);
+
+    foreach ($errors as $e) {
+        fputcsv($output, [
+            $e['id'] ?? '',
+            $e['upload_id'] ?? '',
+            $e['sheet_name'] ?? 'Main Sheet',
+            $e['row_number'] ?? '',
+            $e['field'] ?? '',
+            $e['error_type'] ?? '',
+            $e['error_message'] ?? '',
+            $e['severity'] ?? '',
+            $e['created_at'] ?? ''
+        ]);
+    }
+    fclose($output);
     exit;
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     if (ob_get_length()) ob_clean();
     http_response_code(405);
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok' => false, 'message' => 'POST request method required.']);
     exit;
 }
 
-try {
-    $action = $_POST['action'] ?? '';
+header('Content-Type: application/json; charset=utf-8');
 
+try {
     switch ($action) {
         case 'upload':
             $canUpload = isPlatformAdmin($user['user_id']) || userHasPermission('UPLOAD', 'UPLOAD_CENTRE', $user['user_id']) || userHasPermission('UPLOAD', null, $user['user_id']);
@@ -90,9 +124,25 @@ try {
                 echo json_encode(['ok' => false, 'message' => 'Upload Run ID required.']);
                 exit;
             }
-            $result = executeDataImport($uploadId, $user);
+            $selectedFileIds = null;
+            if (!empty($_POST['file_ids'])) {
+                if (is_array($_POST['file_ids'])) {
+                    $selectedFileIds = array_map('intval', $_POST['file_ids']);
+                } else {
+                    $selectedFileIds = array_filter(array_map('intval', explode(',', $_POST['file_ids'])));
+                }
+            }
+            $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
+            $result = executeDataImport($uploadId, $user, $selectedFileIds, $periodId);
             if (ob_get_length()) ob_clean();
             echo json_encode($result);
+            break;
+
+        case 'periods':
+            $periods = getUserAccessiblePeriods();
+            $activePeriod = getAccountingPeriodContext();
+            if (ob_get_length()) ob_clean();
+            echo json_encode(['ok' => true, 'periods' => $periods, 'active_period' => $activePeriod]);
             break;
 
         case 'stats':

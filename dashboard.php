@@ -1679,9 +1679,9 @@ if (!function_exists('formatMenuRouteUrl')) {
             <div class="upload-icon-circle">&uarr;</div>
             <h3 style="margin-bottom: 0.5rem; font-weight: 700;">Drag & Drop Manufacturing Data Files Here</h3>
             <p style="color: var(--color-secondary-text); font-size: 0.9rem; margin-bottom: 1rem;">
-              Supported Formats: <strong>CSV &bull; XLS &bull; XLSX &bull; PDF</strong> &bull; Multiple Files & Folders Supported
+              Supported Formats: <strong>Excel Workbook (.xlsx, .xls) &bull; CSV</strong> &bull; Multi-Sheet Finalized Costing Structure Supported
             </p>
-            <input id="fileInput" type="file" multiple accept=".csv,.xls,.xlsx,.pdf" hidden>
+            <input id="fileInput" type="file" multiple accept=".csv,.xls,.xlsx" hidden>
             <input id="folderInput" type="file" webkitdirectory directory multiple hidden>
           </div>
 
@@ -1709,9 +1709,10 @@ if (!function_exists('formatMenuRouteUrl')) {
                   <tr>
                     <th>Import Code</th>
                     <th>Files</th>
+                    <th>Period</th>
                     <th>Date & Time</th>
                     <th>Rows</th>
-                    <th>Success</th>
+                    <th>Breakdown</th>
                     <th>Errors</th>
                     <th>Status</th>
                   </tr>
@@ -1721,10 +1722,30 @@ if (!function_exists('formatMenuRouteUrl')) {
                     <tr>
                       <td><code><?php echo htmlspecialchars($r['import_code']); ?></code></td>
                       <td><strong><?php echo htmlspecialchars($r['files'] ?: 'Import Run'); ?></strong></td>
-                      <td><?php echo htmlspecialchars(date('d M Y H:i', strtotime($r['created_at']))); ?></td>
+                      <td>
+                        <?php if (!empty($r['period_code'])): ?>
+                          <span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(14, 165, 233, 0.12); color: #0284C7; border: 1px solid rgba(14, 165, 233, 0.35); font-size: 0.74rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px;">
+                            📅 <?php echo htmlspecialchars($r['period_code']); ?>
+                          </span>
+                        <?php else: ?>
+                          <span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(139, 92, 246, 0.12); color: #7C3AED; border: 1px solid rgba(139, 92, 246, 0.35); font-size: 0.74rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px;">
+                            ⚡ Master
+                          </span>
+                        <?php endif; ?>
+                      </td>
+                      <td style="white-space: nowrap;"><?php echo htmlspecialchars(date('d M Y, H:i', strtotime($r['created_at']))); ?></td>
                       <td><?php echo number_format((int)$r['total_rows']); ?></td>
-                      <td><span style="color: #059669; font-weight: 700;"><?php echo number_format((int)$r['success_rows']); ?></span></td>
-                      <td><span style="color: #DC2626; font-weight: 700;"><?php echo number_format((int)$r['error_rows']); ?></span></td>
+                      <td style="font-size: 0.8rem; white-space: nowrap;">
+                        <span style="color: #059669; font-weight: 700;" title="Inserted">➕ <?php echo number_format((int)($r['inserted_rows'] ?? $r['success_rows'])); ?></span>
+                        <span style="color: #D97706; font-weight: 700; margin-left: 0.35rem;" title="Updated">🔄 <?php echo number_format((int)($r['updated_rows'] ?? 0)); ?></span>
+                        <span style="color: #64748B; font-weight: 600; margin-left: 0.35rem;" title="Unchanged">✔ <?php echo number_format((int)($r['unchanged_rows'] ?? 0)); ?></span>
+                      </td>
+                      <td>
+                        <span style="color: #DC2626; font-weight: 700;"><?php echo number_format((int)$r['error_rows']); ?></span>
+                        <?php if ((int)$r['error_rows'] > 0): ?>
+                          <button type="button" class="btn-action-sm" style="background: rgba(220, 38, 38, 0.2); color: #F87171; border: 1px solid rgba(220, 38, 38, 0.4); border-radius: 4px; padding: 0.15rem 0.45rem; font-size: 0.72rem; cursor: pointer; margin-left: 0.35rem;" onclick="viewImportErrors(<?php echo (int)$r['id']; ?>)">View</button>
+                        <?php endif; ?>
+                      </td>
                       <td><span class="status-badge"><?php echo htmlspecialchars($r['status']); ?></span></td>
                     </tr>
                   <?php endforeach; ?>
@@ -1793,10 +1814,11 @@ if (!function_exists('formatMenuRouteUrl')) {
                   <tr>
                     <th>Import Code</th>
                     <th>Uploaded By</th>
+                    <th>Period</th>
                     <th>Date</th>
                     <th>File(s)</th>
                     <th>Total Rows</th>
-                    <th>Success</th>
+                    <th>Breakdown</th>
                     <th>Errors</th>
                     <th>Status</th>
                     <th>Action</th>
@@ -1807,10 +1829,25 @@ if (!function_exists('formatMenuRouteUrl')) {
                     <tr>
                       <td><code><?php echo htmlspecialchars($r['import_code']); ?></code></td>
                       <td><strong><?php echo htmlspecialchars($r['username']); ?></strong></td>
-                      <td><?php echo htmlspecialchars(date('d M Y H:i', strtotime($r['created_at']))); ?></td>
+                      <td>
+                        <?php if (!empty($r['period_code'])): ?>
+                          <span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(14, 165, 233, 0.12); color: #0284C7; border: 1px solid rgba(14, 165, 233, 0.35); font-size: 0.74rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px;">
+                            📅 <?php echo htmlspecialchars($r['period_code']); ?>
+                          </span>
+                        <?php else: ?>
+                          <span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(139, 92, 246, 0.12); color: #7C3AED; border: 1px solid rgba(139, 92, 246, 0.35); font-size: 0.74rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px;">
+                            ⚡ Master
+                          </span>
+                        <?php endif; ?>
+                      </td>
+                      <td style="white-space: nowrap;"><?php echo htmlspecialchars(date('d M Y, H:i', strtotime($r['created_at']))); ?></td>
                       <td><?php echo htmlspecialchars($r['files']); ?></td>
                       <td><?php echo number_format((int)$r['total_rows']); ?></td>
-                      <td><span style="color: #059669; font-weight: 700;"><?php echo number_format((int)$r['success_rows']); ?></span></td>
+                      <td style="font-size: 0.8rem; white-space: nowrap;">
+                        <span style="color: #059669; font-weight: 700;" title="Inserted">➕ <?php echo number_format((int)($r['inserted_rows'] ?? $r['success_rows'])); ?></span>
+                        <span style="color: #D97706; font-weight: 700; margin-left: 0.35rem;" title="Updated">🔄 <?php echo number_format((int)($r['updated_rows'] ?? 0)); ?></span>
+                        <span style="color: #64748B; font-weight: 600; margin-left: 0.35rem;" title="Unchanged">✔ <?php echo number_format((int)($r['unchanged_rows'] ?? 0)); ?></span>
+                      </td>
                       <td><span style="color: #DC2626; font-weight: 700;"><?php echo number_format((int)$r['error_rows']); ?></span></td>
                       <td><span class="status-badge"><?php echo htmlspecialchars($r['status']); ?></span></td>
                       <td>
@@ -12487,6 +12524,6 @@ if (!function_exists('formatMenuRouteUrl')) {
     window.toggleAddPeriodForm = toggleAddPeriodForm;
     window.submitPopoverNewPeriod = submitPopoverNewPeriod;
   </script>
-  <script src="<?php echo $baseUrlPrefix; ?>assets/js/upload_centre.js"></script>
+  <script src="<?php echo $baseUrlPrefix; ?>assets/js/upload_centre.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>
