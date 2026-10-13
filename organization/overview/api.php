@@ -3,6 +3,13 @@
  * Cost360 - Organization Overview API Handler
  * Provides full visual hierarchy tree (Customer -> Company -> Division -> Plant -> Warehouse)
  * and dynamic dependent dropdown filter options.
+ *
+ * Adheres strictly to the current Neon PostgreSQL schema:
+ * - customers: customer_id, customer_code, customer_name, address, contact_person, contact_email, contact_phone, status, created_at
+ * - companies: company_id, customer_id, company_code, company_name, address, status
+ * - divisions: division_id, company_id, division_code, division_name, status
+ * - plants: plant_id, division_id, plant_code, plant_name, location, status
+ * - warehouses: warehouse_id, plant_id, warehouse_code, warehouse_name, status (NO 'type' column)
  */
 
 header('Content-Type: application/json; charset=utf-8');
@@ -20,6 +27,13 @@ $currentUser = getAuthUser();
 $activeCompany = getActiveCompany();
 $activeCustomerId = $activeCompany['customer_id'] ?? null;
 $isPlatform = isPlatformAdmin();
+$isCma = isCmaAdmin();
+
+if ($isCma && !$activeCustomerId) {
+    $activeCustomerId = getCmaAdminCustomerId();
+} elseif (!$activeCustomerId && isset($_SESSION['active_customer_id']) && is_numeric($_SESSION['active_customer_id'])) {
+    $activeCustomerId = (int)$_SESSION['active_customer_id'];
+}
 
 $action = $_GET['action'] ?? $_POST['action'] ?? 'tree';
 
@@ -34,37 +48,129 @@ try {
         $filterCustomerId = isset($_GET['customer_id']) && $_GET['customer_id'] !== '' ? (int)$_GET['customer_id'] : null;
         $filterCompanyId = isset($_GET['company_id']) && $_GET['company_id'] !== '' ? (int)$_GET['company_id'] : null;
 
-        // Scoping
-        if (!$isPlatform && $activeCustomerId) {
-            $filterCustomerId = (int)$activeCustomerId;
+        // Accessible Customers list for current user
+        $accessibleCustomers = [];
+        $allowedCustomerIds = [];
+        if ($isPlatform) {
+            $cStmt = $pdo->query("SELECT customer_id, customer_code, customer_name FROM customers WHERE UPPER(status) = 'ACTIVE' ORDER BY customer_name ASC");
+            $accessibleCustomers = $cStmt->fetchAll(PDO::FETCH_ASSOC);
+            $allowedCustomerIds = array_column($accessibleCustomers, 'customer_id');
+        } else {
+            $userCustomers = getUserAccessibleCustomers($currentUser['user_id'] ?? null);
+            if (!empty($userCustomers)) {
+                $accessibleCustomers = $userCustomers;
+                $allowedCustomerIds = array_column($userCustomers, 'customer_id');
+            } elseif ($activeCustomerId) {
+                $cStmt = $pdo->prepare("SELECT customer_id, customer_code, customer_name FROM customers WHERE customer_id = :cid ORDER BY customer_name ASC");
+                $cStmt->execute([':cid' => $activeCustomerId]);
+                $accessibleCustomers = $cStmt->fetchAll(PDO::FETCH_ASSOC);
+                $allowedCustomerIds = [$activeCustomerId];
+            }
         }
 
-        // Fetch Customers
-        $custSql = "SELECT customer_id, customer_code, customer_name, status, created_at FROM customers WHERE 1=1";
+        // Customer scoping
+        if (!$isPlatform && !empty($allowedCustomerIds)) {
+            if ($filterCustomerId && in_array($filterCustomerId, $allowedCustomerIds)) {
+                // Keep selected allowed customer
+            } elseif ($activeCustomerId && in_array($activeCustomerId, $allowedCustomerIds)) {
+                $filterCustomerId = (int)$activeCustomerId;
+            } elseif (count($allowedCustomerIds) === 1) {
+                $filterCustomerId = (int)$allowedCustomerIds[0];
+            }
+        }
+
+        // Build Customers Query
+        $custSql = "
+            SELECT 
+                customer_id, 
+                customer_code, 
+                customer_name, 
+                address, 
+                contact_person, 
+                contact_email, 
+                contact_phone, 
+                status, 
+                created_at 
+            FROM customers 
+            WHERE 1=1
+        ";
         $custParams = [];
+
+        if (!$isPlatform && !empty($allowedCustomerIds)) {
+            $inPlaceholders = [];
+            foreach ($allowedCustomerIds as $i => $id) {
+                $key = ':allowed_cid_' . $i;
+                $inPlaceholders[] = $key;
+                $custParams[$key] = (int)$id;
+            }
+            $custSql .= " AND customer_id IN (" . implode(',', $inPlaceholders) . ")";
+        }
 
         if ($filterCustomerId) {
             $custSql .= " AND customer_id = :cid";
             $custParams[':cid'] = $filterCustomerId;
         }
+
         if ($search !== '') {
-            $custSql .= " AND (customer_code ILIKE :s OR customer_name ILIKE :s)";
+            $custSql .= " AND (
+                customer_code ILIKE :s 
+                OR customer_name ILIKE :s 
+                OR address ILIKE :s
+                OR contact_person ILIKE :s
+                OR EXISTS (
+                    SELECT 1 FROM companies c 
+                    WHERE c.customer_id = customers.customer_id 
+                    AND (c.company_code ILIKE :s OR c.company_name ILIKE :s OR c.address ILIKE :s)
+                )
+                OR EXISTS (
+                    SELECT 1 FROM divisions d 
+                    JOIN companies c ON d.company_id = c.company_id 
+                    WHERE c.customer_id = customers.customer_id 
+                    AND (d.division_code ILIKE :s OR d.division_name ILIKE :s)
+                )
+                OR EXISTS (
+                    SELECT 1 FROM plants p 
+                    JOIN divisions d ON p.division_id = d.division_id 
+                    JOIN companies c ON d.company_id = c.company_id 
+                    WHERE c.customer_id = customers.customer_id 
+                    AND (p.plant_code ILIKE :s OR p.plant_name ILIKE :s OR p.location ILIKE :s)
+                )
+                OR EXISTS (
+                    SELECT 1 FROM warehouses w 
+                    JOIN plants p ON w.plant_id = p.plant_id 
+                    JOIN divisions d ON p.division_id = d.division_id 
+                    JOIN companies c ON d.company_id = c.company_id 
+                    WHERE c.customer_id = customers.customer_id 
+                    AND (w.warehouse_code ILIKE :s OR w.warehouse_name ILIKE :s)
+                )
+            )";
             $custParams[':s'] = '%' . $search . '%';
         }
-        $custSql .= " ORDER BY customer_name ASC";
+
+        $custSql .= " ORDER BY customer_name ASC, customer_id ASC";
 
         $stmt = $pdo->prepare($custSql);
         $stmt->execute($custParams);
         $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Fetch all Companies
-        $compSql = "SELECT company_id, customer_id, company_code, company_name, address, status FROM companies WHERE 1=1";
+        // Fetch Companies
+        $compSql = "
+            SELECT 
+                company_id, 
+                customer_id, 
+                company_code, 
+                company_name, 
+                address, 
+                status 
+            FROM companies 
+            WHERE 1=1
+        ";
         $compParams = [];
         if ($filterCompanyId) {
             $compSql .= " AND company_id = :comp_id";
             $compParams[':comp_id'] = $filterCompanyId;
         }
-        $compSql .= " ORDER BY company_name ASC";
+        $compSql .= " ORDER BY company_name ASC, company_id ASC";
         $compStmt = $pdo->prepare($compSql);
         $compStmt->execute($compParams);
         $companiesRaw = $compStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -74,31 +180,59 @@ try {
             $companiesByCustomer[$c['customer_id']][] = $c;
         }
 
-        // Fetch all Divisions
-        $divSql = "SELECT division_id, company_id, division_code, division_name, status FROM divisions ORDER BY division_name ASC";
+        // Fetch Divisions
+        $divSql = "
+            SELECT 
+                division_id, 
+                company_id, 
+                division_code, 
+                division_name, 
+                status 
+            FROM divisions 
+            ORDER BY division_name ASC, division_id ASC
+        ";
         $divsRaw = $pdo->query($divSql)->fetchAll(PDO::FETCH_ASSOC);
         $divisionsByCompany = [];
         foreach ($divsRaw as $d) {
             $divisionsByCompany[$d['company_id']][] = $d;
         }
 
-        // Fetch all Plants
-        $plantSql = "SELECT plant_id, division_id, plant_code, plant_name, location, status FROM plants ORDER BY plant_name ASC";
+        // Fetch Plants
+        $plantSql = "
+            SELECT 
+                plant_id, 
+                division_id, 
+                plant_code, 
+                plant_name, 
+                location, 
+                status 
+            FROM plants 
+            ORDER BY plant_name ASC, plant_id ASC
+        ";
         $plantsRaw = $pdo->query($plantSql)->fetchAll(PDO::FETCH_ASSOC);
         $plantsByDivision = [];
         foreach ($plantsRaw as $p) {
             $plantsByDivision[$p['division_id']][] = $p;
         }
 
-        // Fetch all Warehouses
-        $whSql = "SELECT warehouse_id, plant_id, warehouse_code, warehouse_name, type, status FROM warehouses ORDER BY warehouse_name ASC";
+        // Fetch Warehouses (Confirmed columns: warehouse_id, plant_id, warehouse_code, warehouse_name, status)
+        $whSql = "
+            SELECT 
+                warehouse_id, 
+                plant_id, 
+                warehouse_code, 
+                warehouse_name, 
+                status 
+            FROM warehouses 
+            ORDER BY warehouse_name ASC, warehouse_id ASC
+        ";
         $whsRaw = $pdo->query($whSql)->fetchAll(PDO::FETCH_ASSOC);
         $warehousesByPlant = [];
         foreach ($whsRaw as $w) {
             $warehousesByPlant[$w['plant_id']][] = $w;
         }
 
-        // Assemble Tree
+        // Assemble 5-Level Hierarchical Tree
         $tree = [];
         $totalCustomers = count($customers);
         $totalCompanies = 0;
@@ -163,7 +297,8 @@ try {
                 'plants' => $totalPlants,
                 'warehouses' => $totalWarehouses
             ],
-            'tree' => $tree
+            'tree' => $tree,
+            'customers_list' => $accessibleCustomers
         ]);
         exit;
     }
@@ -259,8 +394,12 @@ try {
         throw new Exception("Invalid Overview action: {$action}");
     }
 
-} catch (Exception $e) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+} catch (Throwable $e) {
+    error_log("Cost360 Organization Overview API Error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+    http_response_code(500);
+    echo json_encode([
+        'success' => false, 
+        'error' => 'Unable to load organization hierarchy. Please try again.'
+    ]);
     exit;
 }

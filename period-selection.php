@@ -113,11 +113,14 @@ if ($userName === '') {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 36px 20px;
+            padding: 40px 24px;
+            width: 100%;
+            box-sizing: border-box;
         }
         .container {
             width: 100%;
-            max-width: 950px;
+            max-width: 1140px;
+            margin: 0 auto;
         }
 
         /* BRAND */
@@ -274,8 +277,14 @@ if ($userName === '') {
         }
         .grid-list {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 18px;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            width: 100%;
+        }
+        @media (max-width: 680px) {
+            .grid-list {
+                grid-template-columns: 1fr;
+            }
         }
         .card-item {
             background: #FFFFFF;
@@ -285,6 +294,10 @@ if ($userName === '') {
             cursor: pointer;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 6px 18px rgba(3, 54, 101, 0.05);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
         .card-item:hover {
             transform: translateY(-2px);
@@ -332,9 +345,10 @@ if ($userName === '') {
             margin-bottom: 18px;
             font-size: 14px;
         }
-        .card-form { margin: 0; }
+        .card-form { margin: 0; height: 100%; }
         .card-button {
             width: 100%;
+            height: 100%;
             border: 0;
             background: transparent;
             padding: 0;
@@ -397,13 +411,14 @@ if ($userName === '') {
         }
         .nav-back a:hover { color: #0070BA; }
     </style>
+    <link rel="stylesheet" href="assets/css/cost360-core.css">
 </head>
 <body>
 <div class="page">
     <div class="container">
         <!-- BRAND -->
         <div class="brand">
-            <h1>Cost360</h1>
+            <img src="assets/images/cost360-logo-navy.png" alt="Cost360 Logo" style="height: 48px; width: auto; margin-bottom: 8px;">
             <p>Select Active Accounting Period Context</p>
         </div>
 
@@ -489,19 +504,21 @@ if ($userName === '') {
                         <input type="hidden" name="period_id" value="<?php echo htmlspecialchars($per['period_id']); ?>">
                         <button type="submit" class="card-button">
                             <div class="card-item">
-                                <div class="card-icon">
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                                        <line x1="16" y1="2" x2="16" y2="6"/>
-                                        <line x1="8" y1="2" x2="8" y2="6"/>
-                                        <line x1="3" y1="10" x2="21" y2="10"/>
-                                    </svg>
-                                </div>
-                                <div class="card-name"><?php echo htmlspecialchars($per['period_name']); ?></div>
-                                <div class="card-dates">
-                                    <?php echo htmlspecialchars(date('M d, Y', strtotime($per['start_date']))); ?>
-                                    &ndash;
-                                    <?php echo htmlspecialchars(date('M d, Y', strtotime($per['end_date']))); ?>
+                                <div>
+                                    <div class="card-icon">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                            <line x1="16" y1="2" x2="16" y2="6"/>
+                                            <line x1="8" y1="2" x2="8" y2="6"/>
+                                            <line x1="3" y1="10" x2="21" y2="10"/>
+                                        </svg>
+                                    </div>
+                                    <div class="card-name"><?php echo htmlspecialchars($per['period_name']); ?></div>
+                                    <div class="card-dates">
+                                        <?php echo htmlspecialchars(date('M d, Y', strtotime($per['start_date']))); ?>
+                                        &ndash;
+                                        <?php echo htmlspecialchars(date('M d, Y', strtotime($per['end_date']))); ?>
+                                    </div>
                                 </div>
                                 <div class="select-text">
                                     <span>Select Period &amp; Enter Dashboard</span>

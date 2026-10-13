@@ -212,6 +212,7 @@ if (!function_exists('formatMenuRouteUrl')) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="<?php echo $baseUrlPrefix; ?>assets/css/cost360-core.css">
   <style>
     /* Design Tokens Matched to Login Page Palette */
     :root {
@@ -261,20 +262,31 @@ if (!function_exists('formatMenuRouteUrl')) {
     }
 
     .sidebar-brand {
-      padding: 1.25rem 1.25rem;
+      padding: 1.25rem 1rem;
       display: flex;
       align-items: center;
-      justify-content: flex-start;
+      justify-content: center;
+      text-align: center;
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       min-height: 72px;
+      background: rgba(0, 0, 0, 0.08);
+    }
+
+    .sidebar-brand-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
     }
 
     .sidebar-brand-logo {
-      max-width: 100%;
-      height: 42px;
+      max-width: 175px;
+      max-height: 44px;
       width: auto;
+      height: auto;
       object-fit: contain;
       display: block;
+      margin: 0 auto;
     }
 
     .nav-section-label {
@@ -1223,9 +1235,11 @@ if (!function_exists('formatMenuRouteUrl')) {
 <body>
 
   <!-- DYNAMIC AUTHORIZED SIDEBAR FROM NEON DATABASE -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="c360Sidebar">
     <div class="sidebar-brand">
-      <img src="<?php echo $baseUrlPrefix; ?>assets/images/cost360-logo.png" alt="Cost360 Logo" class="sidebar-brand-logo">
+      <a href="<?php echo $baseUrlPrefix; ?>dashboard.php" class="sidebar-brand-link" title="Cost360 Dashboard">
+        <img src="<?php echo $baseUrlPrefix; ?>assets/images/cost360-logo-white.png" alt="Cost360 Logo" class="sidebar-brand-logo">
+      </a>
     </div>
 
     <div class="nav-section-label">Authorized Navigation</div>
@@ -1395,7 +1409,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                           echo '<div class="nav-parent-group ' . ($isActive ? 'open' : '') . '">';
                           echo '<div class="nav-item nav-parent-item ' . ($isActive ? 'active' : '') . '">';
                           echo '<a href="javascript:void(0);" class="nav-link-main nav-child-item" onclick="toggleSubmenu(this); return false;">';
-                          echo '<span class="child-indent-arrow" style="margin-left: ' . (($depth - 1) * 10) . 'px;">&rarr;</span>';
+                          echo '<span class="child-menu-bullet" style="display:inline-block; width:5px; height:5px; border-radius:50%; background:currentColor; opacity:0.6; margin-left:' . (($depth - 1) * 8) . 'px; margin-right:8px; flex-shrink:0;"></span>';
                           echo '<span>' . htmlspecialchars($node['menu_name']) . '</span>';
                           echo '</a>';
                           echo '<button type="button" class="nav-toggle-btn" aria-expanded="' . ($isActive ? 'true' : 'false') . '" onclick="toggleSubmenu(this)">';
@@ -1409,7 +1423,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                           echo '</div></div>';
                       } else {
                           echo '<a href="' . $linkHref . '" class="nav-item nav-child-item ' . ($isActive ? 'active' : '') . '">';
-                          echo '<span class="child-indent-arrow" style="margin-left: ' . (($depth - 1) * 10) . 'px;">&rarr;</span>';
+                          echo '<span class="child-menu-bullet" style="display:inline-block; width:5px; height:5px; border-radius:50%; background:currentColor; opacity:0.6; margin-left:' . (($depth - 1) * 8) . 'px; margin-right:8px; flex-shrink:0;"></span>';
                           echo '<span>' . htmlspecialchars($node['menu_name']) . '</span>';
                           echo '</a>';
                       }
@@ -1428,16 +1442,26 @@ if (!function_exists('formatMenuRouteUrl')) {
       <?php endif; ?>
     </nav>
   </aside>
+  <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleMobileSidebar()"></div>
 
   <!-- MAIN APPLICATION AREA -->
   <div class="app-main">
 
     <!-- TOP HEADER -->
     <header class="top-header">
-      <div class="page-heading">
-        <?php
-          echo htmlspecialchars($activeMenuName);
-        ?>
+      <div class="header-left-wrap">
+        <button type="button" class="mobile-menu-toggle" onclick="toggleMobileSidebar()" aria-label="Toggle Navigation">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div class="page-heading">
+          <?php
+            echo htmlspecialchars($activeMenuName);
+          ?>
+        </div>
       </div>
 
       <!-- ACTIVE ORGANIZATION & OPERATIONAL LOCATION CONTEXT HEADER -->
@@ -1568,8 +1592,19 @@ if (!function_exists('formatMenuRouteUrl')) {
       </div>
 
       <div class="user-profile-menu">
+        <?php
+          $uFirst = $user['first_name'] ?? '';
+          $uLast = $user['last_name'] ?? '';
+          $uInitials = strtoupper(substr($uFirst ?: 'U', 0, 1) . substr($uLast ?: '', 0, 1));
+          if (trim($uInitials) === '') $uInitials = 'U';
+          $uDisplayName = trim($uFirst . ' ' . $uLast) ?: ($user['username'] ?? $user['email'] ?? 'User');
+        ?>
+        <div class="user-avatar-badge" title="<?php echo htmlspecialchars($uDisplayName); ?>">
+          <?php echo htmlspecialchars($uInitials); ?>
+        </div>
+
         <div class="user-details">
-          <div class="user-name"><?php echo htmlspecialchars(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? '')); ?></div>
+          <div class="user-name"><?php echo htmlspecialchars($uDisplayName); ?></div>
           <div class="user-meta"><?php echo htmlspecialchars($user['email'] ?? ''); ?></div>
         </div>
 
@@ -1577,7 +1612,14 @@ if (!function_exists('formatMenuRouteUrl')) {
 
         <span class="status-badge"><?php echo htmlspecialchars($user['status'] ?? 'ACTIVE'); ?></span>
 
-        <a href="<?php echo $baseUrlPrefix; ?>logout.php" class="btn-logout">Sign Out</a>
+        <a href="<?php echo $baseUrlPrefix; ?>logout.php" class="btn-logout" title="Sign Out of Cost360">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+          <span>Sign Out</span>
+        </a>
 
       </div>
     </header>
@@ -1585,7 +1627,8 @@ if (!function_exists('formatMenuRouteUrl')) {
     <!-- DASHBOARD / UPLOAD CENTRE WORKSPACE CONTAINER -->
     <main class="dashboard-container">
 
-      <!-- HERO WELCOME BANNER -->
+      <!-- HERO WELCOME BANNER (Shown on Dashboard Home) -->
+      <?php if ($currentPage === 'dashboard' || $currentPage === 'home'): ?>
       <section class="hero-welcome-card">
         <div class="welcome-text">
           <h1>Welcome, <?php echo htmlspecialchars($user['first_name'] ?: ($user['email'] ?? 'User')); ?></h1>
@@ -1600,6 +1643,7 @@ if (!function_exists('formatMenuRouteUrl')) {
           </div>
         </div>
       </section>
+      <?php endif; ?>
 
       <?php if ($currentPage === 'upload'): ?>
         <!-- ============================================================
@@ -1611,27 +1655,27 @@ if (!function_exists('formatMenuRouteUrl')) {
         ?>
 
         <!-- ACTIVE TARGET SCOPE DISPLAY BANNER -->
-        <section class="section-card" style="margin-bottom: 1.25rem; background: rgba(0, 207, 239, 0.05); border: 1px solid rgba(0, 207, 239, 0.25);">
+        <section class="section-card" style="margin-bottom: 1.25rem; background: linear-gradient(135deg, #F0F7FD 0%, #E8F3FC 100%); border: 1px solid #C5DEF4;">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
             <div>
-              <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-bright-cyan); font-weight: 700; margin-bottom: 0.25rem;">Active Target Scope</div>
-              <div style="font-size: 1.1rem; font-weight: 700; color: #FFFFFF; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-                <span>Company: <strong><?php echo htmlspecialchars($activeCompanyName ?: 'All Companies'); ?></strong></span>
+              <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c360-royal-blue, #0077D7); font-weight: 700; margin-bottom: 0.25rem;">Active Target Scope</div>
+              <div style="font-size: 1.1rem; font-weight: 700; color: var(--c360-text-primary, #0E2942); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <span>Company: <strong style="color: var(--c360-navy-deep, #021E3B);"><?php echo htmlspecialchars($activeCompanyName ?: 'All Companies'); ?></strong></span>
                 <span>&bull;</span>
-                <span>Location: <strong><?php echo htmlspecialchars(($activePlantName ?: $activeWarehouseName) ?: 'All Locations'); ?></strong></span>
+                <span>Location: <strong style="color: var(--c360-navy-deep, #021E3B);"><?php echo htmlspecialchars(($activePlantName ?: $activeWarehouseName) ?: 'All Locations'); ?></strong></span>
                 <?php if ($activeLocInfo): ?>
-                  <span class="status-badge" style="background: rgba(0,207,239,0.15); color: var(--color-bright-cyan); font-size: 0.72rem;">
+                  <span class="c360-badge c360-badge-info" style="font-size: 0.72rem;">
                     <?php echo htmlspecialchars($activeLocInfo['label']); ?>
                   </span>
                 <?php endif; ?>
               </div>
-              <div style="font-size: 0.85rem; color: rgba(255,255,255,0.7); margin-top: 0.25rem;">
-                Tenant: <strong><?php echo htmlspecialchars($activeCustomerName ?: 'All Customers'); ?></strong> | 
-                Period: <strong><?php echo htmlspecialchars($activePeriodName ?: 'All Periods'); ?></strong>
+              <div style="font-size: 0.85rem; color: var(--c360-text-secondary, #587389); margin-top: 0.25rem;">
+                Tenant: <strong style="color: var(--c360-text-primary, #0E2942);"><?php echo htmlspecialchars($activeCustomerName ?: 'All Customers'); ?></strong> &bull; 
+                Period: <strong style="color: var(--c360-text-primary, #0E2942);"><?php echo htmlspecialchars($activePeriodName ?: 'All Periods'); ?></strong>
               </div>
             </div>
             <div>
-              <a href="customer-selection.php" class="btn-secondary" style="font-size: 0.8rem; text-decoration: none;">Switch Scope</a>
+              <a href="customer-selection.php" class="btn-secondary" style="font-size: 0.82rem; text-decoration: none;">Switch Scope</a>
             </div>
           </div>
         </section>
@@ -2326,79 +2370,475 @@ if (!function_exists('formatMenuRouteUrl')) {
 
       <?php elseif ($currentPage === 'overview'): ?>
         <!-- ============================================================
-             ORGANIZATION OVERVIEW (CUSTOMER MANAGEMENT HIERARCHY TREE)
+             ORGANIZATION OVERVIEW (LIGHT ENTERPRISE DESIGN SYSTEM)
+             Visual style aligned with Organization Scope reference:
+             Clean, Light, White Backgrounds, Dark Navy Text, Thin Borders
              ============================================================ -->
-        <section class="section-card">
-          <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <style>
+          .org-overview-wrapper {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 14px;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02);
+            padding: 1.5rem 1.75rem;
+            color: #0F172A;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          }
+
+          .org-overview-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+            padding-bottom: 1.25rem;
+            border-bottom: 1px solid #F1F5F9;
+            margin-bottom: 1.35rem;
+          }
+
+          .org-overview-title-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #0284C7;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.35rem;
+          }
+
+          .org-overview-title {
+            font-size: 1.38rem;
+            font-weight: 800;
+            color: #033665;
+            margin: 0 0 0.25rem 0;
+            letter-spacing: -0.01em;
+          }
+
+          .org-overview-subtitle {
+            font-size: 0.84rem;
+            color: #64748B;
+            margin: 0;
+            font-weight: 500;
+          }
+
+          .org-btn-group {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+          }
+
+          .btn-org-light {
+            background: #FFFFFF;
+            border: 1px solid #CBD5E1;
+            color: #1E293B;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            padding: 0.45rem 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+            user-select: none;
+            outline: none;
+          }
+
+          .btn-org-light:hover {
+            background: #F8FAFC;
+            border-color: #94A3B8;
+            color: #0284C7;
+          }
+
+          .btn-org-primary {
+            background: #F0F7FD;
+            border: 1px solid #BAE6FD;
+            color: #0284C7;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            padding: 0.45rem 0.95rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 2px rgba(2, 132, 199, 0.05);
+            user-select: none;
+            outline: none;
+          }
+
+          .btn-org-primary:hover {
+            background: #0284C7;
+            border-color: #0284C7;
+            color: #FFFFFF;
+          }
+
+          /* KPI Summary Cards Grid */
+          .org-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.35rem;
+          }
+
+          .org-kpi-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-top: 3px solid #0284C7;
+            border-radius: 10px;
+            padding: 1.1rem 1.25rem;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+          }
+
+          .org-kpi-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+          }
+
+          .org-kpi-card.kpi-customers { border-top-color: #0284C7; }
+          .org-kpi-card.kpi-companies { border-top-color: #2563EB; }
+          .org-kpi-card.kpi-divisions { border-top-color: #6366F1; }
+          .org-kpi-card.kpi-plants    { border-top-color: #0D9488; }
+          .org-kpi-card.kpi-warehouses{ border-top-color: #D97706; }
+
+          .org-kpi-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748B;
+            margin-bottom: 0.25rem;
+          }
+
+          .org-kpi-number {
+            font-size: 1.85rem;
+            font-weight: 800;
+            color: #033665;
+            line-height: 1.15;
+            margin: 0.2rem 0;
+            letter-spacing: -0.02em;
+          }
+
+          .org-kpi-desc {
+            font-size: 0.76rem;
+            color: #94A3B8;
+            font-weight: 500;
+          }
+
+          /* Control Panel / Filter Bar */
+          .org-control-bar {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 1.35rem;
+            background: #F8FAFC;
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            border: 1px solid #E2E8F0;
+          }
+
+          .org-search-box {
+            flex: 1;
+            min-width: 260px;
+            position: relative;
+          }
+
+          .org-search-input {
+            width: 100%;
+            background: #FFFFFF;
+            border: 1px solid #CBD5E1;
+            color: #0F172A;
+            border-radius: 8px;
+            padding: 0.55rem 0.85rem 0.55rem 2.3rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+            transition: all 0.15s ease;
+          }
+
+          .org-search-input:focus {
+            outline: none;
+            border-color: #0284C7;
+            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+          }
+
+          .org-search-input::placeholder {
+            color: #94A3B8;
+          }
+
+          .org-filter-select {
+            min-width: 220px;
+            background: #FFFFFF;
+            border: 1px solid #CBD5E1;
+            color: #0F172A;
+            border-radius: 8px;
+            padding: 0.55rem 2rem 0.55rem 0.85rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.15s ease;
+          }
+
+          .org-filter-select:focus {
+            outline: none;
+            border-color: #0284C7;
+            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+          }
+
+          /* Hierarchy Tree */
+          .org-tree-wrapper {
+            background: #FAFCFE;
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 1.25rem;
+            min-height: 380px;
+          }
+
+          .tree-node-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            margin-bottom: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+          }
+
+          .tree-node-card:hover {
+            border-color: #CBD5E1;
+          }
+
+          .tree-header-row {
+            padding: 0.85rem 1.15rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            background: #FFFFFF;
+            transition: background 0.15s ease;
+          }
+
+          .tree-header-row:hover {
+            background: #F8FAFC;
+          }
+
+          .tree-node-chevron {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            color: #0284C7;
+            font-size: 0.72rem;
+            transition: transform 0.2s ease;
+            flex-shrink: 0;
+            margin-right: 0.35rem;
+          }
+
+          .tree-badge {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+          }
+
+          .tree-badge-customer {
+            background: #F0F7FD;
+            color: #0284C7;
+            border: 1px solid #BAE6FD;
+          }
+
+          .tree-badge-company {
+            background: #F8FAFC;
+            color: #334155;
+            border: 1px solid #E2E8F0;
+          }
+
+          .tree-badge-division {
+            background: #F8FAFC;
+            color: #475569;
+            border: 1px solid #E2E8F0;
+          }
+
+          .tree-badge-plant {
+            background: #F0FDF4;
+            color: #166534;
+            border: 1px solid #BBF7D0;
+          }
+
+          .tree-badge-warehouse {
+            background: #FFFBEB;
+            color: #92400E;
+            border: 1px solid #FDE68A;
+          }
+
+          .tree-count-pill {
+            font-size: 0.74rem;
+            background: #F8FAFC;
+            color: #475569;
+            border: 1px solid #E2E8F0;
+            padding: 2px 9px;
+            border-radius: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+          }
+
+          .status-pill-active {
+            background: #ECFDF5;
+            color: #065F46;
+            border: 1px solid #A7F3D0;
+            font-size: 0.68rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 12px;
+            white-space: nowrap;
+          }
+
+          .status-pill-inactive {
+            background: #F8FAFC;
+            color: #64748B;
+            border: 1px solid #E2E8F0;
+            font-size: 0.68rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 12px;
+            white-space: nowrap;
+          }
+
+          /* Branch Indentation Line Guides */
+          .tree-branch-container {
+            display: none;
+            padding: 0.5rem 0.85rem 0.75rem 1.4rem;
+            background: #FAFCFE;
+            border-top: 1px solid #F1F5F9;
+            border-left: 2px solid #E2E8F0;
+            margin-left: 1.35rem;
+            margin-bottom: 0.5rem;
+            border-radius: 0 0 8px 8px;
+          }
+
+          .tree-branch-company {
+            border-left-color: #BAE6FD;
+          }
+
+          .tree-branch-division {
+            border-left-color: #E2E8F0;
+          }
+
+          .tree-branch-plant {
+            border-left-color: #BBF7D0;
+          }
+
+          .warehouse-leaf-item {
+            margin-top: 0.35rem;
+            padding: 0.45rem 0.85rem;
+            border-radius: 6px;
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+          }
+
+          .warehouse-leaf-item:hover {
+            border-color: #CBD5E1;
+            background: #F8FAFC;
+          }
+        </style>
+
+        <section class="org-overview-wrapper">
+          <!-- PAGE HEADER -->
+          <div class="org-overview-header">
             <div>
-              <div style="font-size: 0.8rem; color: #00CFEF; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-                Customer Management &amp; Organization Hierarchy
+              <div class="org-overview-title-tag">
+                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #0284C7;"></span>
+                Enterprise Organization Hierarchy
               </div>
-              <h2 class="section-title" style="margin-bottom: 0.2rem;">Organization Overview</h2>
-              <p style="font-size: 0.85rem; color: var(--color-secondary-text);">Visual 5-level dependent hierarchy tree: Customer &rarr; Company &rarr; Division &rarr; Plant &rarr; Warehouse.</p>
+              <h2 class="org-overview-title">Organization Overview</h2>
+              <p class="org-overview-subtitle">Customer &rarr; Company &rarr; Division &rarr; Plant &rarr; Warehouse</p>
             </div>
-            <div style="display: flex; gap: 0.75rem;">
-              <button type="button" class="btn-secondary" onclick="toggleExpandAllTree(true)">
+            <div class="org-btn-group">
+              <button type="button" class="btn-org-light" onclick="toggleExpandAllTree(true)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color: #0284C7;"><polyline points="7 11 12 6 17 11"></polyline><polyline points="7 18 12 13 17 18"></polyline></svg>
                 <span>Expand All</span>
               </button>
-              <button type="button" class="btn-secondary" onclick="toggleExpandAllTree(false)">
+              <button type="button" class="btn-org-light" onclick="toggleExpandAllTree(false)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color: #64748B;"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 11"></polyline></svg>
                 <span>Collapse All</span>
               </button>
-              <button type="button" class="btn-primary" onclick="loadHierarchyTree()">
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-                  <polyline points="23 4 23 10 17 10"></polyline>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                </svg>
+              <button type="button" class="btn-org-primary" onclick="loadHierarchyTree()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                 <span>Refresh Tree</span>
               </button>
             </div>
           </div>
 
-          <!-- 5-LEVEL KPI CARDS -->
-          <div class="grid-cards" style="margin-bottom: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
-            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #00CFEF;">
-              <div class="stat-label">Customers</div>
-              <div class="stat-number" id="kpiTreeCustomers" style="color: #00CFEF;">-</div>
-              <div class="stat-desc">Top-level Tenants</div>
+          <!-- 5-LEVEL KPI SUMMARY CARDS (LIGHT ENTERPRISE STYLE) -->
+          <div class="org-kpi-grid">
+            <div class="org-kpi-card kpi-customers">
+              <div class="org-kpi-label">CUSTOMERS</div>
+              <div class="org-kpi-number" id="kpiTreeCustomers">-</div>
+              <div class="org-kpi-desc">Top-level enterprise tenants</div>
             </div>
-            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #3B82F6;">
-              <div class="stat-label">Companies</div>
-              <div class="stat-number" id="kpiTreeCompanies" style="color: #3B82F6;">-</div>
-              <div class="stat-desc">Legal Entities</div>
+            <div class="org-kpi-card kpi-companies">
+              <div class="org-kpi-label">COMPANIES</div>
+              <div class="org-kpi-number" id="kpiTreeCompanies">-</div>
+              <div class="org-kpi-desc">Operating legal entities</div>
             </div>
-            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #8B5CF6;">
-              <div class="stat-label">Divisions</div>
-              <div class="stat-number" id="kpiTreeDivisions" style="color: #8B5CF6;">-</div>
-              <div class="stat-desc">Business Units</div>
+            <div class="org-kpi-card kpi-divisions">
+              <div class="org-kpi-label">DIVISIONS</div>
+              <div class="org-kpi-number" id="kpiTreeDivisions">-</div>
+              <div class="org-kpi-desc">Strategic business units</div>
             </div>
-            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #10B981;">
-              <div class="stat-label">Plants</div>
-              <div class="stat-number" id="kpiTreePlants" style="color: #10B981;">-</div>
-              <div class="stat-desc">Manufacturing/Facilities</div>
+            <div class="org-kpi-card kpi-plants">
+              <div class="org-kpi-label">PLANTS</div>
+              <div class="org-kpi-number" id="kpiTreePlants">-</div>
+              <div class="org-kpi-desc">Manufacturing facilities</div>
             </div>
-            <div class="stat-card" style="padding: 1rem 1.25rem; border-left: 4px solid #F59E0B;">
-              <div class="stat-label">Warehouses</div>
-              <div class="stat-number" id="kpiTreeWarehouses" style="color: #F59E0B;">-</div>
-              <div class="stat-desc">Storage Locations</div>
+            <div class="org-kpi-card kpi-warehouses">
+              <div class="org-kpi-label">WAREHOUSES</div>
+              <div class="org-kpi-number" id="kpiTreeWarehouses">-</div>
+              <div class="org-kpi-desc">Storage &amp; inventory hubs</div>
             </div>
           </div>
 
-          <!-- FILTER BAR -->
-          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--color-page-bg); padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--color-border);">
-            <div style="flex: 1; min-width: 240px;">
-              <input type="text" id="treeSearchInput" class="form-input" placeholder="Search by customer, company, division, plant, or warehouse name..." oninput="filterTreeNodes()">
+          <!-- SEARCH & CUSTOMER FILTER AREA (CONTROL PANEL) -->
+          <div class="org-control-bar">
+            <div class="org-search-box">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%); color: #94A3B8; pointer-events: none;">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="treeSearchInput" class="org-search-input" placeholder="Search customer, company, division, plant, or warehouse..." oninput="filterTreeNodes()">
             </div>
-            <div style="min-width: 200px;">
-              <select id="treeCustomerFilter" class="form-select" onchange="loadHierarchyTree()">
+            <div>
+              <select id="treeCustomerFilter" class="org-filter-select" onchange="loadHierarchyTree()">
                 <option value="">All Customers</option>
               </select>
             </div>
           </div>
 
-          <!-- TREE CONTAINER -->
-          <div id="treeContainer" style="background: rgba(3, 54, 101, 0.4); border: 1px solid var(--color-border); border-radius: 12px; padding: 1.5rem; min-height: 350px;">
-            <div style="text-align: center; color: var(--color-secondary-text); padding: 3rem;">
-              Loading organization hierarchy tree from database...
+          <!-- HIERARCHY TREE CONTAINER -->
+          <div id="treeContainer" class="org-tree-wrapper">
+            <div style="text-align: center; color: #64748B; padding: 3rem 1rem;">
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: 0 auto 0.75rem; animation: spin 1.2s linear infinite; color: #0284C7;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 2a10 10 0 0 1 10 10"></path>
+              </svg>
+              <span style="font-size: 0.9rem; font-weight: 500;">Loading organization hierarchy tree from database...</span>
             </div>
           </div>
         </section>
@@ -2415,177 +2855,227 @@ if (!function_exists('formatMenuRouteUrl')) {
 
           function loadHierarchyTree() {
             const container = document.getElementById('treeContainer');
-            const custFilter = document.getElementById('treeCustomerFilter').value;
-            const searchVal = document.getElementById('treeSearchInput').value;
+            const custSelect = document.getElementById('treeCustomerFilter');
+            const custFilter = custSelect ? custSelect.value : '';
 
-            container.innerHTML = '<div style="text-align:center; padding: 3rem; color: var(--color-secondary-text);">Fetching live hierarchy structure...</div>';
+            container.innerHTML = `
+              <div style="text-align:center; padding: 3.5rem 1rem; color: #64748B;">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: 0 auto 0.75rem; animation: spin 1.2s linear infinite; color: #0284C7;">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 2a10 10 0 0 1 10 10"></path>
+                </svg>
+                <span style="font-size: 0.9rem; font-weight: 500;">Fetching live organization structure...</span>
+              </div>
+            `;
 
-            fetch(`${window.cost360BaseUrlPrefix}organization/overview/api.php?action=tree&customer_id=${encodeURIComponent(custFilter)}&search=${encodeURIComponent(searchVal)}`)
+            const prefix = window.cost360BaseUrlPrefix || '';
+            const url = `${prefix}organization/overview/api.php?action=tree&customer_id=${encodeURIComponent(custFilter)}`;
+
+            fetch(url)
               .then(res => res.json())
               .then(data => {
-                if (!data.success) {
-                  container.innerHTML = `<div style="color: #F87171; text-align: center; padding: 2rem;">Error: ${data.error || 'Failed to load hierarchy tree.'}</div>`;
+                if (!data || !data.success) {
+                  container.innerHTML = `
+                    <div style="background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 10px; padding: 2rem; text-align: center; max-width: 480px; margin: 2rem auto;">
+                      <div style="color: #991B1B; font-weight: 700; font-size: 1.05rem; margin-bottom: 0.4rem;">
+                        Unable to load organization hierarchy. Please try again.
+                      </div>
+                      <p style="color: #7F1D1D; font-size: 0.85rem; margin-bottom: 1.2rem;">
+                        An unexpected error occurred while communicating with the database.
+                      </p>
+                      <button type="button" class="btn-org-primary" onclick="loadHierarchyTree()" style="padding: 0.45rem 1.2rem;">
+                        Retry
+                      </button>
+                    </div>
+                  `;
                   return;
                 }
 
                 rawTreeData = data.tree || [];
 
-                // Update KPI counts
-                document.getElementById('kpiTreeCustomers').textContent = data.kpis.customers || 0;
-                document.getElementById('kpiTreeCompanies').textContent = data.kpis.companies || 0;
-                document.getElementById('kpiTreeDivisions').textContent = data.kpis.divisions || 0;
-                document.getElementById('kpiTreePlants').textContent = data.kpis.plants || 0;
-                document.getElementById('kpiTreeWarehouses').textContent = data.kpis.warehouses || 0;
+                // Update live KPI counts from actual database
+                const kpis = data.kpis || {};
+                document.getElementById('kpiTreeCustomers').textContent = kpis.customers ?? 0;
+                document.getElementById('kpiTreeCompanies').textContent = kpis.companies ?? 0;
+                document.getElementById('kpiTreeDivisions').textContent = kpis.divisions ?? 0;
+                document.getElementById('kpiTreePlants').textContent = kpis.plants ?? 0;
+                document.getElementById('kpiTreeWarehouses').textContent = kpis.warehouses ?? 0;
 
-                // Populate Customer Filter if empty
-                const custSelect = document.getElementById('treeCustomerFilter');
-                if (custSelect.options.length <= 1 && data.tree) {
-                  custSelect.innerHTML = '<option value="">All Customers</option>';
-                  data.tree.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c.customer_id;
-                    opt.textContent = `${c.customer_code} - ${c.customer_name}`;
-                    if (custFilter == c.customer_id) opt.selected = true;
-                    custSelect.appendChild(opt);
-                  });
+                // Populate Customer Filter if available and not yet populated
+                if (data.customers_list && data.customers_list.length > 0 && custSelect) {
+                  const currentSelected = custSelect.value || custFilter;
+                  if (custSelect.options.length <= 1) {
+                    custSelect.innerHTML = '<option value="">All Customers</option>';
+                    data.customers_list.forEach(c => {
+                      const opt = document.createElement('option');
+                      opt.value = c.customer_id;
+                      opt.textContent = `${c.customer_code} - ${c.customer_name}`;
+                      if (String(currentSelected) === String(c.customer_id)) {
+                        opt.selected = true;
+                      }
+                      custSelect.appendChild(opt);
+                    });
+                  }
                 }
 
                 renderTreeNodes(rawTreeData);
+
+                // If user had searched previously, re-apply filter on loaded data
+                const searchInput = document.getElementById('treeSearchInput');
+                if (searchInput && searchInput.value.trim() !== '') {
+                  filterTreeNodes();
+                }
               })
               .catch(err => {
-                container.innerHTML = `<div style="color: #F87171; text-align: center; padding: 2rem;">Connection Error: ${err.message}</div>`;
+                container.innerHTML = `
+                  <div style="background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 10px; padding: 2rem; text-align: center; max-width: 480px; margin: 2rem auto;">
+                    <div style="color: #991B1B; font-weight: 700; font-size: 1.05rem; margin-bottom: 0.4rem;">
+                      Unable to load organization hierarchy. Please try again.
+                    </div>
+                    <button type="button" class="btn-org-primary" onclick="loadHierarchyTree()" style="padding: 0.45rem 1.2rem; margin-top: 0.5rem;">
+                      Retry
+                    </button>
+                  </div>
+                `;
               });
           }
 
           function renderTreeNodes(tree) {
             const container = document.getElementById('treeContainer');
             if (!tree || tree.length === 0) {
-              container.innerHTML = '<div style="text-align:center; padding: 3rem; color: var(--color-secondary-text);">No organization structures found matching criteria.</div>';
+              container.innerHTML = `
+                <div style="text-align: center; padding: 3rem 1rem; color: #64748B;">
+                  <div style="font-size: 0.92rem; font-weight: 600; color: #334155; margin-bottom: 0.25rem;">No organization structures found</div>
+                  <div style="font-size: 0.8rem; color: #94A3B8;">Try adjusting your search criteria or customer filter.</div>
+                </div>
+              `;
               return;
             }
 
-            let html = '<div class="org-tree-root" style="display: flex; flex-direction: column; gap: 1rem;">';
+            let html = '<div class="org-tree-root" style="display: flex; flex-direction: column; gap: 0.75rem;">';
 
             tree.forEach(cust => {
-              const custActive = cust.status ? cust.status.toUpperCase() === 'ACTIVE' : true;
+              const custActive = cust.status ? String(cust.status).toUpperCase() === 'ACTIVE' : true;
               html += `
-                <div class="tree-node customer-node" style="border: 1px solid rgba(0, 207, 239, 0.3); border-radius: 10px; background: rgba(8, 120, 209, 0.15); overflow: hidden;">
-                  <div class="tree-node-header" onclick="toggleTreeNode(this)" style="padding: 0.9rem 1.2rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;">
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                      <span class="chevron" style="transition: transform 0.2s ease; display: inline-block; color: #00CFEF;">&#9654;</span>
-                      <span style="background: rgba(0,207,239,0.2); color: #00CFEF; padding: 3px 8px; border-radius: 5px; font-size: 0.75rem; font-weight: 800;">CUSTOMER</span>
-                      <strong style="color: #FFF; font-size: 1.05rem;">${escapeHtml(cust.customer_name)}</strong>
-                      <span style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">(${escapeHtml(cust.customer_code)})</span>
+                <div class="tree-node-card customer-node">
+                  <div class="tree-header-row" onclick="toggleTreeNode(this)">
+                    <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+                      <span class="tree-node-chevron">&#9654;</span>
+                      <span class="tree-badge tree-badge-customer">CUSTOMER</span>
+                      <strong style="color: #033665; font-size: 0.96rem; font-weight: 700;">${escapeHtml(cust.customer_name)}</strong>
+                      <span style="color: #64748B; font-size: 0.8rem; font-weight: 500;">(${escapeHtml(cust.customer_code)})</span>
+                      ${cust.contact_person ? `<span style="font-size: 0.75rem; color: #94A3B8;">&bull; Contact: ${escapeHtml(cust.contact_person)}</span>` : ''}
                     </div>
-                    <div style="display: flex; align-items: center; gap: 1rem;">
-                      <span style="font-size: 0.8rem; background: rgba(255,255,255,0.1); padding: 3px 10px; border-radius: 12px; color: rgba(255,255,255,0.8);">
+                    <div style="display: flex; align-items: center; gap: 0.65rem;">
+                      <span class="tree-count-pill">
                         ${cust.companies ? cust.companies.length : 0} Companies
                       </span>
-                      <span class="badge ${custActive ? 'badge-success' : 'badge-inactive'}">${custActive ? 'Active' : 'Inactive'}</span>
+                      <span class="${custActive ? 'status-pill-active' : 'status-pill-inactive'}">${custActive ? 'Active' : 'Inactive'}</span>
                     </div>
                   </div>
 
-                  <div class="tree-node-children" style="display: none; padding: 0.5rem 1rem 1rem 2.2rem; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(3, 54, 101, 0.3);">
+                  <div class="tree-branch-container tree-branch-company">
               `;
 
               if (cust.companies && cust.companies.length > 0) {
                 cust.companies.forEach(comp => {
-                  const compActive = comp.status ? comp.status.toUpperCase() === 'ACTIVE' : true;
+                  const compActive = comp.status ? String(comp.status).toUpperCase() === 'ACTIVE' : true;
                   html += `
-                    <div class="tree-node company-node" style="margin-top: 0.75rem; border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; background: rgba(6, 61, 112, 0.6); overflow: hidden;">
-                      <div class="tree-node-header" onclick="toggleTreeNode(this)" style="padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                        <div style="display: flex; align-items: center; gap: 0.75rem;">
-                          <span class="chevron" style="transition: transform 0.2s ease; display: inline-block; color: #3B82F6;">&#9654;</span>
-                          <span style="background: rgba(59,130,246,0.2); color: #60A5FA; padding: 2px 7px; border-radius: 4px; font-size: 0.7rem; font-weight: 700;">COMPANY</span>
-                          <span style="color: #FFF; font-weight: 600;">${escapeHtml(comp.company_name)}</span>
-                          <span style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">[${escapeHtml(comp.company_code)}]</span>
+                    <div class="tree-node-card company-node" style="margin-top: 0.5rem; box-shadow: none;">
+                      <div class="tree-header-row" onclick="toggleTreeNode(this)" style="padding: 0.7rem 0.95rem;">
+                        <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+                          <span class="tree-node-chevron">&#9654;</span>
+                          <span class="tree-badge tree-badge-company">COMPANY</span>
+                          <span style="color: #0F172A; font-weight: 600; font-size: 0.88rem;">${escapeHtml(comp.company_name)}</span>
+                          <span style="color: #64748B; font-size: 0.78rem;">[${escapeHtml(comp.company_code)}]</span>
+                          ${comp.address ? `<span style="font-size: 0.74rem; color: #94A3B8;">&bull; ${escapeHtml(comp.address)}</span>` : ''}
                         </div>
-                        <div style="display: flex; align-items: center; gap: 0.75rem;">
-                          <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7);">${comp.divisions ? comp.divisions.length : 0} Divisions</span>
-                          <span class="badge ${compActive ? 'badge-success' : 'badge-inactive'}">${compActive ? 'Active' : 'Inactive'}</span>
+                        <div style="display: flex; align-items: center; gap: 0.65rem;">
+                          <span class="tree-count-pill" style="font-size: 0.72rem; padding: 2px 7px;">${comp.divisions ? comp.divisions.length : 0} Divisions</span>
+                          <span class="${compActive ? 'status-pill-active' : 'status-pill-inactive'}">${compActive ? 'Active' : 'Inactive'}</span>
                         </div>
                       </div>
 
-                      <div class="tree-node-children" style="display: none; padding: 0.5rem 1rem 0.75rem 2rem; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(3, 54, 101, 0.5);">
+                      <div class="tree-branch-container tree-branch-division" style="margin-left: 1.15rem; padding: 0.45rem 0.75rem 0.65rem 1.25rem;">
                   `;
 
                   if (comp.divisions && comp.divisions.length > 0) {
                     comp.divisions.forEach(div => {
-                      const divActive = div.status ? div.status.toUpperCase() === 'ACTIVE' : true;
+                      const divActive = div.status ? String(div.status).toUpperCase() === 'ACTIVE' : true;
                       html += `
-                        <div class="tree-node division-node" style="margin-top: 0.5rem; border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 6px; background: rgba(15, 23, 42, 0.5); overflow: hidden;">
-                          <div class="tree-node-header" onclick="toggleTreeNode(this)" style="padding: 0.65rem 0.85rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                            <div style="display: flex; align-items: center; gap: 0.6rem;">
-                              <span class="chevron" style="transition: transform 0.2s ease; display: inline-block; color: #8B5CF6;">&#9654;</span>
-                              <span style="background: rgba(139,92,246,0.2); color: #C084FC; padding: 2px 6px; border-radius: 4px; font-size: 0.68rem; font-weight: 700;">DIVISION</span>
-                              <span style="color: #E2E8F0; font-weight: 600; font-size: 0.9rem;">${escapeHtml(div.division_name)}</span>
-                              <span style="color: rgba(255,255,255,0.4); font-size: 0.75rem;">[${escapeHtml(div.division_code)}]</span>
+                        <div class="tree-node-card division-node" style="margin-top: 0.45rem; box-shadow: none;">
+                          <div class="tree-header-row" onclick="toggleTreeNode(this)" style="padding: 0.6rem 0.85rem;">
+                            <div style="display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap;">
+                              <span class="tree-node-chevron">&#9654;</span>
+                              <span class="tree-badge tree-badge-division">DIVISION</span>
+                              <span style="color: #1E293B; font-weight: 600; font-size: 0.85rem;">${escapeHtml(div.division_name)}</span>
+                              <span style="color: #64748B; font-size: 0.75rem;">[${escapeHtml(div.division_code)}]</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 0.6rem;">
-                              <span style="font-size: 0.72rem; color: rgba(255,255,255,0.6);">${div.plants ? div.plants.length : 0} Plants</span>
-                              <span class="badge ${divActive ? 'badge-success' : 'badge-inactive'}">${divActive ? 'Active' : 'Inactive'}</span>
+                            <div style="display: flex; align-items: center; gap: 0.65rem;">
+                              <span class="tree-count-pill" style="font-size: 0.7rem; padding: 1px 6px;">${div.plants ? div.plants.length : 0} Plants</span>
+                              <span class="${divActive ? 'status-pill-active' : 'status-pill-inactive'}">${divActive ? 'Active' : 'Inactive'}</span>
                             </div>
                           </div>
 
-                          <div class="tree-node-children" style="display: none; padding: 0.4rem 0.85rem 0.6rem 1.8rem; background: rgba(3, 54, 101, 0.7);">
+                          <div class="tree-branch-container tree-branch-plant" style="margin-left: 1rem; padding: 0.4rem 0.65rem 0.55rem 1.15rem;">
                       `;
 
                       if (div.plants && div.plants.length > 0) {
                         div.plants.forEach(plant => {
-                          const plantActive = plant.status ? plant.status.toUpperCase() === 'ACTIVE' : true;
+                          const plantActive = plant.status ? String(plant.status).toUpperCase() === 'ACTIVE' : true;
                           html += `
-                            <div class="tree-node plant-node" style="margin-top: 0.4rem; border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; background: rgba(6, 78, 59, 0.3); overflow: hidden;">
-                              <div class="tree-node-header" onclick="toggleTreeNode(this)" style="padding: 0.55rem 0.75rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                <div style="display: flex; align-items: center; gap: 0.6rem;">
-                                  <span class="chevron" style="transition: transform 0.2s ease; display: inline-block; color: #10B981;">&#9654;</span>
-                                  <span style="background: rgba(16,185,129,0.2); color: #34D399; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;">PLANT</span>
-                                  <span style="color: #F1F5F9; font-weight: 600; font-size: 0.85rem;">${escapeHtml(plant.plant_name)}</span>
-                                  <span style="color: rgba(255,255,255,0.4); font-size: 0.75rem;">[${escapeHtml(plant.plant_code)}]</span>
-                                  ${plant.location ? `<span style="font-size: 0.7rem; color: #94A3B8;">&bull; ${escapeHtml(plant.location)}</span>` : ''}
+                            <div class="tree-node-card plant-node" style="margin-top: 0.4rem; box-shadow: none;">
+                              <div class="tree-header-row" onclick="toggleTreeNode(this)" style="padding: 0.55rem 0.75rem;">
+                                <div style="display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap;">
+                                  <span class="tree-node-chevron">&#9654;</span>
+                                  <span class="tree-badge tree-badge-plant">PLANT</span>
+                                  <span style="color: #1E293B; font-weight: 600; font-size: 0.84rem;">${escapeHtml(plant.plant_name)}</span>
+                                  <span style="color: #64748B; font-size: 0.74rem;">[${escapeHtml(plant.plant_code)}]</span>
+                                  ${plant.location ? `<span style="font-size: 0.72rem; color: #94A3B8;">&bull; ${escapeHtml(plant.location)}</span>` : ''}
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 0.6rem;">
-                                  <span style="font-size: 0.7rem; color: rgba(255,255,255,0.6);">${plant.warehouses ? plant.warehouses.length : 0} Warehouses</span>
-                                  <span class="badge ${plantActive ? 'badge-success' : 'badge-inactive'}">${plantActive ? 'Active' : 'Inactive'}</span>
+                                <div style="display: flex; align-items: center; gap: 0.65rem;">
+                                  <span class="tree-count-pill" style="font-size: 0.68rem; padding: 1px 6px;">${plant.warehouses ? plant.warehouses.length : 0} Warehouses</span>
+                                  <span class="${plantActive ? 'status-pill-active' : 'status-pill-inactive'}">${plantActive ? 'Active' : 'Inactive'}</span>
                                 </div>
                               </div>
 
-                              <div class="tree-node-children" style="display: none; padding: 0.4rem 0.75rem 0.5rem 1.6rem; background: rgba(15, 23, 42, 0.8);">
+                              <div class="tree-branch-container" style="margin-left: 0.85rem; padding: 0.35rem 0.65rem 0.5rem 0.95rem; border-left-color: #CBD5E1;">
                           `;
 
                           if (plant.warehouses && plant.warehouses.length > 0) {
                             plant.warehouses.forEach(wh => {
-                              const whActive = wh.status ? wh.status.toUpperCase() === 'ACTIVE' : true;
+                              const whActive = wh.status ? String(wh.status).toUpperCase() === 'ACTIVE' : true;
                               html += `
-                                <div class="warehouse-leaf" style="margin-top: 0.3rem; padding: 0.4rem 0.75rem; border-radius: 4px; background: rgba(245, 158, 11, 0.1); border: 1px dashed rgba(245, 158, 11, 0.3); display: flex; align-items: center; justify-content: space-between;">
-                                  <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                    <span style="background: rgba(245, 158, 11, 0.2); color: #FBBF24; padding: 1px 5px; border-radius: 3px; font-size: 0.62rem; font-weight: 700;">WAREHOUSE</span>
-                                    <span style="color: #FDF6B2; font-weight: 500; font-size: 0.82rem;">${escapeHtml(wh.warehouse_name)}</span>
-                                    <span style="color: rgba(255,255,255,0.5); font-size: 0.72rem;">[${escapeHtml(wh.warehouse_code)}]</span>
+                                <div class="warehouse-leaf-item">
+                                  <div style="display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap;">
+                                    <span class="tree-badge tree-badge-warehouse">WAREHOUSE</span>
+                                    <span style="color: #1E293B; font-weight: 600; font-size: 0.82rem;">${escapeHtml(wh.warehouse_name)}</span>
+                                    <span style="color: #64748B; font-size: 0.72rem; font-weight: 500;">[${escapeHtml(wh.warehouse_code)}]</span>
                                   </div>
-                                  <span class="badge ${whActive ? 'badge-success' : 'badge-inactive'}" style="font-size: 0.65rem;">${whActive ? 'Active' : 'Inactive'}</span>
+                                  <span class="${whActive ? 'status-pill-active' : 'status-pill-inactive'}">${whActive ? 'Active' : 'Inactive'}</span>
                                 </div>
                               `;
                             });
                           } else {
-                            html += '<div style="color: rgba(255,255,255,0.4); font-size: 0.75rem; padding: 0.3rem 0;">No warehouses defined.</div>';
+                            html += '<div style="color: #94A3B8; font-size: 0.75rem; padding: 0.35rem 0; font-style: italic;">No warehouses registered under this plant.</div>';
                           }
 
                           html += '</div></div>'; // plant children & node end
                         });
                       } else {
-                        html += '<div style="color: rgba(255,255,255,0.4); font-size: 0.75rem; padding: 0.3rem 0;">No plants defined under this division.</div>';
+                        html += '<div style="color: #94A3B8; font-size: 0.75rem; padding: 0.35rem 0; font-style: italic;">No plants defined under this division.</div>';
                       }
 
                       html += '</div></div>'; // div children & node end
                     });
                   } else {
-                    html += '<div style="color: rgba(255,255,255,0.4); font-size: 0.75rem; padding: 0.3rem 0;">No divisions defined under this company.</div>';
+                    html += '<div style="color: #94A3B8; font-size: 0.75rem; padding: 0.35rem 0; font-style: italic;">No divisions defined under this company.</div>';
                   }
 
                   html += '</div></div>'; // company children & node end
                 });
               } else {
-                html += '<div style="color: rgba(255,255,255,0.4); font-size: 0.8rem; padding: 0.4rem 0;">No companies assigned to this customer.</div>';
+                html += '<div style="color: #94A3B8; font-size: 0.8rem; padding: 0.45rem 0; font-style: italic;">No operating companies assigned to this customer.</div>';
               }
 
               html += '</div></div>'; // customer children & node end
@@ -2597,7 +3087,7 @@ if (!function_exists('formatMenuRouteUrl')) {
 
           function toggleTreeNode(headerEl) {
             const childrenEl = headerEl.nextElementSibling;
-            const chevron = headerEl.querySelector('.chevron');
+            const chevron = headerEl.querySelector('.tree-node-chevron');
             if (!childrenEl) return;
 
             if (childrenEl.style.display === 'none' || !childrenEl.style.display) {
@@ -2610,8 +3100,8 @@ if (!function_exists('formatMenuRouteUrl')) {
           }
 
           function toggleExpandAllTree(expand) {
-            const allChildren = document.querySelectorAll('#treeContainer .tree-node-children');
-            const allChevrons = document.querySelectorAll('#treeContainer .chevron');
+            const allChildren = document.querySelectorAll('#treeContainer .tree-branch-container');
+            const allChevrons = document.querySelectorAll('#treeContainer .tree-node-chevron');
             allChildren.forEach(el => {
               el.style.display = expand ? 'block' : 'none';
             });
@@ -2621,36 +3111,50 @@ if (!function_exists('formatMenuRouteUrl')) {
           }
 
           function filterTreeNodes() {
-            const query = document.getElementById('treeSearchInput').value.toLowerCase().trim();
+            const searchInput = document.getElementById('treeSearchInput');
+            const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
             if (!query) {
               renderTreeNodes(rawTreeData);
               return;
             }
 
-            // Filter tree
+            // Filter hierarchy tree recursively
             const filtered = [];
             rawTreeData.forEach(cust => {
-              let custMatch = cust.customer_name.toLowerCase().includes(query) || cust.customer_code.toLowerCase().includes(query);
+              const custMatch = (cust.customer_name && cust.customer_name.toLowerCase().includes(query)) ||
+                                (cust.customer_code && cust.customer_code.toLowerCase().includes(query)) ||
+                                (cust.contact_person && cust.contact_person.toLowerCase().includes(query)) ||
+                                (cust.address && cust.address.toLowerCase().includes(query));
+
               let matchedCompanies = [];
 
               if (cust.companies) {
                 cust.companies.forEach(comp => {
-                  let compMatch = comp.company_name.toLowerCase().includes(query) || comp.company_code.toLowerCase().includes(query);
+                  const compMatch = (comp.company_name && comp.company_name.toLowerCase().includes(query)) ||
+                                    (comp.company_code && comp.company_code.toLowerCase().includes(query)) ||
+                                    (comp.address && comp.address.toLowerCase().includes(query));
+
                   let matchedDivs = [];
 
                   if (comp.divisions) {
                     comp.divisions.forEach(div => {
-                      let divMatch = div.division_name.toLowerCase().includes(query) || div.division_code.toLowerCase().includes(query);
+                      const divMatch = (div.division_name && div.division_name.toLowerCase().includes(query)) ||
+                                       (div.division_code && div.division_code.toLowerCase().includes(query));
+
                       let matchedPlants = [];
 
                       if (div.plants) {
                         div.plants.forEach(p => {
-                          let plantMatch = p.plant_name.toLowerCase().includes(query) || p.plant_code.toLowerCase().includes(query) || (p.location && p.location.toLowerCase().includes(query));
+                          const plantMatch = (p.plant_name && p.plant_name.toLowerCase().includes(query)) ||
+                                             (p.plant_code && p.plant_code.toLowerCase().includes(query)) ||
+                                             (p.location && p.location.toLowerCase().includes(query));
+
                           let matchedWhs = [];
 
                           if (p.warehouses) {
                             p.warehouses.forEach(w => {
-                              if (w.warehouse_name.toLowerCase().includes(query) || w.warehouse_code.toLowerCase().includes(query)) {
+                              if ((w.warehouse_name && w.warehouse_name.toLowerCase().includes(query)) ||
+                                  (w.warehouse_code && w.warehouse_code.toLowerCase().includes(query))) {
                                 matchedWhs.push(w);
                               }
                             });
@@ -2813,24 +3317,24 @@ if (!function_exists('formatMenuRouteUrl')) {
 
           <!-- USERS TABLE CONTAINER -->
           <div class="table-responsive">
-            <table id="usersTable">
+            <table id="usersTable" style="min-width: 1080px;">
               <thead>
                 <tr>
-                  <th>User ID</th>
-                  <th>Username</th>
-                  <th>Full Name</th>
-                  <th>Email</th>
-                  <th>Status</th>
-                  <th>Role</th>
-                  <th>Access Scope</th>
-                  <th>Created By</th>
-                  <th>Last Login</th>
-                  <th style="text-align: right;">Actions</th>
+                  <th style="width: 80px;">User ID</th>
+                  <th style="min-width: 150px;">Username</th>
+                  <th style="min-width: 130px;">Full Name</th>
+                  <th style="min-width: 170px;">Email</th>
+                  <th style="width: 100px;">Status</th>
+                  <th style="min-width: 150px;">Role</th>
+                  <th style="width: 110px;">Access Scope</th>
+                  <th style="min-width: 110px;">Created By</th>
+                  <th style="min-width: 120px;">Last Login</th>
+                  <th style="min-width: 220px; text-align: right;" class="actions-header">Actions</th>
                 </tr>
               </thead>
               <tbody id="usersTableBody">
                 <tr>
-                  <td colspan="9" style="text-align: center; padding: 2rem; color: var(--color-secondary-text);">
+                  <td colspan="10" style="text-align: center; padding: 2.5rem 1rem; color: var(--color-secondary-text);">
                     Loading users from Neon PostgreSQL database...
                   </td>
                 </tr>
@@ -3392,7 +3896,7 @@ if (!function_exists('formatMenuRouteUrl')) {
 
                 tbody.innerHTML = `
                   <tr>
-                    <td colspan="9" style="text-align: center; padding: 3rem 1rem;">
+                    <td colspan="10" style="text-align: center; padding: 3rem 1rem;">
                       <div class="empty-state" style="font-size: 1rem; color: var(--color-secondary-text);">
                         No users found matching current filters.
                       </div>
@@ -3421,38 +3925,39 @@ if (!function_exists('formatMenuRouteUrl')) {
               const currentSessionUserId = <?php echo (int)($user['user_id'] ?? 0); ?>;
 
               tbody.innerHTML = data.users.map(u => {
-                const statusColor = u.status === 'ACTIVE' ? '#00A88F' : (u.status === 'INACTIVE' ? '#6B7F91' : '#DC2626');
-                const statusBg = u.status === 'ACTIVE' ? '#E6F9F6' : (u.status === 'INACTIVE' ? '#F1F5F9' : '#FEE2E2');
+                const statusBadgeClass = u.status === 'ACTIVE' ? 'c360-badge-success' : (u.status === 'INACTIVE' ? 'c360-badge-neutral' : 'c360-badge-danger');
 
                 return `
                   <tr>
                     <td><code>#${u.user_id}</code></td>
-                    <td><strong>${escapeHtml(u.username)}</strong></td>
+                    <td><strong style="color: var(--c360-text-primary);">${escapeHtml(u.username)}</strong></td>
                     <td>${escapeHtml(u.full_name)}</td>
-                    <td>${escapeHtml(u.email)}</td>
+                    <td style="color: var(--c360-text-secondary);">${escapeHtml(u.email)}</td>
                     <td>
-                      <span style="background: ${statusBg}; color: ${statusColor}; padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.78rem; font-weight: 700;">
+                      <span class="c360-badge ${statusBadgeClass}">
                         ${escapeHtml(u.status)}
                       </span>
                     </td>
-                    <td><span class="role-badge" style="background: rgba(0, 207, 239, 0.12); color: #0070BA; padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600;">${escapeHtml(u.role_name)}</span></td>
+                    <td><span class="role-badge">${escapeHtml(u.role_name)}</span></td>
                     <td>
-                      <button type="button" class="scope-pill-btn" onclick="openViewScopeModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.full_name)}')" style="display: inline-flex; align-items: center; gap: 6px; padding: 0.32rem 0.75rem; background: #E6F9F6; color: #00A88F; border: 1px solid #A7F3D0; border-radius: 20px; font-size: 0.78rem; font-weight: 700; cursor: pointer; transition: all 0.2s;">
-                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <button type="button" class="btn-action-sm btn-action-primary" onclick="openViewScopeModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.full_name)}')" title="View access scope">
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                           <circle cx="12" cy="12" r="3"></circle>
                         </svg>
-                        <span>View Scope</span>
+                        <span>Scope</span>
                       </button>
                     </td>
-                    <td><span style="font-size: 0.82rem; color: var(--color-secondary-text);">${escapeHtml(u.created_by_name || 'System')}</span></td>
-                    <td>${escapeHtml(u.last_login_at || u.created_at || 'Never')}</td>
-                    <td style="text-align: right; white-space: nowrap;">
-                      <button type="button" class="btn-secondary" style="padding: 0.32rem 0.65rem; font-size: 0.78rem; margin-right: 4px;" onclick="openEditUserModal(${u.user_id})">Edit</button>
-                      <button type="button" class="btn-secondary" style="padding: 0.32rem 0.65rem; font-size: 0.78rem; margin-right: 4px; border-color: var(--color-primary-blue); color: var(--color-primary-blue);" onclick="openUserAccessModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.full_name)}')">Manage Access</button>
-                      ${u.user_id !== currentSessionUserId ? `
-                        <button type="button" class="btn-secondary" style="padding: 0.32rem 0.65rem; font-size: 0.78rem; color: ${u.status === 'ACTIVE' ? '#DC2626' : '#059669'}; border-color: ${u.status === 'ACTIVE' ? '#FCA5A5' : '#A7F3D0'};" onclick="toggleUserStatus(${u.user_id}, '${escapeJs(u.status)}')">${u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button>
-                      ` : ''}
+                    <td><span style="font-size: 0.8rem; color: var(--color-secondary-text);">${escapeHtml(u.created_by_name || 'System')}</span></td>
+                    <td><span style="font-size: 0.8rem; color: var(--color-secondary-text);">${escapeHtml(u.last_login_at || u.created_at || 'Never')}</span></td>
+                    <td class="actions-cell">
+                      <div class="table-action-group">
+                        <button type="button" class="btn-action-sm btn-action-secondary" onclick="openEditUserModal(${u.user_id})">Edit</button>
+                        <button type="button" class="btn-action-sm btn-action-primary" onclick="openUserAccessModal(${u.user_id}, '${escapeJs(u.username)}', '${escapeJs(u.full_name)}')">Access</button>
+                        ${u.user_id !== currentSessionUserId ? `
+                          <button type="button" class="btn-action-sm ${u.status === 'ACTIVE' ? 'btn-action-danger' : 'btn-action-success'}" onclick="toggleUserStatus(${u.user_id}, '${escapeJs(u.status)}')">${u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button>
+                        ` : ''}
+                      </div>
                     </td>
                   </tr>
                 `;
@@ -3462,7 +3967,7 @@ if (!function_exists('formatMenuRouteUrl')) {
               console.error('Error fetching users table:', err);
               tbody.innerHTML = `
                 <tr>
-                  <td colspan="9" style="text-align: center; padding: 2rem; color: #DC2626;">
+                  <td colspan="10" style="text-align: center; padding: 2.5rem 1rem; color: #DC2626;">
                     Network error occurred while fetching users from database.
                   </td>
                 </tr>
@@ -8053,14 +8558,18 @@ if (!function_exists('formatMenuRouteUrl')) {
 
         <!-- FILTERS & TABLE -->
         <section class="section-card">
-          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
-            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; flex: 1; max-width: 600px;">
-              <input type="text" id="cmaUserSearchInput" class="cost360-select" placeholder="Search by name, email, username..." onkeyup="handleCmaUserSearchKeyup(event)" style="flex: 1; min-width: 200px;">
-              <select id="cmaUserStatusFilter" class="cost360-select" onchange="loadCmaUsersTable()" style="min-width: 140px;">
-                <option value="ALL">All Status</option>
-                <option value="ACTIVE" selected>ACTIVE</option>
-                <option value="INACTIVE">INACTIVE</option>
-              </select>
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.85rem; margin-bottom: 1.25rem;">
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex: 1; max-width: 650px;">
+              <div style="flex: 1; min-width: 240px; position: relative;">
+                <input type="text" id="cmaUserSearchInput" class="cost360-select" placeholder="Search by name, email, username..." onkeyup="handleCmaUserSearchKeyup(event)" style="width: 100%;">
+              </div>
+              <div style="min-width: 140px;">
+                <select id="cmaUserStatusFilter" class="cost360-select" onchange="loadCmaUsersTable()" style="width: 100%;">
+                  <option value="ALL">All Status</option>
+                  <option value="ACTIVE" selected>ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -8965,23 +9474,29 @@ if (!function_exists('formatMenuRouteUrl')) {
 
         <!-- FILTERS & TABLE -->
         <section class="section-card">
-          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
-            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; flex: 1; max-width: 720px;">
-              <select id="accessUserFilter" class="cost360-select" onchange="loadUserAccessTable()" style="min-width: 200px;">
-                <option value="0">All Users</option>
-              </select>
-              <select id="accessCompanyFilter" class="cost360-select" onchange="loadUserAccessTable()" style="min-width: 180px;">
-                <option value="0">All Companies</option>
-              </select>
-              <select id="accessLevelFilter" class="cost360-select" onchange="loadUserAccessTable()" style="min-width: 150px;">
-                <option value="ALL">All Access Levels</option>
-                <option value="COMPANY">Company Level</option>
-                <option value="DIVISION">Division Level</option>
-                <option value="PLANT">Plant Level</option>
-              </select>
-            </div>
-            <div>
-              <button type="button" class="btn-secondary" onclick="loadUserAccessTable()">Apply Filters</button>
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.85rem; margin-bottom: 1.25rem;">
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; flex: 1; max-width: 820px;">
+              <div style="flex: 1; min-width: 190px;">
+                <select id="accessUserFilter" class="cost360-select" onchange="loadUserAccessTable()" style="width: 100%;">
+                  <option value="0">All Users</option>
+                </select>
+              </div>
+              <div style="flex: 1; min-width: 180px;">
+                <select id="accessCompanyFilter" class="cost360-select" onchange="loadUserAccessTable()" style="width: 100%;">
+                  <option value="0">All Companies</option>
+                </select>
+              </div>
+              <div style="min-width: 160px;">
+                <select id="accessLevelFilter" class="cost360-select" onchange="loadUserAccessTable()" style="width: 100%;">
+                  <option value="ALL">All Access Levels</option>
+                  <option value="COMPANY">Company Level</option>
+                  <option value="DIVISION">Division Level</option>
+                  <option value="PLANT">Plant Level</option>
+                </select>
+              </div>
+              <div>
+                <button type="button" class="btn-secondary" onclick="loadUserAccessTable()" style="white-space: nowrap;">Apply Filters</button>
+              </div>
             </div>
           </div>
 
@@ -11902,6 +12417,13 @@ if (!function_exists('formatMenuRouteUrl')) {
   </div>
 
   <script>
+    function toggleMobileSidebar() {
+      const sidebar = document.getElementById('c360Sidebar');
+      const backdrop = document.getElementById('sidebarBackdrop');
+      if (sidebar) sidebar.classList.toggle('mobile-open');
+      if (backdrop) backdrop.classList.toggle('active');
+    }
+
     function escapeHtml(str) {
       if (!str) return '';
       return String(str)

@@ -86,11 +86,14 @@ if ($userName === '') {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 32px 20px;
+            padding: 40px 24px;
+            width: 100%;
+            box-sizing: border-box;
         }
         .container {
             width: 100%;
-            max-width: 900px;
+            max-width: 1140px;
+            margin: 0 auto;
         }
         .brand {
             text-align: center;
@@ -111,17 +114,23 @@ if ($userName === '') {
             background: #FFFFFF;
             border-radius: 16px;
             padding: 22px 26px;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
             box-shadow: 0 8px 25px rgba(3, 54, 101, 0.07);
             border: 1px solid #E1EAF0;
         }
         .welcome-label { font-size: 13px; color: #6B7F91; margin-bottom: 5px; }
         .welcome-name { font-size: 20px; font-weight: 700; color: #17324D; }
-        .section-title { margin: 0 0 16px; font-size: 20px; font-weight: 700; color: #17324D; }
+        .section-title { margin: 0 0 18px; font-size: 20px; font-weight: 700; color: #17324D; }
         .grid-list {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 18px;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            width: 100%;
+        }
+        @media (max-width: 680px) {
+            .grid-list {
+                grid-template-columns: 1fr;
+            }
         }
         .card-item {
             background: #FFFFFF;
@@ -131,6 +140,10 @@ if ($userName === '') {
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
             box-shadow: 0 8px 25px rgba(3, 54, 101, 0.06);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
         .card-item:hover {
             transform: translateY(-3px);
@@ -181,9 +194,10 @@ if ($userName === '') {
             margin-bottom: 18px;
             font-size: 14px;
         }
-        .card-form { margin: 0; }
+        .card-form { margin: 0; height: 100%; }
         .card-button {
             width: 100%;
+            height: 100%;
             border: 0;
             background: transparent;
             padding: 0;
@@ -203,12 +217,13 @@ if ($userName === '') {
         .logout { color: #6B7F91; font-size: 14px; text-decoration: none; }
         .logout:hover { color: #0878D1; }
     </style>
+    <link rel="stylesheet" href="assets/css/cost360-core.css">
 </head>
 <body>
 <div class="page">
     <div class="container">
         <div class="brand">
-            <h1>Cost360</h1>
+            <img src="assets/images/cost360-logo-navy.png" alt="Cost360 Logo" style="height: 48px; width: auto; margin-bottom: 8px;">
             <p>Select Customer Context</p>
         </div>
 
@@ -229,15 +244,17 @@ if ($userName === '') {
                     <input type="hidden" name="customer_id" value="ALL">
                     <button type="submit" class="card-button">
                         <div class="card-item global-card">
-                            <div class="card-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <line x1="2" y1="12" x2="22" y2="12"/>
-                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                                </svg>
+                            <div>
+                                <div class="card-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <line x1="2" y1="12" x2="22" y2="12"/>
+                                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                                    </svg>
+                                </div>
+                                <div class="card-name">All Customers (Global Admin)</div>
+                                <div class="card-code">Global Access Across All Tenants</div>
                             </div>
-                            <div class="card-name">All Customers (Global Admin)</div>
-                            <div class="card-code">Global Access Across All Tenants</div>
                             <div class="select-text">
                                 <span>Select Global Scope</span>
                                 <span>&rarr;</span>
@@ -252,16 +269,18 @@ if ($userName === '') {
                     <input type="hidden" name="customer_id" value="<?php echo htmlspecialchars($c['customer_id']); ?>">
                     <button type="submit" class="card-button">
                         <div class="card-item">
-                            <div class="card-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                    <circle cx="9" cy="7" r="4"/>
-                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                                </svg>
+                            <div>
+                                <div class="card-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                        <circle cx="9" cy="7" r="4"/>
+                                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                    </svg>
+                                </div>
+                                <div class="card-name"><?php echo htmlspecialchars($c['customer_name']); ?></div>
+                                <div class="card-code">Code: <?php echo htmlspecialchars($c['customer_code'] ?? 'N/A'); ?></div>
                             </div>
-                            <div class="card-name"><?php echo htmlspecialchars($c['customer_name']); ?></div>
-                            <div class="card-code">Code: <?php echo htmlspecialchars($c['customer_code']); ?></div>
                             <div class="select-text">
                                 <span>Select Customer</span>
                                 <span>&rarr;</span>

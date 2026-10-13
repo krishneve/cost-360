@@ -1,87 +1,156 @@
 /**
- * Cost360 - Login UI Vanilla JavaScript (Desktop + Mobile Responsive)
- * Theme: Enterprise Cost Management & Manufacturing Analytics Platform
+ * Cost360 - Enterprise Login Logic
+ * Theme: Manufacturing Cost Intelligence & Financial Analytics Platform
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Check if reduced motion is preferred by user
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const loginForm = document.getElementById('loginForm');
+  const emailInput = document.getElementById('emailInput');
+  const passwordInput = document.getElementById('passwordInput');
+  const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+  const eyeIconOpen = togglePasswordBtn ? togglePasswordBtn.querySelector('.eyeIconOpen') : null;
+  const eyeIconClosed = togglePasswordBtn ? togglePasswordBtn.querySelector('.eyeIconClosed') : null;
+  const submitBtn = document.getElementById('submitBtn');
+  const btnSpinner = submitBtn ? submitBtn.querySelector('.btnSpinner') : null;
+  const btnText = submitBtn ? submitBtn.querySelector('.btnText') : null;
+  const feedbackAlert = document.getElementById('loginAlert');
+  const alertText = feedbackAlert ? feedbackAlert.querySelector('.alertText') : null;
+
+  // Modals for Forgot Password & Support
+  const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+  const contactSupportLink = document.getElementById('contactSupportLink');
+  const infoModalBackdrop = document.getElementById('infoModalBackdrop');
+  const infoModalTitle = document.getElementById('infoModalTitle');
+  const infoModalBody = document.getElementById('infoModalBody');
+  const infoModalCloseBtn = document.getElementById('infoModalCloseBtn');
 
   /* ------------------------------------------------------------------------
-   * 1. PASSWORD VISIBILITY TOGGLE (Handles both Desktop and Mobile Forms)
+   * 1. PASSWORD VISIBILITY TOGGLE
    * ------------------------------------------------------------------------ */
-  const togglePasswordBtns = document.querySelectorAll('.togglePassword');
-  
-  togglePasswordBtns.forEach((btn) => {
-    btn.addEventListener('click', function() {
-      const inputWrapper = this.closest('.input-wrapper');
-      if (!inputWrapper) return;
+  if (togglePasswordBtn && passwordInput) {
+    togglePasswordBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isPassword = passwordInput.getAttribute('type') === 'password';
+      passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
 
-      const passwordInput = inputWrapper.querySelector('.passwordInput');
-      const eyeIconOpen = inputWrapper.querySelector('.eyeIconOpen');
-      const eyeIconClosed = inputWrapper.querySelector('.eyeIconClosed');
-
-      if (passwordInput) {
-        const isPassword = passwordInput.getAttribute('type') === 'password';
-        passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
-
-        if (eyeIconOpen && eyeIconClosed) {
-          if (isPassword) {
-            eyeIconOpen.style.display = 'none';
-            eyeIconClosed.style.display = 'block';
-            btn.setAttribute('aria-label', 'Hide password');
-          } else {
-            eyeIconOpen.style.display = 'block';
-            eyeIconClosed.style.display = 'none';
-            btn.setAttribute('aria-label', 'Show password');
-          }
+      if (eyeIconOpen && eyeIconClosed) {
+        if (isPassword) {
+          eyeIconOpen.style.display = 'none';
+          eyeIconClosed.style.display = 'block';
+          togglePasswordBtn.setAttribute('aria-label', 'Hide password');
+        } else {
+          eyeIconOpen.style.display = 'block';
+          eyeIconClosed.style.display = 'none';
+          togglePasswordBtn.setAttribute('aria-label', 'Show password');
         }
       }
+
+      passwordInput.focus();
     });
-  });
+  }
 
   /* ------------------------------------------------------------------------
-   * 2. FAST ASYNCHRONOUS FORM SUBMISSION & FEEDBACK (No Infinite Hangs)
+   * 2. ALERT & VALIDATION HELPERS
    * ------------------------------------------------------------------------ */
-  const loginForms = document.querySelectorAll('.loginForm');
+  function showAlert(message, type = 'error') {
+    if (!feedbackAlert || !alertText) return;
+    alertText.textContent = message;
+    feedbackAlert.className = `feedback-alert feedbackAlert show ${type}`;
+  }
 
-  loginForms.forEach((form) => {
-    form.addEventListener('submit', function(e) {
+  function hideAlert() {
+    if (!feedbackAlert) return;
+    feedbackAlert.className = 'feedback-alert feedbackAlert';
+  }
+
+  function clearInputErrors() {
+    document.querySelectorAll('.input-wrapper.has-error').forEach((wrapper) => {
+      wrapper.classList.remove('has-error');
+    });
+  }
+
+  // Clear errors when user types
+  if (emailInput) {
+    emailInput.addEventListener('input', () => {
+      emailInput.closest('.input-wrapper')?.classList.remove('has-error');
+      if (feedbackAlert?.classList.contains('show')) {
+        hideAlert();
+      }
+    });
+  }
+
+  if (passwordInput) {
+    passwordInput.addEventListener('input', () => {
+      passwordInput.closest('.input-wrapper')?.classList.remove('has-error');
+      if (feedbackAlert?.classList.contains('show')) {
+        hideAlert();
+      }
+    });
+  }
+
+  /* ------------------------------------------------------------------------
+   * 3. ASYNCHRONOUS FORM SUBMISSION & AUTHENTICATION FLOW
+   * ------------------------------------------------------------------------ */
+  if (loginForm) {
+    loginForm.addEventListener('submit', function (e) {
       e.preventDefault();
+      clearInputErrors();
+      hideAlert();
 
-      const submitBtn = this.querySelector('.submitBtn');
-      const btnText = this.querySelector('.btnText');
-      const btnSpinner = this.querySelector('.btnSpinner');
-      
-      // Find alert container for current layout
-      const parentCard = this.closest('.login-card') || this.closest('.mobile-content-container');
-      const feedbackAlert = parentCard ? parentCard.querySelector('.feedbackAlert') : null;
-      const alertText = feedbackAlert ? feedbackAlert.querySelector('.alertText') : null;
+      const emailVal = emailInput ? emailInput.value.trim() : '';
+      const passwordVal = passwordInput ? passwordInput.value : '';
 
-      // Function to reset button state
-      const resetButton = () => {
+      // Client-side format checks
+      if (!emailVal) {
+        showAlert('Please enter your email address.');
+        emailInput?.closest('.input-wrapper')?.classList.add('has-error');
+        emailInput?.focus();
+        return;
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(emailVal)) {
+        showAlert('Please enter a valid email address.');
+        emailInput?.closest('.input-wrapper')?.classList.add('has-error');
+        emailInput?.focus();
+        return;
+      }
+
+      if (!passwordVal) {
+        showAlert('Please enter your password.');
+        passwordInput?.closest('.input-wrapper')?.classList.add('has-error');
+        passwordInput?.focus();
+        return;
+      }
+
+      // Reset & UI states
+      const resetBtnState = () => {
         if (submitBtn) submitBtn.disabled = false;
         if (btnSpinner) btnSpinner.style.display = 'none';
         if (btnText) {
-          btnText.innerHTML = 'SIGN IN <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>';
+          btnText.innerHTML = `
+            <span>SIGN IN</span>
+            <svg class="btn-arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          `;
         }
       };
 
-      // Show loading UI
+      // Set Loading UI
       if (submitBtn) submitBtn.disabled = true;
       if (btnSpinner) btnSpinner.style.display = 'inline-block';
-      if (btnText) btnText.textContent = 'Signing in...';
-
-      if (feedbackAlert) {
-        feedbackAlert.classList.remove('show', 'error', 'info');
+      if (btnText) {
+        btnText.innerHTML = '<span>SIGNING IN...</span>';
       }
 
-      const formData = new FormData(this);
+      const formData = new FormData(loginForm);
       formData.append('is_ajax', '1');
 
-      // Abort controller with 5 second hard timeout
+      // 8-second request timeout controller
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       fetch('login.php', {
         method: 'POST',
@@ -91,129 +160,84 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         signal: controller.signal
       })
-      .then((res) => {
-        clearTimeout(timeoutId);
-        return res.json();
-      })
-      .then((data) => {
-        if (data.success) {
-          window.location.href = data.redirect || 'dashboard.php';
-        } else {
-          resetButton();
-          if (feedbackAlert && alertText) {
-            alertText.textContent = data.error || 'Invalid email or password.';
-            feedbackAlert.classList.add('error', 'show');
-          }
-        }
-      })
-      .catch((err) => {
-        clearTimeout(timeoutId);
-        resetButton();
-        if (feedbackAlert && alertText) {
-          if (err.name === 'AbortError') {
-            alertText.textContent = 'Connection timed out. Database host is unreachable.';
+        .then((res) => {
+          clearTimeout(timeoutId);
+          return res.json();
+        })
+        .then((data) => {
+          if (data.success) {
+            window.location.href = data.redirect || 'dashboard.php';
           } else {
-            alertText.textContent = 'Unable to connect to server. Please try again.';
+            resetBtnState();
+            showAlert(data.error || 'Invalid email or password.');
+            passwordInput?.closest('.input-wrapper')?.classList.add('has-error');
           }
-          feedbackAlert.classList.add('error', 'show');
-        }
-      });
+        })
+        .catch((err) => {
+          clearTimeout(timeoutId);
+          resetBtnState();
+          if (err.name === 'AbortError') {
+            showAlert('Connection timed out. Please try again.');
+          } else {
+            showAlert('Unable to connect to server. Please try again.');
+          }
+        });
     });
-  });
-
-  /* ------------------------------------------------------------------------
-   * 3. DESKTOP MOUSE PARALLAX EFFECT (> 768px only)
-   * ------------------------------------------------------------------------ */
-  const brandPanel = document.querySelector('.brand-panel');
-  const leftHeroImg = document.querySelector('.left-hero-img');
-
-  if (brandPanel && leftHeroImg && !prefersReducedMotion && window.innerWidth > 768) {
-    let mouseX = 0;
-    let mouseY = 0;
-    let targetX = 0;
-    let targetY = 0;
-
-    brandPanel.addEventListener('mousemove', (e) => {
-      const rect = brandPanel.getBoundingClientRect();
-      const x = e.clientX - rect.left - rect.width / 2;
-      const y = e.clientY - rect.top - rect.height / 2;
-
-      targetX = (x / (rect.width / 2)) * 6;
-      targetY = (y / (rect.height / 2)) * 6;
-    });
-
-    brandPanel.addEventListener('mouseleave', () => {
-      targetX = 0;
-      targetY = 0;
-    });
-
-    function animateParallax() {
-      mouseX += (targetX - mouseX) * 0.06;
-      mouseY += (targetY - mouseY) * 0.06;
-
-      leftHeroImg.style.transform = `translate3d(${mouseX.toFixed(2)}px, ${mouseY.toFixed(2)}px, 0)`;
-      requestAnimationFrame(animateParallax);
-    }
-
-    animateParallax();
   }
 
   /* ------------------------------------------------------------------------
-   * 4. CANVAS PARTICLE SYSTEM (Desktop & Mobile Canvases)
+   * 4. FORGOT PASSWORD & CONTACT SUPPORT MODAL HANDLERS
    * ------------------------------------------------------------------------ */
-  function initParticleCanvas(canvasId, particleCount) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas || prefersReducedMotion) return;
+  function openInfoModal(title, message) {
+    if (!infoModalBackdrop || !infoModalTitle || !infoModalBody) return;
+    infoModalTitle.textContent = title;
+    infoModalBody.textContent = message;
+    infoModalBackdrop.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    infoModalCloseBtn?.focus();
+  }
 
-    const ctx = canvas.getContext('2d');
-    let width = (canvas.width = canvas.parentElement.offsetWidth);
-    let height = (canvas.height = canvas.parentElement.offsetHeight);
+  function closeInfoModal() {
+    if (!infoModalBackdrop) return;
+    infoModalBackdrop.style.display = 'none';
+    document.body.style.overflow = '';
+  }
 
-    window.addEventListener('resize', () => {
-      if (canvas.parentElement) {
-        width = canvas.width = canvas.parentElement.offsetWidth;
-        height = canvas.height = canvas.parentElement.offsetHeight;
+  if (forgotPasswordLink) {
+    forgotPasswordLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      openInfoModal(
+        'Password Recovery',
+        'Cost360 password recovery is managed by your internal organization administrator. Please contact your system administrator to initiate a password reset.'
+      );
+    });
+  }
+
+  if (contactSupportLink) {
+    contactSupportLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      openInfoModal(
+        'Cost360 Support',
+        'Need assistance accessing your Cost360 account? Please contact your organization administrator or email our enterprise support team at support@cost360.io.'
+      );
+    });
+  }
+
+  if (infoModalCloseBtn) {
+    infoModalCloseBtn.addEventListener('click', closeInfoModal);
+  }
+
+  if (infoModalBackdrop) {
+    infoModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === infoModalBackdrop) {
+        closeInfoModal();
       }
     });
-
-    const particles = [];
-    for (let i = 0; i < particleCount; i++) {
-      particles.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        radius: Math.random() * 1.8 + 0.6,
-        speedX: (Math.random() - 0.5) * 0.3,
-        speedY: (Math.random() - 0.5) * 0.3,
-        opacity: Math.random() * 0.45 + 0.15
-      });
-    }
-
-    function renderParticles() {
-      ctx.clearRect(0, 0, width, height);
-
-      particles.forEach((p) => {
-        p.x += p.speedX;
-        p.y += p.speedY;
-
-        if (p.x < 0) p.x = width;
-        if (p.x > width) p.x = 0;
-        if (p.y < 0) p.y = height;
-        if (p.y > height) p.y = 0;
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0, 207, 239, ${p.opacity})`;
-        ctx.shadowBlur = 6;
-        ctx.shadowColor = '#00CFEF';
-        ctx.fill();
-      });
-
-      requestAnimationFrame(renderParticles);
-    }
-
-    renderParticles();
   }
 
-  initParticleCanvas('particles-canvas-desktop', 25);
-  initParticleCanvas('particles-canvas-mobile', 15);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && infoModalBackdrop?.style.display === 'flex') {
+      closeInfoModal();
+    }
+  });
 });

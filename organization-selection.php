@@ -124,10 +124,13 @@ $currentlySelectedId   = $activeLoc['id'] ?? (($currentlySelectedType === 'plant
             align-items: center;
             justify-content: center;
             padding: 36px 20px;
+            width: 100%;
+            box-sizing: border-box;
         }
         .container {
             width: 100%;
-            max-width: 980px;
+            max-width: 1140px;
+            margin: 0 auto;
         }
 
         /* BRAND & TOP HEADER */
@@ -512,13 +515,14 @@ $currentlySelectedId   = $activeLoc['id'] ?? (($currentlySelectedType === 'plant
             margin: 0 auto 20px;
         }
     </style>
+    <link rel="stylesheet" href="assets/css/cost360-core.css">
 </head>
 <body>
 <div class="page">
     <div class="container">
         <!-- BRAND -->
         <div class="brand">
-            <h1>Cost360</h1>
+            <img src="assets/images/cost360-logo-navy.png" alt="Cost360 Logo" style="height: 48px; width: auto; margin-bottom: 8px;">
             <p>Select Operational Location Context</p>
         </div>
 

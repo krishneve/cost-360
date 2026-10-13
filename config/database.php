@@ -45,7 +45,6 @@ if (file_exists($envFile)) {
 if (!function_exists('getDbConnection')) {
     function getDbConnection() {
         static $pdo = null;
-        static $failed = false;
 
         if ($pdo !== null) {
             try {
@@ -54,10 +53,6 @@ if (!function_exists('getDbConnection')) {
             } catch (Throwable $e) {
                 $pdo = null;
             }
-        }
-
-        if ($failed) {
-            throw new Exception("Database connection previously failed in current request.");
         }
 
         $host = getenv('PGHOST') ?: getenv('DB_HOST') ?: 'ep-super-rain-a5zoqjy7-pooler.us-east-2.aws.neon.tech';
@@ -76,16 +71,16 @@ if (!function_exists('getDbConnection')) {
             $cleanEndpointId = preg_replace('/-pooler$/', '', $rawEndpoint);
             $directHost = str_replace('-pooler.', '.', $host);
 
-            // Fast DSN fallbacks with 4-second connection timeouts
-            $dsnOptions[] = "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=4;options=endpoint={$cleanEndpointId}";
-            $dsnOptions[] = "pgsql:host={$directHost};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=4;options=endpoint={$cleanEndpointId}";
-            $dsnOptions[] = "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=4";
+            // Robust DSN fallbacks with 8-second connection timeouts for serverless Neon
+            $dsnOptions[] = "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=8;options=endpoint={$cleanEndpointId}";
+            $dsnOptions[] = "pgsql:host={$directHost};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=8;options=endpoint={$cleanEndpointId}";
+            $dsnOptions[] = "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode};connect_timeout=8";
         } else {
             // Standard / Local PostgreSQL connection with cloud fallback
             $sslParam = $sslmode ? ";sslmode={$sslmode}" : ";sslmode=prefer";
-            $dsnOptions[] = "pgsql:host={$host};port={$port};dbname={$dbname}{$sslParam};connect_timeout=4";
-            $dsnOptions[] = "pgsql:host={$host};port={$port};dbname={$dbname};sslmode=disable;connect_timeout=4";
-            $dsnOptions[] = "pgsql:host=ep-super-rain-a5zoqjy7-pooler.us-east-2.aws.neon.tech;port=5432;dbname=cost360-neon-local;sslmode=require;connect_timeout=4;options=endpoint=ep-super-rain-a5zoqjy7";
+            $dsnOptions[] = "pgsql:host={$host};port={$port};dbname={$dbname}{$sslParam};connect_timeout=8";
+            $dsnOptions[] = "pgsql:host={$host};port={$port};dbname={$dbname};sslmode=disable;connect_timeout=8";
+            $dsnOptions[] = "pgsql:host=ep-super-rain-a5zoqjy7-pooler.us-east-2.aws.neon.tech;port=5432;dbname=cost360-neon-local;sslmode=require;connect_timeout=8;options=endpoint=ep-super-rain-a5zoqjy7";
         }
 
         $lastException = null;
@@ -98,7 +93,7 @@ if (!function_exists('getDbConnection')) {
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                     PDO::ATTR_EMULATE_PREPARES => false,
-                    PDO::ATTR_TIMEOUT => 5,
+                    PDO::ATTR_TIMEOUT => 8,
                 ]);
                 return $pdo;
             } catch (PDOException $e) {
@@ -106,7 +101,6 @@ if (!function_exists('getDbConnection')) {
             }
         }
 
-        $failed = true;
         error_log("Database Connection Error: " . ($lastException ? $lastException->getMessage() : 'Unknown error'));
         throw new Exception("Database connection failed: " . ($lastException ? $lastException->getMessage() : ''));
     }
