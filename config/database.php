@@ -42,6 +42,10 @@ if (file_exists($envFile)) {
     loadEnv($envFile);
 }
 
+// Ensure local application timezone (Asia/Kolkata by default)
+$appTimezone = getenv('APP_TIMEZONE') ?: 'Asia/Kolkata';
+date_default_timezone_set($appTimezone);
+
 if (!function_exists('getDbConnection')) {
     function getDbConnection() {
         static $pdo = null;

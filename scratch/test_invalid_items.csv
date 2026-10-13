@@ -1,0 +1,2 @@
+customer_code,company_code,division_code,location_code,item_type,item_code,item_name
+CUST001,COMP001,DIV001,PLANT001,Raw Material,,Missing Item Code Row
