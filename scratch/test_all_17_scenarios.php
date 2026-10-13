@@ -188,7 +188,7 @@ test(5, "Records Missing from Upload File are Preserved (Not Deleted)", (int)$ch
 // -------------------------------------------------------------
 $txDocNo = 'DOC-TX-' . time();
 $csvTx = "doc_type,doc_no,doc_date,item_code,item_name,qty,rate,amount\n";
-$csvTx .= "Purchase,{$txDocNo},2026-09-15,{$testItem1},Purchased Goods,25,40.00,1000.00\n";
+$csvTx .= "Purchase,{$txDocNo},2026-10-15,{$testItem1},Purchased Goods,25,40.00,1000.00\n";
 $fTx = $tmpDir . 'tx.csv';
 file_put_contents($fTx, $csvTx);
 
@@ -220,7 +220,20 @@ test(8, "Identical Transaction Cannot be Double-Counted in Same Period", ($dupTx
 // -------------------------------------------------------------
 // SCENARIO 10: Cross-Period Isolation (Importing Period B does not alter Period A)
 // -------------------------------------------------------------
-$importTxB = executeDataImport($anaTx['upload_id'], $adminUser, [$anaTx['files'][0]['id']], (int)$periodB['period_id']);
+$csvTxB = "doc_type,doc_no,doc_date,item_code,item_name,qty,rate,amount\n";
+$csvTxB .= "Purchase,{$txDocNo},2026-11-15,{$testItem1},Purchased Goods,25,40.00,1000.00\n";
+$fTxB = $tmpDir . 'txB.csv';
+file_put_contents($fTxB, $csvTxB);
+
+$anaTxB = analyzeUploadedFiles([
+    'name' => ['06.MATERIAL TRANSACTION.csv'],
+    'type' => ['text/csv'],
+    'tmp_name' => [$fTxB],
+    'error' => [UPLOAD_ERR_OK],
+    'size' => [filesize($fTxB)]
+], $adminUser);
+
+$importTxB = executeDataImport($anaTxB['upload_id'], $adminUser, [$anaTxB['files'][0]['id']], (int)$periodB['period_id']);
 test(10, "Same Document Permitted in Different Accounting Period", ($importTxB['imported'] ?? 0) === 1);
 
 $checkTxA = $custPdo->prepare("SELECT count(*) FROM material_transaction WHERE doc_no = ? AND period_id = ?");

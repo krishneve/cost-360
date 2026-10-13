@@ -33,6 +33,9 @@ $userId = (int)$user['user_id'];
 $hasUploadAccess = isPlatformAdmin($userId) || 
                    isCmaAdmin($userId) || 
                    userHasMenuAccess('UPLOAD_CENTRE', $userId) || 
+                   userHasMenuAccess('UPLOAD_CENTER', $userId) || 
+                   userHasMenuAccess('/data/upload', $userId) || 
+                   userHasMenuAccess('DATA_MANAGEMENT', $userId) || 
                    userHasPermission('can_upload', 'UPLOAD_CENTRE', $userId) ||
                    userHasPermission('can_view', 'UPLOAD_CENTRE', $userId);
 
@@ -44,7 +47,7 @@ if (!$hasUploadAccess) {
     exit;
 }
 
-$action = $_REQUEST['action'] ?? '';
+$action = $_POST['action'] ?? ($_GET['action'] ?? ($_REQUEST['action'] ?? ''));
 
 // Handle CSV Error Export (can be GET request)
 if ($action === 'export_errors') {
@@ -112,7 +115,11 @@ try {
                 echo json_encode(['ok' => false, 'message' => 'File ID required.']);
                 exit;
             }
-            $result = getFilePreviewData($fileId, $user);
+            $targetParam = trim($_POST['target_dataset'] ?? ($_POST['target_table'] ?? ''));
+            $periodId = !empty($_POST['preview_period_id']) ? (int)$_POST['preview_period_id'] : (!empty($_POST['period_id']) ? (int)$_POST['period_id'] : null);
+            $startDate = !empty($_POST['start_date']) ? trim($_POST['start_date']) : null;
+            $endDate = !empty($_POST['end_date']) ? trim($_POST['end_date']) : null;
+            $result = getFilePreviewData($fileId, $user, $periodId, $startDate, $endDate, $targetParam ?: null);
             if (ob_get_length()) ob_clean();
             echo json_encode($result);
             break;
@@ -132,17 +139,26 @@ try {
                     $selectedFileIds = array_filter(array_map('intval', explode(',', $_POST['file_ids'])));
                 }
             }
-            $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
-            $result = executeDataImport($uploadId, $user, $selectedFileIds, $periodId);
+            $periodId = !empty($_POST['preview_period_id']) ? (int)$_POST['preview_period_id'] : (!empty($_POST['period_id']) ? (int)$_POST['period_id'] : null);
+            $startDate = !empty($_POST['start_date']) ? trim($_POST['start_date']) : null;
+            $endDate = !empty($_POST['end_date']) ? trim($_POST['end_date']) : null;
+            $periodName = !empty($_POST['period_name']) ? trim($_POST['period_name']) : null;
+            $result = executeDataImport($uploadId, $user, $selectedFileIds, $periodId, $startDate, $endDate, $periodName);
             if (ob_get_length()) ob_clean();
             echo json_encode($result);
             break;
 
         case 'periods':
             $periods = getUserAccessiblePeriods();
-            $activePeriod = getAccountingPeriodContext();
+            $authRes = getAuthoritativeUploadPeriod(null, $user);
+            $activePeriod = $authRes['ok'] ? $authRes['period'] : getAccountingPeriodContext();
             if (ob_get_length()) ob_clean();
-            echo json_encode(['ok' => true, 'periods' => $periods, 'active_period' => $activePeriod]);
+            echo json_encode([
+                'ok' => true, 
+                'periods' => $periods, 
+                'active_period' => $activePeriod,
+                'period_error' => $authRes['ok'] ? null : $authRes['message']
+            ]);
             break;
 
         case 'stats':
@@ -153,14 +169,48 @@ try {
 
         case 'dropdowns':
             $groups = getMasterGroupsAndSubCategories();
+            $targetDatasets = getCanonicalTargetDatasets();
             if (ob_get_length()) ob_clean();
-            echo json_encode(['ok' => true, 'master_groups' => $groups]);
+            echo json_encode(['ok' => true, 'master_groups' => $groups, 'target_datasets' => $targetDatasets]);
+            break;
+
+        case 'target_datasets':
+            $targetDatasets = getCanonicalTargetDatasets();
+            if (ob_get_length()) ob_clean();
+            echo json_encode(['ok' => true, 'target_datasets' => $targetDatasets]);
+            break;
+
+        case 'resolve_period':
+            $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
+            $startDate = !empty($_POST['start_date']) ? trim($_POST['start_date']) : null;
+            $endDate = !empty($_POST['end_date']) ? trim($_POST['end_date']) : null;
+            $periodName = !empty($_POST['period_name']) ? trim($_POST['period_name']) : null;
+            $res = resolveOrRegisterPeriod($periodId, $startDate, $endDate, $periodName, $user);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($res);
+            break;
+
+        case 'validate_period_dates':
+            $uploadId = (int)($_POST['upload_id'] ?? 0);
+            $startDate = trim($_POST['start_date'] ?? '');
+            $endDate = trim($_POST['end_date'] ?? '');
+            $selectedFileIds = [];
+            if (!empty($_POST['file_ids'])) {
+                if (is_array($_POST['file_ids'])) {
+                    $selectedFileIds = array_map('intval', $_POST['file_ids']);
+                } else {
+                    $selectedFileIds = array_filter(array_map('intval', explode(',', $_POST['file_ids'])));
+                }
+            }
+            $res = validateUploadPeriodDates($uploadId, $selectedFileIds, $startDate, $endDate);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($res);
             break;
 
         case 'update_classification':
             $fileId = (int)($_POST['file_id'] ?? 0);
-            $subId = (int)($_POST['sub_category_id'] ?? 0);
-            $res = updateFileClassification($fileId, $subId);
+            $targetParam = $_POST['target_dataset'] ?? ($_POST['target_table'] ?? ($_POST['sub_category_id'] ?? 0));
+            $res = updateFileClassification($fileId, $targetParam);
             if (ob_get_length()) ob_clean();
             echo json_encode($res);
             break;
@@ -170,6 +220,38 @@ try {
             $errors = getImportErrorsByUploadId($uploadId);
             if (ob_get_length()) ob_clean();
             echo json_encode(['ok' => true, 'errors' => $errors]);
+            break;
+
+        case 'save_mapping':
+            $fileId = (int)($_POST['file_id'] ?? 0);
+            $mappingRaw = $_POST['mapping'] ?? '';
+            $mapping = is_array($mappingRaw) ? $mappingRaw : json_decode($mappingRaw, true);
+            if (!$fileId || !is_array($mapping)) {
+                if (ob_get_length()) ob_clean();
+                echo json_encode(['ok' => false, 'message' => 'Valid File ID and mapping payload required.']);
+                exit;
+            }
+            $result = saveCustomMapping($fileId, $mapping, $userId, $user);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
+            break;
+
+        case 'update_mapping':
+            $targetTable = trim($_POST['target_table'] ?? '');
+            $sheetName = trim($_POST['sheet_name'] ?? '');
+            $companyCode = trim($_POST['company_code'] ?? '');
+            $mappingRaw = $_POST['mapping'] ?? '';
+            $mapping = is_array($mappingRaw) ? $mappingRaw : json_decode($mappingRaw, true);
+
+            if (empty($targetTable) || !is_array($mapping)) {
+                if (ob_get_length()) ob_clean();
+                echo json_encode(['ok' => false, 'message' => 'Target table name and valid mapping definition required.']);
+                exit;
+            }
+
+            $result = updateCustomerSavedMapping($targetTable, $mapping, $sheetName, $companyCode, $user);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
             break;
 
         default:

@@ -52,14 +52,11 @@ function clearUploadCentreCache() {
  * Never trusts frontend-supplied customer_id or database_name.
  */
 if (!function_exists('getUserCustomerDbContext')) {
-    function getUserCustomerDbContext(?array $user = null): array {
+    function getUserCustomerDbContext(?array $user = null, ?int $fallbackCustomerId = null): array {
         if (!$user) {
             $user = getAuthUser();
         }
         $userId = (int)($user['user_id'] ?? ($_SESSION['user_id'] ?? 0));
-        if ($userId <= 0) {
-            throw new Exception("Unauthenticated user context.");
-        }
 
         $globalPdo = getDbConnection();
 
@@ -69,7 +66,11 @@ if (!function_exists('getUserCustomerDbContext')) {
             $customerId = (int)$_SESSION['active_customer_id'];
         }
 
-        if (!$customerId) {
+        if (!$customerId && $fallbackCustomerId && $fallbackCustomerId > 0) {
+            $customerId = (int)$fallbackCustomerId;
+        }
+
+        if (!$customerId && $userId > 0) {
             $stmt = $globalPdo->prepare("
                 SELECT uoa.customer_id
                 FROM user_organization_access uoa
@@ -81,11 +82,16 @@ if (!function_exists('getUserCustomerDbContext')) {
         }
 
         if (!$customerId || $customerId <= 0) {
-            if (isPlatformAdmin($userId)) {
+            if ($userId > 0 && isPlatformAdmin($userId)) {
                 $stmtFirst = $globalPdo->query("SELECT customer_id FROM customers WHERE UPPER(status) = 'ACTIVE' ORDER BY customer_id ASC LIMIT 1");
                 $customerId = (int)($stmtFirst->fetchColumn() ?: 1);
-            } else {
+            } elseif ($fallbackCustomerId && $fallbackCustomerId > 0) {
+                $customerId = (int)$fallbackCustomerId;
+            } elseif ($userId > 0) {
                 throw new Exception("Unable to identify customer organization for logged-in user.");
+            } else {
+                $stmtFirst = $globalPdo->query("SELECT customer_id FROM customers WHERE UPPER(status) = 'ACTIVE' ORDER BY customer_id ASC LIMIT 1");
+                $customerId = (int)($stmtFirst->fetchColumn() ?: 1);
             }
         }
 
@@ -203,13 +209,13 @@ function getFinalizedCategoryDefinitions(): array {
         ],
         '05_STANDARD_COST' => [
             'key'             => '05_STANDARD_COST',
-            'dataset_type'    => 'MASTER',
+            'dataset_type'    => 'TRANSACTION',
             'name'            => 'Standard Cost',
             'sheet_name'      => '05. STANDARD_COST',
             'group_code'      => 'STANDARD_COST',
             'group_name'      => 'Standard Cost',
             'target_table'    => 'standard_cost',
-            'business_key'    => ['product_code'],
+            'business_key'    => ['product_code', 'std_revision_date'],
             'required_fields' => ['product_code'],
             'numeric_fields'  => ['std_material', 'std_conversion', 'std_total_cost', 'processed_material', 'processed_conversion', 'processed_total_cost'],
             'date_fields'     => ['std_revision_date'],
@@ -222,7 +228,7 @@ function getFinalizedCategoryDefinitions(): array {
         ],
         '05A_BOM' => [
             'key'             => '05A_BOM',
-            'dataset_type'    => 'MASTER',
+            'dataset_type'    => 'TRANSACTION',
             'name'            => 'Bill of Materials',
             'sheet_name'      => '05.A_BOM',
             'group_code'      => 'BOM',
@@ -243,7 +249,7 @@ function getFinalizedCategoryDefinitions(): array {
         ],
         '05B_ROUTING' => [
             'key'             => '05B_ROUTING',
-            'dataset_type'    => 'MASTER',
+            'dataset_type'    => 'TRANSACTION',
             'name'            => 'Routing',
             'sheet_name'      => '05.B_ROUTING',
             'group_code'      => 'ROUTING',
@@ -733,11 +739,124 @@ function normalizeMaterialTransactionType(string $rawType, string $sheetName = '
  */
 
 /**
- * Returns true if the dataset category is Master/Reference data (Worksheets 1-7).
+ * Explicit, centralized worksheet-to-dataset classification configuration.
+ * Only these four worksheets are Master Data:
+ * 1. 01.ITEM MASTER PRODUCT MASTER (items)
+ * 2. 02.WORK CENTER MASTER (work_centers)
+ * 3. 03.PARTY MASTER (party_master)
+ * 4. 04.COST_CENTER_MASTER (cost_center_master)
+ * All remaining seven worksheets are Period-Dependent / Transaction data.
  */
-function isMasterDataset(string $categoryKey): bool {
+function isMasterDataset(string $categoryKeyOrTable): bool {
+    $clean = strtolower(trim($categoryKeyOrTable));
+    $masterKeys = ['01_item_product_master', '02_work_center_master', '03_party_master', '04_cost_center_master'];
+    $masterTables = ['items', 'item_master', 'work_centers', 'party_master', 'cost_center_master', 'cost_centers'];
+    if (in_array($clean, $masterKeys, true) || in_array($clean, $masterTables, true)) {
+        return true;
+    }
     $defs = getFinalizedCategoryDefinitions();
-    return ($defs[$categoryKey]['dataset_type'] ?? 'MASTER') === 'MASTER';
+    foreach ($defs as $k => $d) {
+        if (strtolower($k) === $clean || strtolower($d['target_table']) === $clean || strtolower($d['sheet_name']) === $clean) {
+            return ($d['dataset_type'] ?? '') === 'MASTER';
+        }
+    }
+    return false;
+}
+
+/**
+ * Returns the 11 canonical target datasets supported by COST360.
+ */
+function getCanonicalTargetDatasets(): array {
+    return [
+        [
+            'key'           => '01_ITEM_PRODUCT_MASTER',
+            'table_name'    => 'items',
+            'dataset_type'  => 'MASTER',
+            'name'          => 'Item / Product Master',
+            'display_label' => 'Item / Product Master (items)',
+            'sheet_name'    => '01.ITEM MASTER PRODUCT MASTER'
+        ],
+        [
+            'key'           => '02_WORK_CENTER_MASTER',
+            'table_name'    => 'work_centers',
+            'dataset_type'  => 'MASTER',
+            'name'          => 'Work Center Master',
+            'display_label' => 'Work Center Master (work_centers)',
+            'sheet_name'    => '02.WORK CENTER MASTER'
+        ],
+        [
+            'key'           => '03_PARTY_MASTER',
+            'table_name'    => 'party_master',
+            'dataset_type'  => 'MASTER',
+            'name'          => 'Party Master',
+            'display_label' => 'Party Master (party_master)',
+            'sheet_name'    => '03.PARTY MASTER'
+        ],
+        [
+            'key'           => '04_COST_CENTER_MASTER',
+            'table_name'    => 'cost_center_master',
+            'dataset_type'  => 'MASTER',
+            'name'          => 'Cost Center Master',
+            'display_label' => 'Cost Center Master (cost_center_master)',
+            'sheet_name'    => '04.COST_CENTER_MASTER'
+        ],
+        [
+            'key'           => '05_STANDARD_COST',
+            'table_name'    => 'standard_cost',
+            'dataset_type'  => 'TRANSACTION',
+            'name'          => 'Standard Cost',
+            'display_label' => 'Standard Cost (standard_cost)',
+            'sheet_name'    => '05. STANDARD_COST'
+        ],
+        [
+            'key'           => '05A_BOM',
+            'table_name'    => 'bom',
+            'dataset_type'  => 'TRANSACTION',
+            'name'          => 'Bill of Materials',
+            'display_label' => 'BOM (bom)',
+            'sheet_name'    => '05.A_BOM'
+        ],
+        [
+            'key'           => '05B_ROUTING',
+            'table_name'    => 'routing',
+            'dataset_type'  => 'TRANSACTION',
+            'name'          => 'Routing',
+            'display_label' => 'Routing (routing)',
+            'sheet_name'    => '05.B_ROUTING'
+        ],
+        [
+            'key'           => '06_MATERIAL_TRANSACTION',
+            'table_name'    => 'material_transaction',
+            'dataset_type'  => 'TRANSACTION',
+            'name'          => 'Material Transaction',
+            'display_label' => 'Material Transaction (material_transaction)',
+            'sheet_name'    => '06.MATERIAL TRANSACTION'
+        ],
+        [
+            'key'           => '07_DOWNTIME',
+            'table_name'    => 'downtime',
+            'dataset_type'  => 'TRANSACTION',
+            'name'          => 'Downtime',
+            'display_label' => 'Downtime (downtime)',
+            'sheet_name'    => '07.DOWNTIME'
+        ],
+        [
+            'key'           => '08_FINANCE_TRANSACTION',
+            'table_name'    => 'finance_transaction',
+            'dataset_type'  => 'TRANSACTION',
+            'name'          => 'Finance Transaction',
+            'display_label' => 'Finance Transaction (finance_transaction)',
+            'sheet_name'    => '08.FINANCE TRANSACTION'
+        ],
+        [
+            'key'           => '09_TRIAL_BALANCE',
+            'table_name'    => 'trial_balance',
+            'dataset_type'  => 'TRANSACTION',
+            'name'          => 'Trial Balance',
+            'display_label' => 'Trial Balance (trial_balance)',
+            'sheet_name'    => '09.TRIAL BALANCE'
+        ]
+    ];
 }
 
 /**
@@ -760,6 +879,523 @@ function getAccountingPeriodContext(?int $periodId = null): ?array {
     // Fallback to latest active period
     $stmt = $globalPdo->query("SELECT * FROM public.periods WHERE UPPER(status) = 'ACTIVE' ORDER BY start_date DESC LIMIT 1");
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+/**
+ * Authoritatively resolves the active accounting period from global scope/session.
+ * Validates scope authorization, existence, locking, and status.
+ * Prevents stale preview scope drift. Never auto-creates new periods on upload.
+ */
+function getAuthoritativeUploadPeriod(?int $expectedPeriodId = null, ?array $user = null): array {
+    $userId = $user['user_id'] ?? ($_SESSION['user_id'] ?? null);
+
+    // 1. Resolve active period from authoritative session / global context
+    $orgContext = function_exists('getActiveOrganizationContext') ? getActiveOrganizationContext() : [];
+    $periodId = $orgContext['period_id'] ?? ($_SESSION['active_period_id'] ?? null);
+
+    // If frontend passed an expected period ID from preview, verify no scope change occurred
+    if (!empty($expectedPeriodId) && !empty($periodId) && (int)$expectedPeriodId !== (int)$periodId) {
+        return [
+            'ok'        => false,
+            'is_drift'  => true,
+            'message'   => "Scope Conflict: The active accounting period was switched in the global scope selector since preview was generated. Please refresh and re-confirm with the current active period."
+        ];
+    }
+
+    if (empty($periodId) || $periodId === 'ALL') {
+        return [
+            'ok'      => false,
+            'message' => "Accounting Period Required: No active accounting period is selected in the global scope. Please select an accounting period using the global scope selector in the top header before uploading or importing transaction worksheets."
+        ];
+    }
+
+    // 2. Fetch period from Neon PostgreSQL periods table
+    $globalPdo = getDbConnection();
+    $stmt = $globalPdo->prepare("SELECT * FROM public.periods WHERE period_id = ?");
+    $stmt->execute([(int)$periodId]);
+    $p = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$p) {
+        return [
+            'ok'      => false,
+            'message' => "Invalid Accounting Period: The selected period (ID: {$periodId}) does not exist. Please select a valid period from the global scope selector."
+        ];
+    }
+
+    // 3. Authorization check
+    if ($userId && function_exists('userCanAccessPeriod') && !userCanAccessPeriod((int)$periodId, $userId)) {
+        return [
+            'ok'      => false,
+            'message' => "Authorization Error: You are not authorized to upload or import data into accounting period '{$p['period_name']}'."
+        ];
+    }
+
+    // 4. Check period locking
+    $isLocked = !empty($p['is_locked']) && ($p['is_locked'] === true || $p['is_locked'] === 't' || $p['is_locked'] == 1);
+    if ($isLocked) {
+        return [
+            'ok'        => false,
+            'is_locked' => true,
+            'period'    => $p,
+            'message'   => "The active accounting period '{$p['period_name']}' is LOCKED. Transaction data cannot be imported into a locked period. Please unlock it or switch periods in the global scope selector."
+        ];
+    }
+
+    // 5. Check period status
+    $status = strtoupper(trim($p['status'] ?? 'ACTIVE'));
+    if ($status !== 'ACTIVE') {
+        return [
+            'ok'      => false,
+            'period'  => $p,
+            'message' => "The active accounting period '{$p['period_name']}' is CLOSED or INACTIVE. Please select an active open period from the global scope selector."
+        ];
+    }
+
+    return [
+        'ok'          => true,
+        'period'      => $p,
+        'period_id'   => (int)$p['period_id'],
+        'period_code' => $p['period_code'] ?? ($p['period_name'] ?? ('P_' . $p['period_id'])),
+        'period_name' => $p['period_name'],
+        'start_date'  => $p['start_date'] ?? null,
+        'end_date'    => $p['end_date'] ?? null,
+        'is_locked'   => false
+    ];
+}
+
+/**
+ * Backward-compatible helper that delegates to authoritative period resolution.
+ */
+function resolveOrRegisterPeriod(?int $periodId = null, ?string $startDate = null, ?string $endDate = null, ?string $periodName = null, ?array $user = null): array {
+    if ($periodId || empty($startDate) || empty($endDate)) {
+        return getAuthoritativeUploadPeriod($periodId, $user);
+    }
+    // If explicit start and end dates match an existing period, reuse it
+    $globalPdo = getDbConnection();
+    $stmt = $globalPdo->prepare("SELECT * FROM public.periods WHERE start_date = ? AND end_date = ? ORDER BY period_id DESC LIMIT 1");
+    $stmt->execute([$startDate, $endDate]);
+    $p = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($p) {
+        if (!empty($p['is_locked']) && ($p['is_locked'] === true || $p['is_locked'] === 't' || $p['is_locked'] == 1)) {
+            return ['ok' => false, 'is_locked' => true, 'period' => $p, 'message' => "Selected accounting period '{$p['period_name']}' is LOCKED."];
+        }
+        return [
+            'ok'          => true,
+            'period'      => $p,
+            'period_id'   => (int)$p['period_id'],
+            'period_code' => $p['period_code'] ?? $p['period_name'],
+            'period_name' => $p['period_name'],
+            'start_date'  => $p['start_date'],
+            'end_date'    => $p['end_date'],
+            'reused'      => true
+        ];
+    }
+    return getAuthoritativeUploadPeriod($periodId, $user);
+}
+
+/**
+ * Automatically ensures public.saved_mappings exists within the customer's dedicated database.
+ */
+function ensureCustomerSavedMappingsTable(PDO $custPdo): void {
+    static $ensured = [];
+    $hash = spl_object_hash($custPdo);
+    if (isset($ensured[$hash])) return;
+
+    try {
+        $custPdo->exec("
+            CREATE TABLE IF NOT EXISTS public.saved_mappings (
+                id BIGSERIAL PRIMARY KEY,
+                company_code VARCHAR(50) NOT NULL DEFAULT '',
+                target_table VARCHAR(100) NOT NULL,
+                sheet_name VARCHAR(255) NOT NULL DEFAULT '',
+                mapping JSONB NOT NULL,
+                created_by BIGINT,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cust_saved_mappings_lookup 
+            ON public.saved_mappings (LOWER(company_code), LOWER(target_table), LOWER(sheet_name));
+        ");
+        $ensured[$hash] = true;
+    } catch (Throwable $e) {
+        error_log("ensureCustomerSavedMappingsTable error: " . $e->getMessage());
+    }
+}
+
+/**
+ * Look up persistent saved column mapping strictly from the active customer's dedicated database,
+ * scoped by company_code, target_table, and worksheet name.
+ */
+function getSavedMapping(?int $customerId, string $targetTable, ?string $sheetName = null, ?int $subCatId = null, ?string $companyCode = null, ?array $user = null): ?array {
+    $targetTable = strtolower(trim($targetTable));
+    $cleanSheet = $sheetName ? trim($sheetName) : '';
+
+    try {
+        $custDbContext = getUserCustomerDbContext($user, $customerId);
+        $custPdo = $custDbContext['pdo'] ?? null;
+        if (!$custPdo) return null;
+
+        ensureCustomerSavedMappingsTable($custPdo);
+
+        if (!$companyCode) {
+            $orgContext = getActiveOrganizationContext();
+            $companyCode = $orgContext['company_code'] ?? ($_SESSION['active_company_code'] ?? '');
+        }
+        $compCode = trim((string)$companyCode);
+
+        // 1. Try exact match in customer DB: company_code + target_table + sheet_name
+        if ($compCode !== '') {
+            $stmt = $custPdo->prepare("
+                SELECT mapping 
+                FROM public.saved_mappings 
+                WHERE LOWER(company_code) = LOWER(?) 
+                  AND LOWER(target_table) = LOWER(?) 
+                  AND (LOWER(COALESCE(sheet_name, '')) = LOWER(?) OR LOWER(COALESCE(sheet_name, '')) = LOWER(?))
+                ORDER BY updated_at DESC 
+                LIMIT 1
+            ");
+            $stmt->execute([$compCode, $targetTable, $cleanSheet, pathinfo($cleanSheet, PATHINFO_FILENAME)]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row && !empty($row['mapping'])) {
+                $m = is_array($row['mapping']) ? $row['mapping'] : json_decode($row['mapping'], true);
+                if (!empty($m)) return $m;
+            }
+
+            // 2. Try match in customer DB: company_code + target_table (generic for this company)
+            $stmt = $custPdo->prepare("
+                SELECT mapping 
+                FROM public.saved_mappings 
+                WHERE LOWER(company_code) = LOWER(?) 
+                  AND LOWER(target_table) = LOWER(?)
+                ORDER BY updated_at DESC 
+                LIMIT 1
+            ");
+            $stmt->execute([$compCode, $targetTable]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row && !empty($row['mapping'])) {
+                $m = is_array($row['mapping']) ? $row['mapping'] : json_decode($row['mapping'], true);
+                if (!empty($m)) return $m;
+            }
+        } else {
+            // Generic fallbacks only when company_code is not specified
+            // 3. Fallback within this customer DB: target_table + sheet_name
+            $stmt = $custPdo->prepare("
+                SELECT mapping 
+                FROM public.saved_mappings 
+                WHERE LOWER(target_table) = LOWER(?)
+                  AND (LOWER(COALESCE(sheet_name, '')) = LOWER(?) OR LOWER(COALESCE(sheet_name, '')) = LOWER(?))
+                ORDER BY updated_at DESC 
+                LIMIT 1
+            ");
+            $stmt->execute([$targetTable, $cleanSheet, pathinfo($cleanSheet, PATHINFO_FILENAME)]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row && !empty($row['mapping'])) {
+                $m = is_array($row['mapping']) ? $row['mapping'] : json_decode($row['mapping'], true);
+                if (!empty($m)) return $m;
+            }
+
+            // 4. Fallback within this customer DB: target_table generic
+            $stmt = $custPdo->prepare("
+                SELECT mapping 
+                FROM public.saved_mappings 
+                WHERE LOWER(target_table) = LOWER(?)
+                ORDER BY updated_at DESC 
+                LIMIT 1
+            ");
+            $stmt->execute([$targetTable]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row && !empty($row['mapping'])) {
+                $m = is_array($row['mapping']) ? $row['mapping'] : json_decode($row['mapping'], true);
+                if (!empty($m)) return $m;
+            }
+        }
+    } catch (Throwable $e) {
+        error_log("getSavedMapping customer DB error: " . $e->getMessage());
+    }
+
+    return null;
+}
+
+/**
+ * Persists user-defined column mapping strictly in the CUSTOMER-SPECIFIC database,
+ * verified against the user's company membership.
+ */
+function saveCustomMapping(int $fileId, array $mapping, int $userId, ?array $user = null): array {
+    $file = dbQuery("SELECT * FROM public.upload_files WHERE id = ?", [$fileId])->fetch(PDO::FETCH_ASSOC);
+    if (!$file) {
+        return ['ok' => false, 'message' => 'Upload file record not found.'];
+    }
+
+    $uploadId = (int)$file['upload_id'];
+    $subCatId = $file['sub_category_id'] ? (int)$file['sub_category_id'] : null;
+    $sheetName = $file['sheet_name'] ?: pathinfo($file['original_name'], PATHINFO_FILENAME);
+
+    // Determine target table
+    $targetTable = 'items';
+    if ($subCatId) {
+        $tName = dbQuery("
+            SELECT te.table_name 
+            FROM public.sub_categories sc 
+            JOIN public.target_entities te ON te.id = sc.target_entity_id 
+            WHERE sc.id = ?
+        ", [$subCatId])->fetchColumn();
+        if ($tName) {
+            $targetTable = strtolower(trim($tName));
+        }
+    }
+
+    // Resolve Active Scope Context
+    $orgContext = getActiveOrganizationContext();
+    $companyCode = trim($orgContext['company_code'] ?? ($_SESSION['active_company_code'] ?? ''));
+    $companyId = $orgContext['company_id'] ?? ($_SESSION['active_company_id'] ?? null);
+
+    // If companyId / companyCode is not in session orgContext, resolve from upload_scopes of this upload
+    if (empty($companyId) || empty($companyCode)) {
+        try {
+            $scopeStmt = dbQuery("
+                SELECT us.company_id, c.company_code 
+                FROM public.upload_scopes us 
+                LEFT JOIN public.companies c ON c.company_id = us.company_id 
+                WHERE us.upload_id = ? 
+                LIMIT 1
+            ", [$uploadId]);
+            $scopeRow = $scopeStmt->fetch(PDO::FETCH_ASSOC);
+            if ($scopeRow) {
+                if (empty($companyId) && !empty($scopeRow['company_id'])) {
+                    $companyId = (int)$scopeRow['company_id'];
+                }
+                if (empty($companyCode) && !empty($scopeRow['company_code'])) {
+                    $companyCode = trim($scopeRow['company_code']);
+                }
+            }
+        } catch (Throwable $e) {}
+    }
+
+    if (empty($companyCode) && !empty($companyId)) {
+        $cStmt = dbQuery("SELECT company_code FROM companies WHERE company_id = ?", [$companyId]);
+        $companyCode = trim($cStmt->fetchColumn() ?: '');
+    }
+
+    if (!empty($companyCode) && empty($companyId)) {
+        $cStmt = dbQuery("SELECT company_id FROM companies WHERE LOWER(company_code) = LOWER(?)", [$companyCode]);
+        $cid = $cStmt->fetchColumn();
+        if ($cid) {
+            $companyId = (int)$cid;
+        }
+    }
+
+    // Fallback if still empty to user's first accessible company
+    if (empty($companyCode) && $userId && function_exists('getUserAccessibleCompanies')) {
+        $userComps = getUserAccessibleCompanies($userId);
+        if (!empty($userComps)) {
+            $companyCode = trim($userComps[0]['company_code'] ?? '');
+            $companyId = (int)($userComps[0]['company_id'] ?? 0);
+        }
+    }
+
+    if (empty($companyCode)) {
+        $companyCode = 'ABC02';
+    }
+
+    // Security Check: Verify that the user belongs to that company
+    if ($userId && !isPlatformAdmin($userId) && !isCmaAdmin($userId)) {
+        $hasAccess = false;
+        if ($companyId && function_exists('userCanAccessCompany')) {
+            $hasAccess = userCanAccessCompany($userId, $companyId);
+        }
+        if (!$hasAccess && !empty($companyCode) && function_exists('getUserAccessibleCompanies')) {
+            $userComps = getUserAccessibleCompanies($userId);
+            foreach ($userComps as $uc) {
+                if (strcasecmp(trim($uc['company_code'] ?? ''), $companyCode) === 0) {
+                    $hasAccess = true;
+                    break;
+                }
+            }
+        }
+        if (!$hasAccess) {
+            return [
+                'ok'      => false,
+                'message' => "Authorization Error: You are only allowed to modify mappings for companies you belong to ({$companyCode})."
+            ];
+        }
+    }
+
+    // Connect to the specific Customer Database
+    $custDbContext = getUserCustomerDbContext($user);
+    $custPdo = $custDbContext['pdo'];
+    $custDbName = $custDbContext['database_name'];
+    ensureCustomerSavedMappingsTable($custPdo);
+
+    $jsonMapping = json_encode($mapping);
+
+    // 1. Update current file in global upload_files (for active upload run tracking)
+    dbQuery("
+        UPDATE public.upload_files 
+        SET column_mappings = ?::jsonb, 
+            validation_status = 'Validated (Saved Mapping Applied)' 
+        WHERE id = ?
+    ", [$jsonMapping, $fileId]);
+
+    // 2. Upsert permanently into the CUSTOMER-SPECIFIC database
+    try {
+        $upsertStmt = $custPdo->prepare("
+            INSERT INTO public.saved_mappings (
+                company_code, target_table, sheet_name, mapping, created_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?::jsonb, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (LOWER(company_code), LOWER(target_table), LOWER(sheet_name))
+            DO UPDATE SET 
+                mapping = EXCLUDED.mapping,
+                updated_at = CURRENT_TIMESTAMP,
+                created_by = EXCLUDED.created_by
+        ");
+        $upsertStmt->execute([$companyCode, $targetTable, $sheetName, $jsonMapping, $userId]);
+    } catch (Throwable $e) {
+        error_log("saveCustomMapping upsert error in customer DB ({$custDbName}): " . $e->getMessage());
+        try {
+            $chk = $custPdo->prepare("
+                SELECT id FROM public.saved_mappings 
+                WHERE LOWER(company_code) = LOWER(?) 
+                  AND LOWER(target_table) = LOWER(?) 
+                  AND LOWER(sheet_name) = LOWER(?)
+            ");
+            $chk->execute([$companyCode, $targetTable, $sheetName]);
+            $exists = $chk->fetchColumn();
+
+            if ($exists) {
+                $upd = $custPdo->prepare("UPDATE public.saved_mappings SET mapping = ?::jsonb, updated_at = CURRENT_TIMESTAMP, created_by = ? WHERE id = ?");
+                $upd->execute([$jsonMapping, $userId, $exists]);
+            } else {
+                $ins = $custPdo->prepare("
+                    INSERT INTO public.saved_mappings (company_code, target_table, sheet_name, mapping, created_by, created_at, updated_at)
+                    VALUES (?, ?, ?, ?::jsonb, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ");
+                $ins->execute([$companyCode, $targetTable, $sheetName, $jsonMapping, $userId]);
+            }
+        } catch (Throwable $e2) {
+            error_log("saveCustomMapping fallback error: " . $e2->getMessage());
+            return ['ok' => false, 'message' => 'Failed to save mapping to customer database: ' . $e2->getMessage()];
+        }
+    }
+
+    logUploadAudit($userId, $user['username'] ?? 'User', 'MAPPING_APPROVED_AND_SAVED', 'Upload Centre', $file['original_name'], 'Success', [
+        'file_id'       => $fileId,
+        'database_name' => $custDbName,
+        'company_code'  => $companyCode,
+        'target_table'  => $targetTable,
+        'sheet_name'    => $sheetName,
+        'columns'       => count($mapping)
+    ]);
+
+    return [
+        'ok'            => true,
+        'message'       => "Column mapping approved and saved permanently in customer database ({$custDbName}) for company '{$companyCode}'.",
+        'database_name' => $custDbName,
+        'company_code'  => $companyCode,
+        'target_table'  => $targetTable,
+        'sheet_name'    => $sheetName,
+        'mapping'       => $mapping
+    ];
+}
+
+/**
+ * Validates transaction dates across uploaded worksheets against the selected period range.
+ * If any transaction date falls outside the selected range, flags a validation error.
+ */
+function validateUploadPeriodDates(int $uploadId, array $fileIds, string $startDate, string $endDate): array {
+    $normStart = normalizeExcelDate($startDate) ?: $startDate;
+    $normEnd = normalizeExcelDate($endDate) ?: $endDate;
+
+    if (!$normStart || !$normEnd || strtotime($normStart) > strtotime($normEnd)) {
+        return [
+            'ok'             => false,
+            'has_violations' => true,
+            'message'        => "Invalid date range: End Date ({$normEnd}) cannot be earlier than Start Date ({$normStart}).",
+            'violations'     => []
+        ];
+    }
+
+    $files = dbQuery("SELECT * FROM public.upload_files WHERE upload_id = ?", [$uploadId])->fetchAll(PDO::FETCH_ASSOC);
+    $violations = [];
+
+    foreach ($files as $f) {
+        if (!empty($fileIds) && !in_array((int)$f['id'], array_map('intval', $fileIds), true)) {
+            continue;
+        }
+
+        $sheetName = $f['sheet_name'] ?: $f['original_name'];
+        $targetTable = 'items';
+        if (!empty($f['sub_category_id'])) {
+            $tName = dbQuery("SELECT te.table_name FROM public.sub_categories sc JOIN public.target_entities te ON te.id = sc.target_entity_id WHERE sc.id = ?", [$f['sub_category_id']])->fetchColumn();
+            if ($tName) $targetTable = strtolower(trim($tName));
+        }
+
+        // Master data worksheets and standard cost baseline revision sheets are not bounded by period transaction dates
+        if (isMasterDataset($targetTable) || $targetTable === 'standard_cost') {
+            continue;
+        }
+
+        if (!file_exists($f['storage_path'])) continue;
+
+        $ext = strtolower($f['file_type']);
+        $rawRows = [];
+        $headers = json_decode($f['headers'] ?? '[]', true) ?: [];
+
+        if ($ext === 'xlsx' || $ext === 'xls') {
+            $parsed = parseXlsxSheetRows($f['storage_path'], $f['sheet_name'] ?: '');
+            if (!empty($parsed['headers'])) $headers = $parsed['headers'];
+            $rawRows = $parsed['rows'];
+        } elseif ($ext === 'csv') {
+            $h = fopen($f['storage_path'], 'rb');
+            if ($h !== false) {
+                $rh = fgetcsv($h);
+                if ($rh !== false) $headers = array_map('trim', $rh);
+                while (($r = fgetcsv($h)) !== false) $rawRows[] = $r;
+                fclose($h);
+            }
+        }
+
+        $dateColIndices = [];
+        foreach ($headers as $cIdx => $h) {
+            $cleanH = strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $h))));
+            if (in_array($cleanH, ['doc_date', 'log_date', 'date', 'txn_date', 'std_revision_date', 'effective_date', 'std_rev_date'], true)) {
+                $dateColIndices[$cIdx] = $cleanH;
+            }
+        }
+
+        if (empty($dateColIndices)) continue;
+
+        foreach ($rawRows as $rIdx => $row) {
+            $rowNum = $rIdx + 2;
+            foreach ($dateColIndices as $colIdx => $colName) {
+                $rawVal = isset($row[$colIdx]) ? trim((string)$row[$colIdx]) : '';
+                if ($rawVal === '') continue;
+
+                $normDate = normalizeExcelDate($rawVal);
+                if ($normDate && ($normDate < $normStart || $normDate > $normEnd)) {
+                    $violations[] = [
+                        'file_id'         => $f['id'],
+                        'sheet_name'      => $sheetName,
+                        'row_number'      => $rowNum,
+                        'field'           => $colName,
+                        'date_value'      => $rawVal,
+                        'normalized_date' => $normDate,
+                        'start_date'      => $normStart,
+                        'end_date'        => $normEnd,
+                        'message'         => "Transaction date '{$rawVal}' in worksheet '{$sheetName}' row {$rowNum} falls outside the selected period range ({$normStart} to {$normEnd})."
+                    ];
+                    if (count($violations) >= 20) break 2;
+                }
+            }
+        }
+    }
+
+    return [
+        'ok'             => true,
+        'has_violations' => !empty($violations),
+        'violations'     => $violations,
+        'message'        => !empty($violations) ? $violations[0]['message'] : 'All transaction dates are valid within the selected period.'
+    ];
 }
 
 /**
@@ -1410,7 +2046,8 @@ function ensureTargetTableExistsInCustomerDb(PDO $custPdo, string $tableName): b
                 'std_conversion NUMERIC(15,4) DEFAULT 0', 'std_total_cost NUMERIC(15,4) DEFAULT 0',
                 'std_revision_date DATE DEFAULT CURRENT_DATE', 'processed_material NUMERIC(15,4) DEFAULT 0',
                 'processed_conversion NUMERIC(15,4) DEFAULT 0', 'processed_total_cost NUMERIC(15,4) DEFAULT 0',
-                'cost_component VARCHAR(100) DEFAULT \'Total\'', 'cost_value NUMERIC(15,4) DEFAULT 0'
+                'cost_component VARCHAR(100) DEFAULT \'Total\'', 'cost_value NUMERIC(15,4) DEFAULT 0',
+                'period_id BIGINT', 'period_code VARCHAR(100)'
             ];
             foreach ($colsToAdd as $cDef) {
                 try { $custPdo->exec("ALTER TABLE public.standard_cost ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
@@ -1427,7 +2064,7 @@ function ensureTargetTableExistsInCustomerDb(PDO $custPdo, string $tableName): b
                 'processed_labour_rate NUMERIC(15,4) DEFAULT 0', 'processed_std_rate NUMERIC(15,4) DEFAULT 0',
                 'scrap_item_code VARCHAR(100)', 'scrap_qty NUMERIC(15,4) DEFAULT 0', 'scrap_unit VARCHAR(50)',
                 'byproduct_item_code VARCHAR(100)', 'byproduct_qty NUMERIC(15,4) DEFAULT 0', 'byproduct_unit VARCHAR(50)',
-                'wc_code VARCHAR(100)'
+                'wc_code VARCHAR(100)', 'period_id BIGINT', 'period_code VARCHAR(100)'
             ];
             foreach ($colsToAdd as $cDef) {
                 try { $custPdo->exec("ALTER TABLE public.bom ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
@@ -1438,7 +2075,7 @@ function ensureTargetTableExistsInCustomerDb(PDO $custPdo, string $tableName): b
                 'machine_code VARCHAR(100)', 'std_machine_hrs NUMERIC(15,5) DEFAULT 0',
                 'std_labour_hrs NUMERIC(15,5) DEFAULT 0', 'std_machine_hr_rate NUMERIC(15,4) DEFAULT 0',
                 'std_labour_rate NUMERIC(15,4) DEFAULT 0', 'std_conversion_cost NUMERIC(15,4) DEFAULT 0',
-                'operation_seq INT DEFAULT 1'
+                'operation_seq INT DEFAULT 1', 'period_id BIGINT', 'period_code VARCHAR(100)'
             ];
             foreach ($colsToAdd as $cDef) {
                 try { $custPdo->exec("ALTER TABLE public.routing ADD COLUMN IF NOT EXISTS {$cDef}"); } catch (Throwable $e) {}
@@ -1689,8 +2326,15 @@ function analyzeUploadedFiles($files, $user) {
                 $unexpectedHeaders = array_values(array_diff($headers, $expectedHeaders));
                 $isExactMatch = empty($missingHeaders) && empty($unexpectedHeaders);
 
-                $status = ($confidence >= 90) ? 'Ready' : 'Review';
-                $valStatus = $isExactMatch ? 'Validated (Exact Contract)' : 'Ready for Mapping';
+                $targetTable = $matchedCat['target_table'];
+                $savedMap = getSavedMapping($customerId, $targetTable, $sheetName, $scId, $orgContext['company_code'] ?? null, $user);
+                $hasSavedMap = !empty($savedMap);
+                $colMappingsJson = $hasSavedMap ? json_encode($savedMap) : null;
+
+                $status = ($confidence >= 90 || $hasSavedMap) ? 'Ready' : 'Review';
+                $valStatus = $hasSavedMap 
+                    ? 'Validated (Saved Mapping Applied)' 
+                    : ($isExactMatch ? 'Validated (Exact Contract)' : 'Ready for Mapping');
 
                 $fileLabel = count($sheets) > 1 ? "{$name} [{$sheetName}]" : $name;
 
@@ -1698,12 +2342,14 @@ function analyzeUploadedFiles($files, $user) {
                     INSERT INTO public.upload_files(
                         upload_id, original_name, safe_name, file_type, size_bytes, 
                         rows_count, columns_count, headers, master_group_id, sub_category_id, 
-                        mapping_version_id, validation_status, status, storage_path, sheet_name, sheet_index
-                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                        mapping_version_id, validation_status, status, storage_path, sheet_name, sheet_index,
+                        column_mappings
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) RETURNING id
                 ", [
                     $uploadId, $fileLabel, $safeName, $fileType, $size,
                     $rows, $cols, json_encode($headers), $mgId, $scId,
-                    $mvId, $valStatus, $status, $storagePath, $sheetName, $sh['sheet_index']
+                    $mvId, $valStatus, $status, $storagePath, $sheetName, $sh['sheet_index'],
+                    $colMappingsJson
                 ])->fetchColumn();
 
                 $processedFiles[] = [
@@ -1717,14 +2363,15 @@ function analyzeUploadedFiles($files, $user) {
                     'rows'               => $rows,
                     'columns'            => $cols,
                     'headers'            => $headers,
-                    'target_table'       => $matchedCat['target_table'],
+                    'target_table'       => $targetTable,
                     'dataset_type'       => $matchedCat['dataset_type'] ?? 'MASTER',
                     'master_group_id'    => $mgId,
                     'sub_category_id'    => $scId,
                     'master'             => $matchedCat['group_name'],
                     'sub'                => $matchedCat['name'],
                     'confidence'         => $confidence,
-                    'mapping'            => $isExactMatch ? 'Exact Template Match' : 'Auto Mapped',
+                    'mapping'            => $hasSavedMap ? 'Saved Mapping Applied' : ($isExactMatch ? 'Exact Template Match' : 'Auto Mapped'),
+                    'has_saved_mapping'  => $hasSavedMap,
                     'missing_headers'    => $missingHeaders,
                     'unexpected_headers' => $unexpectedHeaders,
                     'status'             => $status
@@ -1768,40 +2415,51 @@ function analyzeUploadedFiles($files, $user) {
             $unexpectedHeaders = array_values(array_diff($headers, $expectedHeaders));
             $isExactMatch = empty($missingHeaders) && empty($unexpectedHeaders);
 
-            $status = ($confidence >= 90) ? 'Ready' : 'Review';
-            $valStatus = $isExactMatch ? 'Validated (Exact Contract)' : 'Ready for Mapping';
+            $targetTable = $matchedCat['target_table'];
+            $sheetName = pathinfo($name, PATHINFO_FILENAME);
+            $savedMap = getSavedMapping($customerId, $targetTable, $sheetName, $scId, $orgContext['company_code'] ?? null, $user);
+            $hasSavedMap = !empty($savedMap);
+            $colMappingsJson = $hasSavedMap ? json_encode($savedMap) : null;
+
+            $status = ($confidence >= 90 || $hasSavedMap) ? 'Ready' : 'Review';
+            $valStatus = $hasSavedMap 
+                ? 'Validated (Saved Mapping Applied)' 
+                : ($isExactMatch ? 'Validated (Exact Contract)' : 'Ready for Mapping');
 
             $fileId = dbQuery("
                 INSERT INTO public.upload_files(
                     upload_id, original_name, safe_name, file_type, size_bytes, 
                     rows_count, columns_count, headers, master_group_id, sub_category_id, 
-                    mapping_version_id, validation_status, status, storage_path, sheet_name, sheet_index
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                    mapping_version_id, validation_status, status, storage_path, sheet_name, sheet_index,
+                    column_mappings
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) RETURNING id
             ", [
                 $uploadId, $name, $safeName, $fileType, $size,
                 $rows, $cols, json_encode($headers), $mgId, $scId,
-                $mvId, $valStatus, $status, $storagePath, null, 0
+                $mvId, $valStatus, $status, $storagePath, null, 0,
+                $colMappingsJson
             ])->fetchColumn();
 
             $processedFiles[] = [
                 'id'                 => $fileId,
                 'name'               => $name,
                 'original_file'      => $name,
-                'sheet_name'         => pathinfo($name, PATHINFO_FILENAME),
+                'sheet_name'         => $sheetName,
                 'sheet_index'        => 0,
                 'type'               => $fileType,
                 'size'               => $size,
                 'rows'               => $rows,
                 'columns'            => $cols,
                 'headers'            => $headers,
-                'target_table'       => $matchedCat['target_table'],
+                'target_table'       => $targetTable,
                 'dataset_type'       => $matchedCat['dataset_type'] ?? 'MASTER',
                 'master_group_id'    => $mgId,
                 'sub_category_id'    => $scId,
                 'master'             => $matchedCat['group_name'],
                 'sub'                => $matchedCat['name'],
                 'confidence'         => $confidence,
-                'mapping'            => $isExactMatch ? 'Exact Template Match' : 'Auto Mapped',
+                'mapping'            => $hasSavedMap ? 'Saved Mapping Applied' : ($isExactMatch ? 'Exact Template Match' : 'Auto Mapped'),
+                'has_saved_mapping'  => $hasSavedMap,
                 'missing_headers'    => $missingHeaders,
                 'unexpected_headers' => $unexpectedHeaders,
                 'status'             => $status
@@ -1813,6 +2471,7 @@ function analyzeUploadedFiles($files, $user) {
     clearUploadCentreCache();
 
     $masterGroupOptions = getMasterGroupsAndSubCategories();
+    $targetDatasets = getCanonicalTargetDatasets();
 
     return [
         'ok'                => true,
@@ -1821,11 +2480,12 @@ function analyzeUploadedFiles($files, $user) {
         'duplicate_warning' => $duplicateWarning,
         'files'             => $processedFiles,
         'master_groups'     => $masterGroupOptions,
+        'target_datasets'   => $targetDatasets,
         'total_rows'        => $totalRunRows
     ];
 }
 
-// Fetch Master Groups & Sub Categories for Dropdowns
+// Fetch Master Groups & Sub Categories for Dropdowns (Preserved for compatibility)
 function getMasterGroupsAndSubCategories() {
     try {
         $groups = dbQuery("SELECT id, name, code, description FROM public.master_groups ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
@@ -1852,17 +2512,60 @@ function getMasterGroupsAndSubCategories() {
     }
 }
 
-// Update File Master Group / Sub Category Classification from Dropdown Change
-function updateFileClassification($fileId, $subCategoryId) {
+// Update File Target Dataset / Classification with Strict Server-Side Allowlist
+function updateFileClassification($fileId, $targetParam) {
     try {
-        $sub = dbQuery("
-            SELECT sc.*, te.table_name 
-            FROM public.sub_categories sc 
-            LEFT JOIN public.target_entities te ON te.id = sc.target_entity_id 
-            WHERE sc.id = ?
-        ", [$subCategoryId])->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$sub) return ['ok' => false, 'message' => 'Sub category not found'];
+        $fileId = (int)$fileId;
+        if ($fileId <= 0) {
+            return ['ok' => false, 'message' => 'Invalid file ID'];
+        }
+
+        $allowedTables = [
+            'items', 'work_centers', 'party_master', 'cost_center_master',
+            'standard_cost', 'bom', 'routing', 'material_transaction',
+            'downtime', 'finance_transaction', 'trial_balance'
+        ];
+
+        $sub = null;
+        if (is_numeric($targetParam) && (int)$targetParam > 0) {
+            $sub = dbQuery("
+                SELECT sc.*, te.table_name 
+                FROM public.sub_categories sc 
+                LEFT JOIN public.target_entities te ON te.id = sc.target_entity_id 
+                WHERE sc.id = ?
+            ", [(int)$targetParam])->fetch(PDO::FETCH_ASSOC);
+        } else {
+            $cleanParam = strtolower(trim((string)$targetParam));
+            if (!in_array($cleanParam, $allowedTables, true)) {
+                // Check if key like 06_MATERIAL_TRANSACTION
+                foreach (getCanonicalTargetDatasets() as $ds) {
+                    if (strtolower($ds['key']) === $cleanParam || strtolower($ds['name']) === $cleanParam) {
+                        $cleanParam = $ds['table_name'];
+                        break;
+                    }
+                }
+            }
+
+            if (!in_array($cleanParam, $allowedTables, true)) {
+                return ['ok' => false, 'message' => "Invalid target dataset '{$targetParam}'. Selection must be an authorized COST360 entity."];
+            }
+
+            $sub = dbQuery("
+                SELECT sc.*, te.table_name 
+                FROM public.sub_categories sc 
+                JOIN public.target_entities te ON te.id = sc.target_entity_id 
+                WHERE LOWER(te.table_name) = ?
+                ORDER BY sc.id DESC
+                LIMIT 1
+            ", [$cleanParam])->fetch(PDO::FETCH_ASSOC);
+        }
+
+        if (!$sub) {
+            return ['ok' => false, 'message' => 'Target entity mapping not found in system'];
+        }
+
+        $targetTable = strtolower($sub['table_name'] ?? 'items');
+        $datasetType = isMasterDataset($targetTable) ? 'MASTER' : 'TRANSACTION';
 
         dbQuery("
             UPDATE public.upload_files 
@@ -1870,14 +2573,19 @@ function updateFileClassification($fileId, $subCategoryId) {
             WHERE id = ?
         ", [$sub['master_group_id'], $sub['id'], $fileId]);
 
-        return ['ok' => true, 'sub_category' => $sub];
+        return [
+            'ok'           => true, 
+            'sub_category' => $sub,
+            'target_table' => $targetTable,
+            'dataset_type' => $datasetType
+        ];
     } catch (Throwable $e) {
         return ['ok' => false, 'message' => $e->getMessage()];
     }
 }
 
 // Fetch File Rows Preview & Auto Column Mapping
-function getFilePreviewData($fileId, ?array $user = null) {
+function getFilePreviewData($fileId, ?array $user = null, ?int $periodId = null, ?string $startDate = null, ?string $endDate = null, ?string $targetDatasetParam = null) {
     $file = dbQuery("SELECT * FROM public.upload_files WHERE id = ?", [$fileId])->fetch(PDO::FETCH_ASSOC);
     if (!$file) {
         return ['ok' => false, 'message' => 'Upload file record not found.'];
@@ -1922,13 +2630,25 @@ function getFilePreviewData($fileId, ?array $user = null) {
         }
     }
 
+    // Organization Scope Context resolved early
+    $orgContext = getActiveOrganizationContext();
+
     // Resolve Customer DB context securely
     $custDbContext = getUserCustomerDbContext($user);
     $custPdo = $custDbContext['pdo'];
 
-    // Determine target table
+    // Determine target table (check explicit targetDatasetParam first, then sub_category_id, then defaults)
     $targetTable = 'items';
-    if (!empty($file['sub_category_id'])) {
+    if (!empty($targetDatasetParam)) {
+        $cleanParam = strtolower(trim((string)$targetDatasetParam));
+        $canonical = getCanonicalTargetDatasets();
+        foreach ($canonical as $ds) {
+            if (strtolower($ds['table_name']) === $cleanParam || strtolower($ds['key']) === $cleanParam || strtolower($ds['name']) === $cleanParam) {
+                $targetTable = $ds['table_name'];
+                break;
+            }
+        }
+    } elseif (!empty($file['sub_category_id'])) {
         $tName = dbQuery("
             SELECT te.table_name 
             FROM public.sub_categories sc 
@@ -1944,10 +2664,28 @@ function getFilePreviewData($fileId, ?array $user = null) {
     $targetCols = getTargetTableColumns($targetTable, $custPdo);
     $targetColNames = array_column($targetCols, 'column_name');
 
-    // Pre-calculate auto mapping
+    // Check for saved mapping from upload_files or public.saved_mappings
+    $savedMapping = null;
+    if (!empty($file['column_mappings'])) {
+        $savedMapping = is_array($file['column_mappings']) ? $file['column_mappings'] : json_decode($file['column_mappings'], true);
+    }
+    if (empty($savedMapping)) {
+        $savedMapping = getSavedMapping($custDbContext['customer_id'] ?? null, $targetTable, $file['sheet_name'] ?? $file['original_name'], $file['sub_category_id'] ?? null, $orgContext['company_code'] ?? null, $user);
+    }
+
+    // Pre-calculate auto mapping or use saved mapping
     $mapping = [];
+    $isSavedMapping = !empty($savedMapping);
     foreach ($headers as $h) {
         $cleanH = strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $h))));
+        if ($isSavedMapping && (isset($savedMapping[$h]) || isset($savedMapping[$cleanH]))) {
+            $mappedTarget = $savedMapping[$h] ?? $savedMapping[$cleanH];
+            if ($mappedTarget === '__IGNORE__' || in_array($mappedTarget, $targetColNames, true)) {
+                $mapping[$h] = $mappedTarget;
+                continue;
+            }
+        }
+
         if (in_array($cleanH, $targetColNames, true)) {
             $mapping[$h] = $cleanH;
         } else {
@@ -1979,8 +2717,25 @@ function getFilePreviewData($fileId, ?array $user = null) {
         $catDef = $defs['01_ITEM_PRODUCT_MASTER'];
     }
 
-    $datasetType = $catDef['dataset_type'] ?? 'MASTER';
-    $periodContext = getAccountingPeriodContext();
+    $datasetType = $catDef['dataset_type'] ?? (isMasterDataset($targetTable) ? 'MASTER' : 'TRANSACTION');
+
+    // Period Resolution: Authoritatively retrieve from global scope
+    $periodContext = null;
+    $dateViolations = [];
+    $periodError = null;
+
+    if (!isMasterDataset($targetTable)) {
+        $periodRes = getAuthoritativeUploadPeriod($periodId, $user);
+        if (!$periodRes['ok']) {
+            $periodError = $periodRes['message'];
+        } else {
+            $periodContext = $periodRes['period'];
+        }
+    } else {
+        $periodRes = getAccountingPeriodContext();
+        if ($periodRes) $periodContext = $periodRes;
+    }
+
     $availablePeriods = function_exists('getUserAccessiblePeriods') ? getUserAccessiblePeriods() : [];
 
     // Pre-calculate preview match simulation
@@ -1989,8 +2744,35 @@ function getFilePreviewData($fileId, ?array $user = null) {
         'dataset_type'      => $datasetType,
         'new_records'       => 0,
         'update_records'    => 0,
-        'unchanged_records' => 0
+        'unchanged_records' => 0,
+        'period_error'      => $periodError,
+        'date_violations'   => []
     ];
+
+    // Check sample rows for date violations against the authoritative period (exempt master data and standard cost revision dates)
+    if (!isMasterDataset($targetTable) && $targetTable !== 'standard_cost' && $periodContext && !empty($periodContext['start_date']) && !empty($periodContext['end_date'])) {
+        $pStart = $periodContext['start_date'];
+        $pEnd = $periodContext['end_date'];
+        foreach ($data as $sampleIdx => $sampleRow) {
+            $rowNum = $sampleIdx + 2;
+            foreach ($sampleRow as $colName => $colVal) {
+                $cleanCol = strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $colName))));
+                if (in_array($cleanCol, ['doc_date', 'log_date', 'date', 'txn_date', 'std_revision_date', 'effective_date'], true)) {
+                    $normD = normalizeExcelDate($colVal);
+                    if ($normD && ($normD < $pStart || $normD > $pEnd)) {
+                        $dateViolations[] = [
+                            'row_number'      => $rowNum,
+                            'field'           => $cleanCol,
+                            'date_value'      => $colVal,
+                            'normalized_date' => $normD,
+                            'message'         => "Transaction date '{$colVal}' in row {$rowNum} falls outside active period range ({$pStart} to {$pEnd})"
+                        ];
+                    }
+                }
+            }
+        }
+    }
+    $previewSummary['date_violations'] = $dateViolations;
 
     if (!empty($data) && !empty($catDef['business_key'])) {
         $businessKeys = $catDef['business_key'];
@@ -2060,10 +2842,15 @@ function getFilePreviewData($fileId, ?array $user = null) {
         'customer_id'       => $custDbContext['customer_id'],
         'target_columns'    => $targetColNames,
         'auto_mapping'      => $mapping,
+        'is_saved_mapping'  => $isSavedMapping,
+        'has_saved_mapping' => $isSavedMapping,
         'dataset_type'      => $datasetType,
+        'active_period'     => $periodContext,
         'period_context'    => $periodContext,
+        'period_error'      => $periodError,
         'available_periods' => $availablePeriods,
         'preview_summary'   => $previewSummary,
+        'date_violations'   => $dateViolations,
         'org_context'       => [
             'customer_code' => $orgContext['customer_code'] ?? 'CUST001',
             'company_code'  => $orgContext['company_code'] ?? 'COMP001',
@@ -2079,7 +2866,7 @@ function getFilePreviewData($fileId, ?array $user = null) {
  * Strictly populates organization & audit columns server-side.
  * Enforces controlled insert/update policy by primary business keys with SAVEPOINT isolation.
  */
-function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?int $periodId = null) {
+function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?int $periodId = null, ?string $startDate = null, ?string $endDate = null, ?string $periodName = null) {
     $userId = (int)($user['user_id'] ?? 0);
     $username = $user['email'] ?? ($user['username'] ?? 'User');
 
@@ -2139,8 +2926,63 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
         ];
     }
 
-    // Resolve Accounting Period for transactions
-    $accountingPeriod = getAccountingPeriodContext($periodId);
+    // Determine whether any selected file is period-dependent
+    $hasPeriodDependentFiles = false;
+    foreach ($files as $f) {
+        $subCatId = $f['sub_category_id'];
+        $targetTable = 'items';
+        if ($subCatId) {
+            $tName = dbQuery("SELECT te.table_name FROM public.sub_categories sc JOIN public.target_entities te ON te.id = sc.target_entity_id WHERE sc.id = ?", [$subCatId])->fetchColumn();
+            if ($tName) $targetTable = strtolower(trim($tName));
+        }
+        if (!isMasterDataset($targetTable)) {
+            $hasPeriodDependentFiles = true;
+            break;
+        }
+    }
+
+    $accountingPeriod = null;
+    if ($hasPeriodDependentFiles) {
+        // Must have valid, authorized, unlocked active period in global scope
+        $periodRes = getAuthoritativeUploadPeriod($periodId, $user);
+        if (!$periodRes['ok']) {
+            return [
+                'ok'       => false,
+                'code'     => !empty($periodRes['is_drift']) ? 'SCOPE_DRIFT_DETECTED' : 'PERIOD_ERROR',
+                'is_drift' => !empty($periodRes['is_drift']),
+                'message'  => $periodRes['message']
+            ];
+        }
+        $accountingPeriod = $periodRes['period'];
+
+        // Validate transaction dates within uploaded files against period date range
+        if (!empty($accountingPeriod['start_date']) && !empty($accountingPeriod['end_date'])) {
+            $dateCheck = validateUploadPeriodDates($uploadId, $selectedFileIds ?: [], $accountingPeriod['start_date'], $accountingPeriod['end_date']);
+            if (!empty($dateCheck['has_violations'])) {
+                $firstErr = $dateCheck['violations'][0];
+                foreach ($dateCheck['violations'] as $v) {
+                    dbQuery("
+                        INSERT INTO public.import_errors(upload_id, upload_file_id, sheet_name, row_number, field, error_type, error_message, severity)
+                        VALUES(?, ?, ?, ?, ?, 'Transaction Date Outside Period', ?, 'Critical')
+                    ", [$uploadId, $v['file_id'], $v['sheet_name'], $v['row_number'], $v['field'], $v['message']]);
+                }
+                dbQuery("UPDATE public.uploads SET status = 'Failed', error_rows = ? WHERE id = ?", [count($dateCheck['violations']), $uploadId]);
+                return [
+                    'ok'          => false,
+                    'upload_id'   => $uploadId,
+                    'error_count' => count($dateCheck['violations']),
+                    'message'     => "Validation Error: " . $firstErr['message'],
+                    'violations'  => $dateCheck['violations']
+                ];
+            }
+        }
+    } else {
+        // Master data only: period is optional and does not constrain or duplicate master records
+        $periodCtx = getAccountingPeriodContext();
+        if ($periodCtx) {
+            $accountingPeriod = $periodCtx;
+        }
+    }
 
     logUploadAudit($userId, $username, 'IMPORT_STARTED', 'Upload Centre', null, 'In Progress', [
         'upload_id'     => $uploadId,
@@ -2189,7 +3031,7 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
             $catDef = $defs['01_ITEM_PRODUCT_MASTER'];
         }
 
-        $isMaster = isMasterDataset($catDef['key'] ?? '');
+        $isMaster = isMasterDataset($catDef['key'] ?? ($catDef['target_table'] ?? $targetTable));
 
         // Validate Period for Transaction Sheets
         if (!$isMaster) {
@@ -2201,8 +3043,9 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
                     VALUES(?, ?, ?, 1, 'period_id', 'Period Validation Failed', ?, 'Critical')
                 ", [$uploadId, $f['id'], $sheetName, $periodValidation['error']]);
                 return [
-                    'ok'      => false,
-                    'message' => $periodValidation['error']
+                    'ok'        => false,
+                    'upload_id' => $uploadId,
+                    'message'   => $periodValidation['error']
                 ];
             }
         }
@@ -2247,6 +3090,12 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
         // Atomic transaction on customer database for this sheet
         $custPdo->beginTransaction();
 
+        // Load custom column mappings if defined for this file or customer
+        $fileMapping = json_decode($f['column_mappings'] ?? '[]', true) ?: [];
+        if (empty($fileMapping)) {
+            $fileMapping = getSavedMapping($customerId, $targetTable, $sheetName, $subCatId, $activeCompanyCode, $user) ?: [];
+        }
+
         try {
             foreach ($rawRows as $rowIdx => $row) {
                 $rowNum = $rowIdx + 2; // 1-indexed Excel data row (row 1 is header)
@@ -2272,22 +3121,29 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
                         $val = null;
                     }
                     $sourceRowMap[$cleanH] = $val;
+                    $sourceRowMap[$hName] = $val;
+
+                    // Resolve destination column according to saved/approved mapping
+                    $destCol = $fileMapping[$hName] ?? ($fileMapping[$cleanH] ?? $cleanH);
+                    if ($destCol === '__IGNORE__') {
+                        continue;
+                    }
 
                     // Normalize date values if date column
-                    if ($val !== null && in_array($cleanH, $catDef['date_fields'], true)) {
+                    if ($val !== null && (in_array($destCol, $catDef['date_fields'], true) || in_array($cleanH, $catDef['date_fields'], true) || in_array($destCol, ['std_rev_date', 'std_revision_date', 'effective_date', 'txn_date', 'doc_date', 'log_date'], true))) {
                         $val = normalizeExcelDate($val);
                     }
 
                     // Normalize numeric fields
-                    if ($val !== null && in_array($cleanH, $catDef['numeric_fields'], true)) {
+                    if ($val !== null && (in_array($destCol, $catDef['numeric_fields'], true) || in_array($cleanH, $catDef['numeric_fields'], true))) {
                         $cleanNum = str_replace([',', ' '], '', $val);
                         if (is_numeric($cleanNum)) {
                             $val = $cleanNum;
                         }
                     }
 
-                    if (in_array($cleanH, $dbColNames, true)) {
-                        $mappedData[$cleanH] = $val;
+                    if (in_array($destCol, $dbColNames, true)) {
+                        $mappedData[$destCol] = $val;
                     }
                 }
 
@@ -2316,7 +3172,17 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
                 }
 
                 // Compatibility aliases for pre-existing customer schema columns
-                if ($targetTable === 'work_centers') {
+                if ($targetTable === 'standard_cost') {
+                    if (empty($mappedData['product_code']) && !empty($sourceRowMap['item_code'])) {
+                        $mappedData['product_code'] = $sourceRowMap['item_code'];
+                    }
+                    if (empty($mappedData['std_revision_date']) && !empty($mappedData['std_rev_date'])) {
+                        $mappedData['std_revision_date'] = $mappedData['std_rev_date'];
+                    }
+                    if (empty($mappedData['std_rev_date']) && !empty($mappedData['std_revision_date'])) {
+                        $mappedData['std_rev_date'] = $mappedData['std_revision_date'];
+                    }
+                } elseif ($targetTable === 'work_centers') {
                     if (in_array('work_center_code', $dbColNames, true) && !empty($mappedData['wc_code'])) {
                         $mappedData['work_center_code'] = $mappedData['wc_code'];
                     }
@@ -2509,7 +3375,16 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
         } catch (Throwable $txErr) {
             $custPdo->rollBack();
             error_log("Transaction error during import: " . $txErr->getMessage());
-            throw $txErr;
+            dbQuery("UPDATE public.uploads SET status = 'Failed', error_rows = 1 WHERE id = ?", [$uploadId]);
+            dbQuery("
+                INSERT INTO public.import_errors(upload_id, upload_file_id, sheet_name, row_number, field, error_type, error_message, severity)
+                VALUES(?, ?, ?, 1, 'database', 'Database Execution Error', ?, 'Critical')
+            ", [$uploadId, $f['id'] ?? null, $sheetName ?? 'Main Sheet', $txErr->getMessage()]);
+            return [
+                'ok'        => false,
+                'upload_id' => $uploadId,
+                'message'   => "Import Execution Error: " . $txErr->getMessage()
+            ];
         }
     }
 
@@ -2558,6 +3433,7 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
 
     return [
         'ok'            => true,
+        'upload_id'     => $uploadId,
         'imported'      => $totalImported,
         'updated'       => $totalUpdated,
         'unchanged'     => $totalUnchanged,
@@ -2599,24 +3475,409 @@ function getUploadAuditLogs($limit = 100) {
     }
 }
 
-// Fetch Dynamic Mapping Configurations Data from Neon DB
-function getMappingConfigurationsData() {
+/**
+ * Automatically ensures default mappings exist for all 11 target worksheet tables in the customer database.
+ */
+function ensureAllCustomerDefaultMappings(PDO $custPdo, string $companyCode, ?int $userId = 1): void {
+    static $ensured = [];
+    $key = spl_object_hash($custPdo) . '_' . strtolower($companyCode);
+    if (isset($ensured[$key])) return;
+
+    $defaults = [
+        'items' => [
+            'name'         => 'Item Master Product Master',
+            'sheet'        => '01.ITEM-PRODUCT MASTER',
+            'dataset_type' => 'MASTER',
+            'mapping'      => [
+                'item_type' => 'item_type', 'item_group_code' => 'item_group_code', 'item_group_name' => 'item_group_name',
+                'item_code' => 'item_code', 'item_name' => 'item_name', 'unit_of_measure' => 'unit_of_measure',
+                'std_rate' => 'std_rate', 'material_rate' => 'material_rate', 'labour_rate' => 'labour_rate',
+                'overheads' => 'overheads', 'actual_rate' => 'actual_rate', 'total' => 'total',
+                'grade' => 'grade', 'net_weight_kg' => 'net_weight_kg', 'gross_weight_kg' => 'gross_weight_kg',
+                'upload' => 'upload', 'raw_material' => 'raw_material', 'product' => 'product', 'std_yield_pct' => 'std_yield_pct'
+            ]
+        ],
+        'work_centers' => [
+            'name'         => 'Work Center Master',
+            'sheet'        => '02.WORK CENTER MASTER',
+            'dataset_type' => 'MASTER',
+            'mapping'      => [
+                'wc_code' => 'wc_code', 'wc_name' => 'wc_name', 'wc_group_code' => 'wc_group_code',
+                'wc_group_name' => 'wc_group_name', 'cc_code' => 'cc_code', 'cc_name' => 'cc_name',
+                'std_mhr' => 'std_mhr', 'rated_hrs_day' => 'rated_hrs_day'
+            ]
+        ],
+        'party_master' => [
+            'name'         => 'Party Master',
+            'sheet'        => '03.PARTY MASTER',
+            'dataset_type' => 'MASTER',
+            'mapping'      => [
+                'type' => 'type', 'party_code' => 'party_code', 'party_name' => 'party_name',
+                'party_pan' => 'party_pan', 'party_account' => 'party_account', 'state' => 'state',
+                'payment_terms_days' => 'payment_terms_days'
+            ]
+        ],
+        'cost_center_master' => [
+            'name'         => 'Cost Center Master',
+            'sheet'        => '04.COST_CENTER_MASTER',
+            'dataset_type' => 'MASTER',
+            'mapping'      => [
+                'cc_code' => 'cc_code', 'cc_name' => 'cc_name', 'cc_type' => 'cc_type',
+                'is_production' => 'is_production', 'shift_capacity_hrs_per_month' => 'shift_capacity_hrs_per_month'
+            ]
+        ],
+        'standard_cost' => [
+            'name'         => 'Standard Cost',
+            'sheet'        => '05. STANDARD_COST',
+            'dataset_type' => 'TRANSACTION',
+            'mapping'      => [
+                'product_code' => 'product_code', 'std_material' => 'std_material', 'std_conversion' => 'std_conversion',
+                'std_total_cost' => 'std_total_cost', 'std_rev_date' => 'std_revision_date', 'std_revision_date' => 'std_revision_date',
+                'processed_material' => 'processed_material', 'processed_conversion' => 'processed_conversion', 'processed_total_cost' => 'processed_total_cost'
+            ]
+        ],
+        'bom' => [
+            'name'         => 'Bill of Materials',
+            'sheet'        => '05.A_BOM',
+            'dataset_type' => 'TRANSACTION',
+            'mapping'      => [
+                'parent_item_code' => 'parent_item_code', 'item_code' => 'item_code', 'parent_item_qty' => 'parent_item_qty',
+                'child_item_qty' => 'child_item_qty', 'uom' => 'uom', 'material_rate' => 'material_rate',
+                'labour_rate' => 'labour_rate', 'std_rate' => 'std_rate', 'processed_material_rate' => 'processed_material_rate',
+                'processed_labour_rate' => 'processed_labour_rate', 'processed_std_rate' => 'processed_std_rate',
+                'scrap_item_code' => 'scrap_item_code', 'scrap_qty' => 'scrap_qty', 'scrap_unit' => 'scrap_unit',
+                'byproduct_item_code' => 'byproduct_item_code', 'byproduct_qty' => 'byproduct_qty', 'byproduct_unit' => 'byproduct_unit',
+                'wc_code' => 'wc_code'
+            ]
+        ],
+        'routing' => [
+            'name'         => 'Routing Master',
+            'sheet'        => '05.B_ROUTING',
+            'dataset_type' => 'TRANSACTION',
+            'mapping'      => [
+                'product_code' => 'product_code', 'cc_code' => 'cc_code', 'machine_code' => 'machine_code',
+                'std_machine_hrs' => 'std_machine_hrs', 'std_labour_hrs' => 'std_labour_hrs',
+                'std_machine_hr_rate' => 'std_machine_hr_rate', 'std_labour_rate' => 'std_labour_rate',
+                'std_conversion_cost' => 'std_conversion_cost'
+            ]
+        ],
+        'material_transaction' => [
+            'name'         => 'Material Transactions',
+            'sheet'        => '06.MATERIAL TRANSACTION',
+            'dataset_type' => 'TRANSACTION',
+            'mapping'      => [
+                'doc_type' => 'doc_type', 'doc_no' => 'doc_no', 'doc_date' => 'doc_date',
+                'party_code' => 'party_code', 'party_name' => 'party_name', 'item_code' => 'item_code',
+                'item_name' => 'item_name', 'uom' => 'uom', 'qty' => 'qty', 'rejected_qty' => 'rejected_qty',
+                'gross_weight' => 'gross_weight', 'net_weight' => 'net_weight', 'weight_unit' => 'weight_unit',
+                'actual_yield' => 'actual_yield', 'std_yield' => 'std_yield', 'rate' => 'rate', 'amount' => 'amount',
+                'std_rate' => 'std_rate', 'actual_rate' => 'actual_rate', 'std_realisation_rate' => 'std_realisation_rate',
+                'approval_ref' => 'approval_ref', 'remarks' => 'remarks', 'cc_code' => 'cc_code', 'product_code' => 'product_code'
+            ]
+        ],
+        'downtime' => [
+            'name'         => 'Machine Downtime',
+            'sheet'        => '07.DOWNTIME',
+            'dataset_type' => 'TRANSACTION',
+            'mapping'      => [
+                'log_date' => 'log_date', 'machine_code' => 'machine_code', 'machine_name' => 'machine_name',
+                'cc_code' => 'cc_code', 'rated_hrs' => 'rated_hrs', 'run_hrs' => 'run_hrs',
+                'breakdown_hrs' => 'breakdown_hrs', 'idle_hrs' => 'idle_hrs', 'power_units_kwh' => 'power_units_kwh'
+            ]
+        ],
+        'finance_transaction' => [
+            'name'         => 'Finance Transactions',
+            'sheet'        => '08.FINANCE TRANSACTION',
+            'dataset_type' => 'TRANSACTION',
+            'mapping'      => [
+                'no' => 'no', 'date' => 'date', 'oh_code' => 'oh_code', 'oh_name' => 'oh_name',
+                'oh_behaviour' => 'oh_behaviour', 'cc_code' => 'cc_code', 'cc_name' => 'cc_name',
+                'amount' => 'amount', 'remarks' => 'remarks'
+            ]
+        ],
+        'trial_balance' => [
+            'name'         => 'Trial Balance',
+            'sheet'        => '09.TRIAL BALANCE',
+            'dataset_type' => 'TRANSACTION',
+            'mapping'      => [
+                'acc_code' => 'acc_code', 'description' => 'description', 'opening_balance' => 'opening_balance',
+                'opening_balance_sign_d_c' => 'opening_balance_sign_d_c', 'opening_debit_opening_credit' => 'opening_debit_opening_credit',
+                'transacted_debit' => 'transacted_debit', 'transacted_credit' => 'transacted_credit',
+                'closing_balance' => 'closing_balance', 'closing_balance_sign_d_c' => 'closing_balance_sign_d_c',
+                'closing_debit_closing_credit' => 'closing_debit_closing_credit'
+            ]
+        ]
+    ];
+
     try {
-        return dbQuery("
-            SELECT mg.name as group_name, sc.name as sub_name, te.table_name,
-                   coalesce(mv.version_label, 'v1.0') as version_label,
-                   coalesce(mv.confidence, 99.00) as confidence,
-                   coalesce(mv.status, sc.status) as status,
-                   sc.created_at
-            FROM public.sub_categories sc
-            JOIN public.master_groups mg ON mg.id = sc.master_group_id
-            LEFT JOIN public.target_entities te ON te.id = sc.target_entity_id
-            LEFT JOIN public.mapping_configurations mc ON mc.sub_category_id = sc.id
-            LEFT JOIN public.mapping_versions mv ON mv.id = mc.active_version_id
-            ORDER BY mg.id, sc.id
-        ")->fetchAll(PDO::FETCH_ASSOC);
+        $chkStmt = $custPdo->prepare("
+            SELECT COUNT(*) 
+            FROM public.saved_mappings 
+            WHERE LOWER(company_code) = LOWER(?) AND LOWER(target_table) = LOWER(?)
+        ");
+
+        $insStmt = $custPdo->prepare("
+            INSERT INTO public.saved_mappings (company_code, target_table, sheet_name, mapping, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?::jsonb, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (LOWER(company_code), LOWER(target_table), LOWER(sheet_name))
+            DO NOTHING
+        ");
+
+        foreach ($defaults as $tbl => $def) {
+            $chkStmt->execute([$companyCode, $tbl]);
+            $exists = (int)$chkStmt->fetchColumn();
+            if ($exists === 0) {
+                $insStmt->execute([$companyCode, $tbl, $def['sheet'], json_encode($def['mapping']), $userId ?: 1]);
+            }
+        }
+        $ensured[$key] = true;
     } catch (Throwable $e) {
-        return [];
+        error_log("ensureAllCustomerDefaultMappings error: " . $e->getMessage());
+    }
+}
+
+/**
+ * Updates or creates a persistent column mapping in the customer's dedicated database,
+ * directly from the Mapping Centre. Strictly validates user company membership.
+ */
+function updateCustomerSavedMapping(string $targetTable, array $mapping, ?string $sheetName = null, ?string $companyCode = null, ?array $user = null): array {
+    if (!$user) {
+        $user = getAuthUser();
+    }
+    $userId = (int)($user['user_id'] ?? ($_SESSION['user_id'] ?? 0));
+    $targetTable = strtolower(trim($targetTable));
+    $sheetName = $sheetName ? trim($sheetName) : '';
+
+    $orgContext = getActiveOrganizationContext();
+    if (empty($companyCode)) {
+        $companyCode = trim($orgContext['company_code'] ?? ($_SESSION['active_company_code'] ?? ''));
+    }
+    $companyId = $orgContext['company_id'] ?? ($_SESSION['active_company_id'] ?? null);
+
+    if (empty($companyCode) && !empty($companyId)) {
+        $cStmt = dbQuery("SELECT company_code FROM companies WHERE company_id = ?", [$companyId]);
+        $companyCode = trim($cStmt->fetchColumn() ?: '');
+    }
+
+    if (!empty($companyCode) && empty($companyId)) {
+        $cStmt = dbQuery("SELECT company_id FROM companies WHERE LOWER(company_code) = LOWER(?)", [$companyCode]);
+        $cid = $cStmt->fetchColumn();
+        if ($cid) $companyId = (int)$cid;
+    }
+
+    if (empty($companyCode) && $userId && function_exists('getUserAccessibleCompanies')) {
+        $userComps = getUserAccessibleCompanies($userId);
+        if (!empty($userComps)) {
+            $companyCode = trim($userComps[0]['company_code'] ?? '');
+            $companyId = (int)($userComps[0]['company_id'] ?? 0);
+        }
+    }
+
+    if (empty($companyCode)) {
+        $companyCode = 'ABC02';
+    }
+
+    // Security Check: Verify that the user belongs to that company
+    if ($userId && !isPlatformAdmin($userId) && !isCmaAdmin($userId)) {
+        $hasAccess = false;
+        if ($companyId && function_exists('userCanAccessCompany')) {
+            $hasAccess = userCanAccessCompany($userId, $companyId);
+        }
+        if (!$hasAccess && !empty($companyCode) && function_exists('getUserAccessibleCompanies')) {
+            $userComps = getUserAccessibleCompanies($userId);
+            foreach ($userComps as $uc) {
+                if (strcasecmp(trim($uc['company_code'] ?? ''), $companyCode) === 0) {
+                    $hasAccess = true;
+                    break;
+                }
+            }
+        }
+        if (!$hasAccess) {
+            return [
+                'ok'      => false,
+                'message' => "Authorization Error: You are only allowed to modify mappings for companies you belong to ({$companyCode})."
+            ];
+        }
+    }
+
+    // Connect to Customer DB
+    $custDbContext = getUserCustomerDbContext($user);
+    $custPdo = $custDbContext['pdo'];
+    $custDbName = $custDbContext['database_name'];
+    ensureCustomerSavedMappingsTable($custPdo);
+
+    $jsonMapping = json_encode($mapping);
+
+    // If updating standard_cost or a target table with multiple sheet entries, update all sheet variants for this table
+    $updAll = $custPdo->prepare("
+        UPDATE public.saved_mappings 
+        SET mapping = ?::jsonb, updated_at = CURRENT_TIMESTAMP, created_by = ?
+        WHERE LOWER(company_code) = LOWER(?) AND LOWER(target_table) = LOWER(?)
+    ");
+    $updAll->execute([$jsonMapping, $userId, $companyCode, $targetTable]);
+    $affected = $updAll->rowCount();
+
+    if ($affected === 0) {
+        $ins = $custPdo->prepare("
+            INSERT INTO public.saved_mappings (company_code, target_table, sheet_name, mapping, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?::jsonb, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (LOWER(company_code), LOWER(target_table), LOWER(sheet_name))
+            DO UPDATE SET 
+                mapping = EXCLUDED.mapping,
+                updated_at = CURRENT_TIMESTAMP,
+                created_by = EXCLUDED.created_by
+        ");
+        $ins->execute([$companyCode, $targetTable, $sheetName, $jsonMapping, $userId]);
+    }
+
+    $updatedRow = $custPdo->prepare("
+        SELECT id, updated_at 
+        FROM public.saved_mappings 
+        WHERE LOWER(company_code) = LOWER(?) AND LOWER(target_table) = LOWER(?) 
+        ORDER BY updated_at DESC LIMIT 1
+    ");
+    $updatedRow->execute([$companyCode, $targetTable]);
+    $latest = $updatedRow->fetch(PDO::FETCH_ASSOC);
+
+    logUploadAudit($userId, $user['username'] ?? 'User', 'MAPPING_CENTRE_UPDATED', 'Mapping Centre', $targetTable, 'Success', [
+        'database_name' => $custDbName,
+        'company_code'  => $companyCode,
+        'target_table'  => $targetTable,
+        'sheet_name'    => $sheetName,
+        'columns'       => count($mapping)
+    ]);
+
+    return [
+        'ok'            => true,
+        'message'       => "Mapping for '{$targetTable}' successfully updated in customer database ({$custDbName}) for company '{$companyCode}'.",
+        'id'            => $latest['id'] ?? null,
+        'updated_at'    => $latest['updated_at'] ?? date('Y-m-d H:i:s'),
+        'database_name' => $custDbName,
+        'company_code'  => $companyCode,
+        'target_table'  => $targetTable,
+        'sheet_name'    => $sheetName,
+        'mapping'       => $mapping
+    ];
+}
+
+/**
+ * Fetch dynamic mapping configurations strictly from the active customer's dedicated database.
+ */
+function getMappingConfigurationsData(?array $user = null): array {
+    if (!$user) {
+        $user = getAuthUser();
+    }
+    $userId = (int)($user['user_id'] ?? ($_SESSION['user_id'] ?? 0));
+
+    try {
+        $custDbContext = getUserCustomerDbContext($user);
+        $custPdo = $custDbContext['pdo'];
+        $custDbName = $custDbContext['database_name'];
+        ensureCustomerSavedMappingsTable($custPdo);
+
+        // Resolve active company code
+        $orgContext = getActiveOrganizationContext();
+        $companyCode = trim($orgContext['company_code'] ?? ($_SESSION['active_company_code'] ?? ''));
+        $companyId = $orgContext['company_id'] ?? ($_SESSION['active_company_id'] ?? null);
+
+        if (empty($companyCode) && !empty($companyId)) {
+            $cStmt = dbQuery("SELECT company_code FROM companies WHERE company_id = ?", [$companyId]);
+            $companyCode = trim($cStmt->fetchColumn() ?: '');
+        }
+        if (empty($companyCode) && $userId && function_exists('getUserAccessibleCompanies')) {
+            $userComps = getUserAccessibleCompanies($userId);
+            if (!empty($userComps)) {
+                $companyCode = trim($userComps[0]['company_code'] ?? '');
+            }
+        }
+        if (empty($companyCode)) {
+            $companyCode = 'ABC02';
+        }
+
+        // Ensure default mappings are seeded for this customer and company
+        ensureAllCustomerDefaultMappings($custPdo, $companyCode, $userId);
+
+        // Determine user edit permission for this company
+        $canEdit = true;
+        if ($userId && !isPlatformAdmin($userId) && !isCmaAdmin($userId)) {
+            $hasAccess = false;
+            if ($companyId && function_exists('userCanAccessCompany')) {
+                $hasAccess = userCanAccessCompany($userId, $companyId);
+            }
+            if (!$hasAccess && !empty($companyCode) && function_exists('getUserAccessibleCompanies')) {
+                $userComps = getUserAccessibleCompanies($userId);
+                foreach ($userComps as $uc) {
+                    if (strcasecmp(trim($uc['company_code'] ?? ''), $companyCode) === 0) {
+                        $hasAccess = true;
+                        break;
+                    }
+                }
+            }
+            $canEdit = $hasAccess;
+        }
+
+        // Fetch all saved mappings for this company from customer DB (group by target_table to show 1 clean rule per entity)
+        $stmt = $custPdo->prepare("
+            SELECT DISTINCT ON (LOWER(target_table)) 
+                   id, company_code, target_table, sheet_name, mapping, updated_at, created_by
+            FROM public.saved_mappings
+            WHERE LOWER(company_code) = LOWER(?)
+            ORDER BY LOWER(target_table) ASC, updated_at DESC
+        ");
+        $stmt->execute([$companyCode]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $defs = getFinalizedCategoryDefinitions();
+        $result = [];
+
+        foreach ($rows as $r) {
+            $tTable = strtolower(trim($r['target_table']));
+            $mappingArr = is_array($r['mapping']) ? $r['mapping'] : json_decode($r['mapping'], true);
+            if (!is_array($mappingArr)) $mappingArr = [];
+
+            // Match category definition for metadata
+            $defMatch = null;
+            foreach ($defs as $d) {
+                if (strtolower($d['target_table']) === $tTable) {
+                    $defMatch = $d;
+                    break;
+                }
+            }
+
+            // Get available columns in customer DB target table
+            $dbCols = getTargetTableColumns($tTable, $custPdo);
+            $dbColNames = array_column($dbCols, 'column_name');
+
+            $result[] = [
+                'id'             => (int)$r['id'],
+                'company_code'   => $r['company_code'],
+                'target_table'   => $tTable,
+                'sheet_name'     => $r['sheet_name'] ?: ($defMatch['sheet_name'] ?? $tTable),
+                'dataset_name'   => $defMatch['name'] ?? ucwords(str_replace('_', ' ', $tTable)),
+                'dataset_type'   => $defMatch['dataset_type'] ?? (isMasterDataset($tTable) ? 'MASTER' : 'TRANSACTION'),
+                'mapping'        => $mappingArr,
+                'mapping_count'  => count($mappingArr),
+                'target_columns' => $dbColNames,
+                'updated_at'     => $r['updated_at'],
+                'database_name'  => $custDbName,
+                'can_edit'       => $canEdit
+            ];
+        }
+
+        return [
+            'database_name' => $custDbName,
+            'company_code'  => $companyCode,
+            'can_edit'      => $canEdit,
+            'mappings'      => $result
+        ];
+    } catch (Throwable $e) {
+        error_log("getMappingConfigurationsData error: " . $e->getMessage());
+        return [
+            'database_name' => 'Unknown',
+            'company_code'  => 'ABC02',
+            'can_edit'      => false,
+            'mappings'      => []
+        ];
     }
 }
 

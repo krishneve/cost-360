@@ -1,0 +1,2857 @@
+{
+    "items": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "item_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('items_item_id_seq'::regclass)"
+            },
+            {
+                "column_name": "item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "NO",
+                "column_default": null
+            },
+            {
+                "column_name": "item_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_description",
+                "data_type": "text",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "category",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "uom",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "uom_code",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "uom_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 20,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp without time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_type",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_group_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_group_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "unit_of_measure",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "std_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "material_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "labour_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "overheads",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "actual_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "total",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "grade",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "net_weight_kg",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "gross_weight_kg",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "upload",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "raw_material",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "product",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "std_yield_pct",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 10,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            }
+        ],
+        "pks": [
+            "item_id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "items_pkey",
+                "indexdef": "CREATE UNIQUE INDEX items_pkey ON public.items USING btree (item_id)"
+            },
+            {
+                "indexname": "idx_items_code",
+                "indexdef": "CREATE INDEX idx_items_code ON public.items USING btree (item_code)"
+            }
+        ]
+    },
+    "work_centers": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "work_center_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('work_centers_work_center_id_seq'::regclass)"
+            },
+            {
+                "column_name": "work_center_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "work_center_name",
+                "data_type": "character varying",
+                "character_maximum_length": 200,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "hourly_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.00"
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 20,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "wc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "wc_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "wc_group_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "wc_group_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "std_mhr",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "rated_hrs_day",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            }
+        ],
+        "pks": [
+            "work_center_id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "work_centers_pkey",
+                "indexdef": "CREATE UNIQUE INDEX work_centers_pkey ON public.work_centers USING btree (work_center_id)"
+            }
+        ]
+    },
+    "party_master": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('party_master_id_seq'::regclass)"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "type",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "party_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "NO",
+                "column_default": null
+            },
+            {
+                "column_name": "party_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "party_pan",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "party_account",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "state",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "payment_terms_days",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 10,
+                "numeric_scale": 2,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            }
+        ],
+        "pks": [
+            "id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "party_master_pkey",
+                "indexdef": "CREATE UNIQUE INDEX party_master_pkey ON public.party_master USING btree (id)"
+            },
+            {
+                "indexname": "idx_party_code",
+                "indexdef": "CREATE INDEX idx_party_code ON public.party_master USING btree (party_code)"
+            }
+        ]
+    },
+    "cost_center_master": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('cost_center_master_id_seq'::regclass)"
+            },
+            {
+                "column_name": "cost_center_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cost_center_name",
+                "data_type": "character varying",
+                "character_maximum_length": 200,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_name",
+                "data_type": "character varying",
+                "character_maximum_length": 200,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "name",
+                "data_type": "character varying",
+                "character_maximum_length": 200,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "department",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_type",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "is_production",
+                "data_type": "integer",
+                "character_maximum_length": null,
+                "numeric_precision": 32,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": "1"
+            },
+            {
+                "column_name": "shift_capacity_hrs_month",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 12,
+                "numeric_scale": 2,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 20,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "now()"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "shift_capacity_hrs_per_month",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            }
+        ],
+        "pks": [
+            "id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "cost_center_master_pkey",
+                "indexdef": "CREATE UNIQUE INDEX cost_center_master_pkey ON public.cost_center_master USING btree (id)"
+            }
+        ]
+    },
+    "standard_cost": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "cost_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('standard_cost_cost_id_seq'::regclass)"
+            },
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('standard_cost_id_seq'::regclass)"
+            },
+            {
+                "column_name": "item_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "product_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cost_component",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Total'::character varying"
+            },
+            {
+                "column_name": "std_material",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "std_material_cost",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "std_conversion",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "std_conversion_cost",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "std_total_cost",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "cost_value",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "standard_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "std_rev_date",
+                "data_type": "date",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_DATE"
+            },
+            {
+                "column_name": "effective_date",
+                "data_type": "date",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_DATE"
+            },
+            {
+                "column_name": "effective_from",
+                "data_type": "date",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_DATE"
+            },
+            {
+                "column_name": "effective_to",
+                "data_type": "date",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "currency",
+                "data_type": "character varying",
+                "character_maximum_length": 10,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'INR'::character varying"
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 20,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "now()"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "std_revision_date",
+                "data_type": "date",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_DATE"
+            },
+            {
+                "column_name": "processed_material",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "processed_conversion",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "processed_total_cost",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "period_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            }
+        ],
+        "pks": [
+            "cost_id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "standard_cost_pkey",
+                "indexdef": "CREATE UNIQUE INDEX standard_cost_pkey ON public.standard_cost USING btree (cost_id)"
+            },
+            {
+                "indexname": "idx_std_cost_product",
+                "indexdef": "CREATE INDEX idx_std_cost_product ON public.standard_cost USING btree (product_code)"
+            },
+            {
+                "indexname": "idx_std_cost_item",
+                "indexdef": "CREATE INDEX idx_std_cost_item ON public.standard_cost USING btree (item_code)"
+            }
+        ]
+    },
+    "bom": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('bom_id_seq'::regclass)"
+            },
+            {
+                "column_name": "product_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "parent_item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "component_item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "std_qty_per_unit",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 5,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "quantity",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 5,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "uom",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "std_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "std_material_cost",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "scrap_pct",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 8,
+                "numeric_scale": 2,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 20,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "now()"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "parent_item_qty",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "1"
+            },
+            {
+                "column_name": "child_item_qty",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "1"
+            },
+            {
+                "column_name": "material_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "labour_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "processed_material_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "processed_labour_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "processed_std_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "scrap_item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "scrap_qty",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "scrap_unit",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "byproduct_item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "byproduct_qty",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "byproduct_unit",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "wc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            }
+        ],
+        "pks": [
+            "id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "bom_pkey",
+                "indexdef": "CREATE UNIQUE INDEX bom_pkey ON public.bom USING btree (id)"
+            },
+            {
+                "indexname": "idx_bom_product_code",
+                "indexdef": "CREATE INDEX idx_bom_product_code ON public.bom USING btree (product_code)"
+            },
+            {
+                "indexname": "idx_bom_item_code",
+                "indexdef": "CREATE INDEX idx_bom_item_code ON public.bom USING btree (item_code)"
+            }
+        ]
+    },
+    "routing": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('routing_id_seq'::regclass)"
+            },
+            {
+                "column_name": "product_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cost_center_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "work_center_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "machine_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "std_machine_hrs",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 14,
+                "numeric_scale": 5,
+                "is_nullable": "YES",
+                "column_default": "0.00000"
+            },
+            {
+                "column_name": "std_labour_hrs",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 14,
+                "numeric_scale": 5,
+                "is_nullable": "YES",
+                "column_default": "0.00000"
+            },
+            {
+                "column_name": "std_machine_hr_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 14,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "std_labour_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 14,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "std_conversion_cost",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 14,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0.0000"
+            },
+            {
+                "column_name": "operation_seq",
+                "data_type": "integer",
+                "character_maximum_length": null,
+                "numeric_precision": 32,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": "1"
+            },
+            {
+                "column_name": "setup_time_mins",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 10,
+                "numeric_scale": 2,
+                "is_nullable": "YES",
+                "column_default": "0.00"
+            },
+            {
+                "column_name": "run_time_mins",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 10,
+                "numeric_scale": 2,
+                "is_nullable": "YES",
+                "column_default": "0.00"
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 20,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "now()"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            }
+        ],
+        "pks": [
+            "id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "routing_pkey",
+                "indexdef": "CREATE UNIQUE INDEX routing_pkey ON public.routing USING btree (id)"
+            },
+            {
+                "indexname": "idx_routing_product_code",
+                "indexdef": "CREATE INDEX idx_routing_product_code ON public.routing USING btree (product_code)"
+            }
+        ]
+    },
+    "material_transaction": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('material_transaction_id_seq'::regclass)"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "doc_type",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "doc_no",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "doc_date",
+                "data_type": "date",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "party_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "party_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "item_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "uom",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "qty",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "rejected_qty",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "gross_weight",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "net_weight",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "weight_unit",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "actual_yield",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 10,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "std_yield",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 10,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "amount",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "std_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "actual_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "std_realisation_rate",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "approval_ref",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "remarks",
+                "data_type": "text",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "product_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "transaction_type",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_code",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            }
+        ],
+        "pks": [
+            "id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "material_transaction_pkey",
+                "indexdef": "CREATE UNIQUE INDEX material_transaction_pkey ON public.material_transaction USING btree (id)"
+            },
+            {
+                "indexname": "idx_mat_txn_doc",
+                "indexdef": "CREATE INDEX idx_mat_txn_doc ON public.material_transaction USING btree (doc_no)"
+            },
+            {
+                "indexname": "idx_mat_txn_item",
+                "indexdef": "CREATE INDEX idx_mat_txn_item ON public.material_transaction USING btree (item_code)"
+            },
+            {
+                "indexname": "idx_mat_txn_type",
+                "indexdef": "CREATE INDEX idx_mat_txn_type ON public.material_transaction USING btree (transaction_type)"
+            },
+            {
+                "indexname": "idx_mat_txn_doctype",
+                "indexdef": "CREATE INDEX idx_mat_txn_doctype ON public.material_transaction USING btree (doc_type)"
+            },
+            {
+                "indexname": "idx_material_transaction_period",
+                "indexdef": "CREATE INDEX idx_material_transaction_period ON public.material_transaction USING btree (period_id)"
+            },
+            {
+                "indexname": "idx_material_transaction_period_code",
+                "indexdef": "CREATE INDEX idx_material_transaction_period_code ON public.material_transaction USING btree (period_code)"
+            }
+        ]
+    },
+    "downtime": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('downtime_id_seq'::regclass)"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "log_date",
+                "data_type": "date",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "machine_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "machine_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "rated_hrs",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 12,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "run_hrs",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 12,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "breakdown_hrs",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 12,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "idle_hrs",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 12,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "power_units_kwh",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_code",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            }
+        ],
+        "pks": [
+            "id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "downtime_pkey",
+                "indexdef": "CREATE UNIQUE INDEX downtime_pkey ON public.downtime USING btree (id)"
+            },
+            {
+                "indexname": "idx_downtime_machine",
+                "indexdef": "CREATE INDEX idx_downtime_machine ON public.downtime USING btree (machine_code)"
+            },
+            {
+                "indexname": "idx_downtime_date",
+                "indexdef": "CREATE INDEX idx_downtime_date ON public.downtime USING btree (log_date)"
+            },
+            {
+                "indexname": "idx_downtime_period",
+                "indexdef": "CREATE INDEX idx_downtime_period ON public.downtime USING btree (period_id)"
+            },
+            {
+                "indexname": "idx_downtime_period_code",
+                "indexdef": "CREATE INDEX idx_downtime_period_code ON public.downtime USING btree (period_code)"
+            }
+        ]
+    },
+    "finance_transaction": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('finance_transaction_id_seq'::regclass)"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "no",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "date",
+                "data_type": "date",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "oh_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "oh_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "oh_behaviour",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "cc_name",
+                "data_type": "character varying",
+                "character_maximum_length": 255,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "amount",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "remarks",
+                "data_type": "text",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_code",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            }
+        ],
+        "pks": [
+            "id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "finance_transaction_pkey",
+                "indexdef": "CREATE UNIQUE INDEX finance_transaction_pkey ON public.finance_transaction USING btree (id)"
+            },
+            {
+                "indexname": "idx_fin_txn_no",
+                "indexdef": "CREATE INDEX idx_fin_txn_no ON public.finance_transaction USING btree (no)"
+            },
+            {
+                "indexname": "idx_fin_txn_oh",
+                "indexdef": "CREATE INDEX idx_fin_txn_oh ON public.finance_transaction USING btree (oh_code)"
+            },
+            {
+                "indexname": "idx_finance_transaction_period",
+                "indexdef": "CREATE INDEX idx_finance_transaction_period ON public.finance_transaction USING btree (period_id)"
+            },
+            {
+                "indexname": "idx_finance_transaction_period_code",
+                "indexdef": "CREATE INDEX idx_finance_transaction_period_code ON public.finance_transaction USING btree (period_code)"
+            }
+        ]
+    },
+    "trial_balance": {
+        "exists": true,
+        "columns": [
+            {
+                "column_name": "id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "NO",
+                "column_default": "nextval('trial_balance_id_seq'::regclass)"
+            },
+            {
+                "column_name": "customer_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "company_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "division_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "location_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "acc_code",
+                "data_type": "character varying",
+                "character_maximum_length": 100,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "NO",
+                "column_default": null
+            },
+            {
+                "column_name": "description",
+                "data_type": "text",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "opening_balance",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "opening_balance_sign_d_c",
+                "data_type": "character varying",
+                "character_maximum_length": 10,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "opening_debit_opening_credit",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "transacted_debit",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "transacted_credit",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "closing_balance",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "closing_balance_sign_d_c",
+                "data_type": "character varying",
+                "character_maximum_length": 10,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "closing_debit_closing_credit",
+                "data_type": "numeric",
+                "character_maximum_length": null,
+                "numeric_precision": 15,
+                "numeric_scale": 4,
+                "is_nullable": "YES",
+                "column_default": "0"
+            },
+            {
+                "column_name": "status",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "'Active'::character varying"
+            },
+            {
+                "column_name": "created_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "created_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "modified_at",
+                "data_type": "timestamp with time zone",
+                "character_maximum_length": null,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": "CURRENT_TIMESTAMP"
+            },
+            {
+                "column_name": "modified_by",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_id",
+                "data_type": "bigint",
+                "character_maximum_length": null,
+                "numeric_precision": 64,
+                "numeric_scale": 0,
+                "is_nullable": "YES",
+                "column_default": null
+            },
+            {
+                "column_name": "period_code",
+                "data_type": "character varying",
+                "character_maximum_length": 50,
+                "numeric_precision": null,
+                "numeric_scale": null,
+                "is_nullable": "YES",
+                "column_default": null
+            }
+        ],
+        "pks": [
+            "id"
+        ],
+        "fks": [],
+        "unique_constraints": [],
+        "indexes": [
+            {
+                "indexname": "trial_balance_pkey",
+                "indexdef": "CREATE UNIQUE INDEX trial_balance_pkey ON public.trial_balance USING btree (id)"
+            },
+            {
+                "indexname": "idx_tb_acc",
+                "indexdef": "CREATE INDEX idx_tb_acc ON public.trial_balance USING btree (acc_code)"
+            },
+            {
+                "indexname": "idx_trial_balance_period",
+                "indexdef": "CREATE INDEX idx_trial_balance_period ON public.trial_balance USING btree (period_id)"
+            },
+            {
+                "indexname": "idx_trial_balance_period_code",
+                "indexdef": "CREATE INDEX idx_trial_balance_period_code ON public.trial_balance USING btree (period_code)"
+            }
+        ]
+    }
+}

@@ -1,0 +1,3449 @@
+
+Warning: Undefined array key "REQUEST_METHOD" in C:\xampp\htdocs\cost-360-main\dashboard.php on line 69
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cost360 - Enterprise Workspace & Upload Centre</title>
+  <script>
+    window.cost360BaseUrlPrefix = "../";
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* Design Tokens Matched to Login Page Palette */
+    :root {
+      --color-deep-navy: #033665;
+      --color-primary-blue: #0878D1;
+      --color-dark-blue: #063D70;
+      --color-bright-cyan: #00CFEF;
+      --color-soft-blue: #EAF5FC;
+      --color-page-bg: #F5FAFE;
+      --color-white: #FFFFFF;
+      --color-primary-text: #17324D;
+      --color-secondary-text: #6B7F91;
+      --color-border: #E1EAF0;
+      --color-border-hover: #B3C9DB;
+      --shadow-card: 0 10px 30px -10px rgba(3, 54, 101, 0.08), 0 4px 12px rgba(0, 0, 0, 0.03);
+      --radius-card: 16px;
+      --radius-input: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--color-page-bg);
+      color: var(--color-primary-text);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* LEFT SIDEBAR NAVIGATION */
+    .sidebar {
+      width: 260px;
+      background: linear-gradient(180deg, var(--color-deep-navy) 0%, var(--color-dark-blue) 100%);
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 100;
+      box-shadow: 4px 0 20px rgba(3, 54, 101, 0.15);
+    }
+
+    .sidebar-brand {
+      padding: 1.25rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      min-height: 72px;
+    }
+
+    .sidebar-brand-logo {
+      max-width: 100%;
+      height: 42px;
+      width: auto;
+      object-fit: contain;
+      display: block;
+    }
+
+    .nav-section-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255, 255, 255, 0.5);
+      padding: 1.25rem 1.25rem 0.5rem;
+      font-weight: 700;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 0.75rem 1rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.85rem;
+      color: rgba(255, 255, 255, 0.85);
+      text-decoration: none;
+      border-radius: var(--radius-input);
+      font-size: 0.88rem;
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+      transition: all 0.2s ease;
+    }
+    .nav-item:hover, .nav-item.active {
+      background: rgba(0, 207, 239, 0.16);
+      color: var(--color-bright-cyan);
+    }
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+    }
+
+    /* SUBMENU & PARENT-CHILD SIDEBAR NAVIGATION */
+    .nav-parent-group {
+      margin-bottom: 0.35rem;
+    }
+    .nav-parent-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-right: 0.5rem;
+    }
+    .nav-link-main {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: inherit;
+      text-decoration: none;
+      flex: 1;
+    }
+    .nav-toggle-btn {
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.6);
+      cursor: pointer;
+      padding: 0.25rem 0.4rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.2s ease;
+    }
+    .nav-toggle-btn:hover {
+      color: var(--color-bright-cyan);
+    }
+    .arrow-icon {
+      width: 14px;
+      height: 14px;
+      transition: transform 0.25s ease;
+      stroke: currentColor;
+    }
+    .nav-parent-group.open .arrow-icon,
+    .nav-toggle-btn[aria-expanded="true"] .arrow-icon {
+      transform: rotate(90deg);
+    }
+
+    .submenu-container {
+      display: none;
+      padding-left: 1.25rem;
+      margin-top: 0.2rem;
+      margin-bottom: 0.35rem;
+      border-left: 2px solid rgba(0, 207, 239, 0.25);
+    }
+    .submenu-container.show {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .nav-child-item {
+      font-size: 0.82rem;
+      padding: 0.5rem 0.75rem;
+      color: rgba(255, 255, 255, 0.75);
+      border-radius: 6px;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .nav-child-item:hover, .nav-child-item.active {
+      background: rgba(0, 207, 239, 0.14);
+      color: var(--color-bright-cyan);
+      font-weight: 600;
+    }
+    .child-indent-arrow {
+      font-size: 0.75rem;
+      opacity: 0.6;
+    }
+
+    /* MAIN APP CONTAINER */
+    .app-main {
+      flex: 1;
+      margin-left: 260px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    /* TOP HEADER */
+    /* TOP HEADER */
+    .top-header {
+      height: 68px;
+      background: var(--color-white);
+      border-bottom: 1px solid var(--color-border);
+      padding: 0 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 90;
+      box-shadow: 0 2px 10px rgba(3, 54, 101, 0.03);
+    }
+
+    .page-heading {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--color-primary-text);
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    /* CENTER FLEXIBLE CONTEXT CONTAINER & BAR */
+    .active-org-context-container {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+
+    .header-context-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .org-context-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.38rem 0.75rem;
+      background: var(--color-soft-blue);
+      border: 1px solid #D6EAF7;
+      border-radius: 8px;
+      color: var(--color-deep-navy);
+      font-weight: 600;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    .org-context-btn:hover {
+      background: #D6EAF7;
+      border-color: #B3D8F5;
+      color: var(--color-primary-blue);
+    }
+    .org-context-btn.active {
+      background: #E0F0FA;
+      border-color: var(--color-primary-blue);
+      color: var(--color-primary-blue);
+    }
+    .org-context-btn .toggle-chevron {
+      transition: transform 0.2s ease;
+    }
+    .org-context-btn.active .toggle-chevron {
+      transform: rotate(180deg);
+    }
+
+    /* ACTIVE ORG CONTEXT CONTAINER & COMPACT TRIGGER BUTTON */
+    .active-org-context-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .context-trigger-pill-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      background: #FFFFFF;
+      border: 1px solid #C8DDF2;
+      padding: 0.35rem 0.8rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 8px rgba(3, 54, 101, 0.05);
+      text-decoration: none;
+      user-select: none;
+      max-width: 270px;
+      font-family: inherit;
+      outline: none;
+    }
+    .context-trigger-pill-btn:hover,
+    .context-trigger-pill-btn.active {
+      border-color: #0070BA;
+      background: #F4FAFF;
+      box-shadow: 0 4px 14px rgba(0, 112, 186, 0.12);
+    }
+    .context-user-icon-img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+    .context-trigger-summary {
+      display: flex;
+      flex-direction: column;
+      text-align: left;
+      overflow: hidden;
+      line-height: 1.15;
+    }
+    .context-trigger-scope {
+      font-size: 0.73rem;
+      font-weight: 700;
+      color: #033665;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+    }
+    .context-trigger-period-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #0284C7;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+    }
+    .context-trigger-arrow {
+      color: #64748B;
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+      margin-left: 2px;
+    }
+    .context-trigger-pill-btn.active .context-trigger-arrow {
+      transform: rotate(180deg);
+      color: #0070BA;
+    }
+
+    /* EXPANDABLE CONTEXT POPOVER */
+    .active-context-popover {
+      display: none;
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      width: 380px;
+      max-width: 92vw;
+      background: #FFFFFF;
+      border: 1px solid #D8E6F0;
+      border-radius: 14px;
+      box-shadow: 0 16px 40px rgba(3, 54, 101, 0.16);
+      z-index: 1050;
+      padding: 1.15rem;
+      animation: popoverSlideIn 0.2s ease forwards;
+    }
+    .active-context-popover.active {
+      display: block;
+    }
+    @keyframes popoverSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .popover-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #E2E8F0;
+      padding-bottom: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .popover-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+    .popover-header-icon {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+    }
+    .popover-title {
+      font-size: 0.86rem;
+      font-weight: 800;
+      color: #033665;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .popover-close-btn {
+      background: transparent;
+      border: none;
+      font-size: 1.25rem;
+      color: #94A3B8;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1;
+    }
+    .popover-close-btn:hover {
+      color: #0F172A;
+      background: #F1F5F9;
+    }
+    .popover-hierarchy-box {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem;
+      margin-bottom: 0.85rem;
+    }
+    .popover-hierarchy-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      padding: 0.3rem 0;
+      border-bottom: 1px dashed #E2E8F0;
+    }
+    .popover-hierarchy-row:last-child {
+      border-bottom: none;
+    }
+    .popover-h-label {
+      color: #64748B;
+      font-weight: 600;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .popover-h-value {
+      color: #033665;
+      font-weight: 700;
+      text-align: right;
+    }
+    .popover-loc-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 5px;
+    }
+    .popover-loc-badge.plant {
+      background: #E0F2FE;
+      color: #0284C7;
+    }
+    .popover-loc-badge.warehouse {
+      background: #FEF3C7;
+      color: #D97706;
+    }
+    .btn-popover-switch-wizard {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      width: 100%;
+      padding: 0.45rem;
+      border-radius: 8px;
+      background: #F0F7FD;
+      border: 1px solid #B3D8F5;
+      color: #0070BA;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-decoration: none;
+      margin-top: 0.6rem;
+      transition: all 0.2s ease;
+    }
+    .btn-popover-switch-wizard:hover {
+      background: #0070BA;
+      color: #FFFFFF;
+      border-color: #0070BA;
+    }
+    .popover-period-card {
+      border-top: 1px solid #E2E8F0;
+      padding-top: 0.85rem;
+      margin-top: 0.85rem;
+    }
+    .popover-period-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+    .popover-period-title {
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: #033665;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .btn-toggle-add-period {
+      background: transparent;
+      border: none;
+      color: #0070BA;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .btn-toggle-add-period:hover {
+      text-decoration: underline;
+    }
+    .popover-period-select {
+      width: 100%;
+      padding: 0.45rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid #CBD5E1;
+      background: #FFFFFF;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #033665;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+    .popover-period-select:focus {
+      border-color: #0070BA;
+    }
+    .popover-add-period-form {
+      display: none;
+      background: #F8FAFC;
+      border: 1px solid #CBD5E1;
+      border-radius: 8px;
+      padding: 0.75rem;
+      margin-top: 0.65rem;
+    }
+    .popover-add-period-form.active {
+      display: block;
+      animation: popoverSlideIn 0.2s ease forwards;
+    }
+    .form-input-p {
+      width: 100%;
+      padding: 0.35rem 0.55rem;
+      border: 1px solid #CBD5E1;
+      border-radius: 6px;
+      font-size: 0.76rem;
+      outline: none;
+      margin-bottom: 0.45rem;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    .form-input-p:focus {
+      border-color: #0070BA;
+    }
+
+    .user-profile-menu {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .user-details {
+      text-align: right;
+    }
+    .user-name {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--color-primary-text);
+    }
+    .user-meta {
+      font-size: 0.76rem;
+      color: var(--color-secondary-text);
+    }
+
+    .role-badge {
+      background: var(--color-soft-blue);
+      color: var(--color-primary-blue);
+      padding: 0.3rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .status-badge {
+      background: #E6F9F6;
+      color: #00A88F;
+      padding: 0.3rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .btn-logout {
+      background: transparent;
+      border: 1px solid var(--color-border);
+      color: var(--color-secondary-text);
+      padding: 0.45rem 0.9rem;
+      border-radius: var(--radius-input);
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .btn-logout:hover {
+      background: #FEE2E2;
+      color: #DC2626;
+      border-color: #FCA5A5;
+    }
+
+    /* DASHBOARD CONTENT */
+    .dashboard-container {
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.75rem;
+    }
+
+    /* HERO WELCOME BANNER */
+    .hero-welcome-card {
+      background: linear-gradient(135deg, var(--color-deep-navy) 0%, var(--color-dark-blue) 100%);
+      border-radius: var(--radius-card);
+      padding: 2rem 2.25rem;
+      color: var(--color-white);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-card);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-welcome-card::after {
+      content: '';
+      position: absolute;
+      right: -30px;
+      bottom: -30px;
+      width: 220px;
+      height: 220px;
+      background: radial-gradient(circle, rgba(0, 207, 239, 0.2) 0%, rgba(8, 120, 209, 0) 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .welcome-text h1 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      margin-bottom: 0.35rem;
+      letter-spacing: -0.02em;
+    }
+    .welcome-text p {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.95rem;
+    }
+
+    .welcome-pills {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    /* SUMMARY STAT CARDS */
+    .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .stat-card {
+      background: var(--color-white);
+      border-radius: var(--radius-card);
+      padding: 1.4rem 1.5rem;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-card);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--color-border-hover);
+    }
+
+    .stat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+    .stat-label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--color-secondary-text);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .stat-number {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--color-primary-text);
+      line-height: 1;
+    }
+    .stat-desc {
+      font-size: 0.8rem;
+      color: var(--color-secondary-text);
+      margin-top: 0.4rem;
+    }
+
+    /* SECTION CARD & TABLES */
+    .section-card {
+      background: var(--color-white);
+      border-radius: var(--radius-card);
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-card);
+      padding: 1.5rem;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--color-primary-text);
+    }
+
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.88rem;
+    }
+
+    th {
+      background: var(--color-page-bg);
+      color: var(--color-secondary-text);
+      font-weight: 700;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    td {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--color-border);
+      color: var(--color-primary-text);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: var(--color-page-bg);
+    }
+
+    code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      background: var(--color-soft-blue);
+      color: var(--color-primary-blue);
+      padding: 0.2rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.82rem;
+    }
+
+    .perm-pill {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-right: 0.25rem;
+      margin-bottom: 0.25rem;
+    }
+    .perm-create, .perm-write, .perm-add { background: #D1FAE5; color: #065F46; }
+    .perm-read, .perm-view { background: #E0F2FE; color: #0369A1; }
+    .perm-update, .perm-edit { background: #FEF3C7; color: #92400E; }
+    .perm-delete, .perm-remove { background: #FEE2E2; color: #991B1B; }
+
+    .empty-state {
+      padding: 2.5rem;
+      text-align: center;
+      color: var(--color-secondary-text);
+      font-size: 0.9rem;
+    }
+
+    /* UPLOAD CENTRE MODULE SPECIFIC STYLING */
+    .upload-dropzone {
+      border: 2px dashed var(--color-border-hover);
+      border-radius: var(--radius-card);
+      padding: 3rem 2rem;
+      text-align: center;
+      background: var(--color-white);
+      transition: all 0.25s ease;
+      cursor: pointer;
+    }
+    .upload-dropzone.drag-active, .upload-dropzone:hover {
+      border-color: var(--color-bright-cyan);
+      background: var(--color-soft-blue);
+    }
+    .upload-icon-circle {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: var(--color-soft-blue);
+      color: var(--color-primary-blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      font-weight: 800;
+      margin: 0 auto 1rem;
+    }
+
+    .btn-primary {
+      background: var(--color-primary-blue);
+      color: #fff;
+      border: none;
+      padding: 0.65rem 1.4rem;
+      border-radius: var(--radius-input);
+      font-weight: 700;
+      font-size: 0.88rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: background 0.2s ease;
+    }
+    .btn-primary:hover { background: var(--color-dark-blue); }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--color-primary-text);
+      border: 1px solid var(--color-border);
+      padding: 0.65rem 1.4rem;
+      border-radius: var(--radius-input);
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+    .btn-secondary:hover { background: var(--color-page-bg); }
+
+
+    .file-queue-box {
+      margin-top: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .file-queue-box.hidden { display: none; }
+
+    .queue-item-row, .analysis-result-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.25rem;
+      background: var(--color-white);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-input);
+      gap: 1rem;
+    }
+    .file-ext-badge {
+      padding: 0.4rem 0.75rem;
+      background: var(--color-deep-navy);
+      color: var(--color-white);
+      font-weight: 800;
+      font-size: 0.78rem;
+      border-radius: 6px;
+    }
+    .file-info-col { flex: 1; }
+    .file-title { display: block; font-size: 0.92rem; color: var(--color-primary-text); }
+    .file-size, .file-meta { font-size: 0.78rem; color: var(--color-secondary-text); }
+    .btn-remove-file {
+      background: none; border: none; font-size: 1.3rem; color: var(--color-secondary-text); cursor: pointer;
+    }
+    .btn-remove-file:hover { color: #DC2626; }
+
+    .confidence-badge {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.78rem;
+      font-weight: 700;
+      border-radius: 20px;
+    }
+    .conf-high { background: #D1FAE5; color: #065F46; }
+    .conf-med { background: #FEF3C7; color: #92400E; }
+    .conf-low { background: #FEE2E2; color: #991B1B; }
+
+    .master-tag {
+      font-weight: 700; font-size: 0.85rem; color: var(--color-primary-blue); display: block;
+    }
+    .sub-tag { font-size: 0.76rem; color: var(--color-secondary-text); }
+
+    /* DROPDOWN SELECT CONTROL STYLING */
+    .dropdown-control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 180px;
+    }
+    .dropdown-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-secondary-text);
+    }
+    .cost360-select, .cost360-select-sm {
+      padding: 0.5rem 0.85rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-input);
+      background-color: var(--color-white);
+      color: var(--color-primary-text);
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      width: 100%;
+    }
+    .cost360-select:focus, .cost360-select-sm:focus {
+      border-color: var(--color-primary-blue);
+      box-shadow: 0 0 0 3px rgba(8, 120, 209, 0.12);
+    }
+
+    .mapping-grid-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      padding: 1rem;
+      background: var(--color-page-bg);
+      border-radius: var(--radius-input);
+      border: 1px solid var(--color-border);
+    }
+    .mapping-grid-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.65rem 0.85rem;
+      background: var(--color-white);
+      border-radius: 6px;
+      border: 1px solid var(--color-border);
+    }
+    .source-header-name {
+      flex: 1;
+      font-size: 0.88rem;
+      color: var(--color-primary-text);
+    }
+    .mapping-arrow {
+      font-weight: 700;
+      color: var(--color-primary-blue);
+    }
+    .target-field-select-wrap {
+      flex: 1.5;
+    }
+    .mapping-match-status {
+      min-width: 110px;
+      text-align: right;
+    }
+
+    /* Modal Overlay */
+    .cost360-modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(3, 54, 101, 0.6);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      backdrop-filter: blur(4px);
+    }
+    .cost360-modal-dialog {
+      background: #fff;
+      width: 100%;
+      max-width: 950px;
+      max-height: 85vh;
+      border-radius: var(--radius-card);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+      overflow: hidden;
+    }
+    .modal-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-close-btn {
+      background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-secondary-text);
+    }
+    .modal-body-tablewrap {
+      flex: 1; overflow: auto; padding: 1.25rem 1.5rem;
+    }
+    .preview-data-table {
+      width: 100%; border-collapse: collapse; font-size: 0.85rem;
+    }
+    .preview-data-table th, .preview-data-table td {
+      padding: 0.65rem 0.85rem; border: 1px solid var(--color-border); text-align: left;
+    }
+    .preview-data-table th { background: var(--color-soft-blue); color: var(--color-primary-text); font-weight: 700; }
+    .modal-footer {
+      padding: 1rem 1.5rem; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .app-main { margin-left: 0; }
+      .top-header { padding: 0 1rem; }
+      .dashboard-container { padding: 1rem; }
+      .hero-welcome-card { flex-direction: column; align-items: flex-start; gap: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- DYNAMIC AUTHORIZED SIDEBAR FROM NEON DATABASE -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img src="../assets/images/cost360-logo.png" alt="Cost360 Logo" class="sidebar-brand-logo">
+    </div>
+
+    <div class="nav-section-label">Authorized Navigation</div>
+
+    <nav class="sidebar-nav">
+              <a href="../dashboard.php" class="nav-item "><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg><span>Dashboard</span></a><div class="nav-parent-group "><div class="nav-item nav-parent-item "><a href="javascript:void(0);" class="nav-link-main" onclick="toggleSubmenu(this); return false;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg><span>Customer Management</span></a><button type="button" class="nav-toggle-btn" aria-expanded="false" onclick="toggleSubmenu(this)"><svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button></div><div class="submenu-container "><a href="../customers.php" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Customer Master</span></a><a href="../organization/overview/" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Organization Overview</span></a><a href="../organization/companies/" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Company Master</span></a><a href="../organization/divisions/" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Division Master</span></a><a href="../organization/plants/" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Plant Master</span></a><a href="../organization/warehouses/" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Warehouse Master</span></a><a href="../organization/periods/" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Period Master</span></a></div></div><div class="nav-parent-group open"><div class="nav-item nav-parent-item active"><a href="javascript:void(0);" class="nav-link-main" onclick="toggleSubmenu(this); return false;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 12 8"></polygon></svg><span>Data Management</span></a><button type="button" class="nav-toggle-btn" aria-expanded="true" onclick="toggleSubmenu(this)"><svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button></div><div class="submenu-container show"><a href="../upload-centre.php" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Upload Center</span></a><a href="../mapping-centre.php" class="nav-item nav-child-item active"><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Mapping</span></a><a href="../data/validation" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Validation</span></a></div></div><div class="nav-parent-group "><div class="nav-item nav-parent-item "><a href="javascript:void(0);" class="nav-link-main" onclick="toggleSubmenu(this); return false;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 12 8"></polygon></svg><span>Costing</span></a><button type="button" class="nav-toggle-btn" aria-expanded="false" onclick="toggleSubmenu(this)"><svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button></div><div class="submenu-container "><a href="../costing/workbench" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Costing Workbench</span></a><a href="../costing/inventory" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Inventory Valuation</span></a><a href="../costing/bom" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>BOM</span></a><a href="../costing/standard-cost" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Standard Cost</span></a></div></div><div class="nav-parent-group "><div class="nav-item nav-parent-item "><a href="javascript:void(0);" class="nav-link-main" onclick="toggleSubmenu(this); return false;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 12 8"></polygon></svg><span>Audit &amp; Reconciliation</span></a><button type="button" class="nav-toggle-btn" aria-expanded="false" onclick="toggleSubmenu(this)"><svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button></div><div class="submenu-container "><a href="../audit/desk" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Audit Desk</span></a><a href="../audit/trail" class="nav-item nav-child-item "><span class="child-indent-arrow" style="margin-left: 0px;">&rarr;</span><span>Audit Trail</span></a></div></div><a href="javascript:void(0);" class="nav-item "><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 12 8"></polygon></svg><span>Settings</span></a><a href="javascript:void(0);" class="nav-item "><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg><span>Organization</span></a><a href="../upload-centre.php" class="nav-item "><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"></rect><line x1="8" y1="6" x2="16" y2="6"></line><line x1="16" y1="14" x2="16" y2="18"></line><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M8 18h.01M12 18h.01"></path></svg><span>Upload Centre</span></a><a href="../master-groups.php" class="nav-item "><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg><span>Master Groups</span></a>          </nav>
+  </aside>
+
+  <!-- MAIN APPLICATION AREA -->
+  <div class="app-main">
+
+    <!-- TOP HEADER -->
+    <header class="top-header">
+      <div class="page-heading">
+        Mapping      </div>
+
+      <!-- ACTIVE ORGANIZATION & OPERATIONAL LOCATION CONTEXT HEADER -->
+      <div class="active-org-context-container">
+        <!-- COMPACT TRIGGER BUTTON (Prevents header squishing on long titles) -->
+        <button
+          type="button"
+          id="contextPopoverToggle"
+          class="context-trigger-pill-btn"
+          onclick="toggleContextPopover(event)"
+          title="Click to view Organization Scope & Switch Period"
+        >
+          <img src="../assets/images/context-switch-icon.png" alt="Switch Context" class="context-user-icon-img" />
+          <div class="context-trigger-summary">
+            <span class="context-trigger-scope">
+                              ABC Components Division                          </span>
+            <span class="context-trigger-period-label">
+              November 2026            </span>
+          </div>
+          <svg class="context-trigger-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        <!-- FLYOUT / POPUP MODAL -->
+        <div id="contextPopover" class="active-context-popover" onclick="event.stopPropagation();">
+          <div class="popover-header">
+            <div class="popover-title-wrap">
+              <img src="../assets/images/context-switch-icon.png" alt="Context" class="popover-header-icon" />
+              <div class="popover-title">Organization Scope</div>
+            </div>
+            <button type="button" class="popover-close-btn" onclick="toggleContextPopover(event)" title="Close">&times;</button>
+          </div>
+
+          <div class="popover-hierarchy-box">
+                          <div class="popover-hierarchy-row">
+                <span class="popover-h-label">Customer</span>
+                <span class="popover-h-value">Omkar Industries</span>
+              </div>
+            
+            <div class="popover-hierarchy-row">
+              <span class="popover-h-label">Company</span>
+              <span class="popover-h-value">ABC Components Division</span>
+            </div>
+
+            <div class="popover-hierarchy-row">
+              <span class="popover-h-label">Division</span>
+              <span class="popover-h-value">Machining Division</span>
+            </div>
+
+                        <div class="popover-hierarchy-row">
+              <span class="popover-h-label">Location</span>
+              <span class="popover-h-value">
+                                  Main Plant                  <span class="popover-loc-badge plant">Plant</span>
+                              </span>
+            </div>
+
+            <a href="../customer-selection.php" class="btn-popover-switch-wizard" title="Switch Organization Hierarchy Scope">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"></polyline>
+                <polyline points="23 20 23 14 17 14"></polyline>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+              </svg>
+              <span>Switch Hierarchy Scope</span>
+            </a>
+          </div>
+
+          <div class="popover-period-card">
+            <div class="popover-period-header">
+              <span class="popover-period-title">Accounting Period</span>
+              <button type="button" class="btn-toggle-add-period" onclick="toggleAddPeriodForm()">
+                <span>+ Add Period</span>
+              </button>
+            </div>
+
+                          <select class="popover-period-select" onchange="switchActivePeriod(this.value)">
+                                  <option value="5" >
+                    November 2026 (Nov 2026)
+                  </option>
+                                  <option value="4" >
+                    October 2026 (Oct 2026)
+                  </option>
+                                  <option value="3" >
+                    September 2026 (Sep 2026)
+                  </option>
+                                  <option value="6" >
+                    FY 2026-27 – April to September (Apr 2026)
+                  </option>
+                              </select>
+            
+            <!-- INLINE ADD PERIOD FORM -->
+            <div id="popoverAddPeriodForm" class="popover-add-period-form">
+              <div style="font-size: 0.76rem; font-weight: 700; color: #033665; margin-bottom: 6px;">Create &amp; Select Period</div>
+              <form id="ajaxAddPeriodForm" onsubmit="submitPopoverNewPeriod(event)">
+                <input type="text" id="newPeriodName" name="period_name" placeholder="Period Name (e.g. October 2026)" required class="form-input-p" />
+                <div style="display: flex; gap: 6px;">
+                  <div style="flex: 1;">
+                    <label style="font-size: 0.68rem; color: #64748B; font-weight: 600; display: block; margin-bottom: 2px;">Start Date</label>
+                    <input type="date" id="newPeriodStart" name="start_date" required class="form-input-p" />
+                  </div>
+                  <div style="flex: 1;">
+                    <label style="font-size: 0.68rem; color: #64748B; font-weight: 600; display: block; margin-bottom: 2px;">End Date</label>
+                    <input type="date" id="newPeriodEnd" name="end_date" required class="form-input-p" />
+                  </div>
+                </div>
+                <div id="addPeriodErrorMsg" style="display: none; color: #DC2626; font-size: 0.72rem; font-weight: 600; margin-bottom: 6px;"></div>
+                <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px;">
+                  <button type="button" onclick="toggleAddPeriodForm()" style="padding: 4px 10px; font-size: 0.74rem; border: 1px solid #CBD5E1; background: #FFFFFF; border-radius: 5px; cursor: pointer;">Cancel</button>
+                  <button type="submit" id="btnSaveNewPeriod" style="padding: 4px 12px; font-size: 0.74rem; border: none; background: #0070BA; color: #FFFFFF; font-weight: 700; border-radius: 5px; cursor: pointer;">Save &amp; Activate</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="user-profile-menu">
+        <div class="user-details">
+          <div class="user-name">Meera Kulkarni</div>
+          <div class="user-meta">meera.management@cost360.com</div>
+        </div>
+
+        <span class="role-badge">Customer Management User</span>
+
+        <span class="status-badge">ACTIVE</span>
+
+        <a href="../logout.php" class="btn-logout">Sign Out</a>
+
+      </div>
+    </header>
+
+    <!-- DASHBOARD / UPLOAD CENTRE WORKSPACE CONTAINER -->
+    <main class="dashboard-container">
+
+      <!-- HERO WELCOME BANNER -->
+      <section class="hero-welcome-card">
+        <div class="welcome-text">
+          <h1>Welcome, Meera</h1>
+          <p>Enterprise Cost Intelligence & Dynamic Data Import Gateway</p>
+        </div>
+        <div class="welcome-pills">
+          <div style="font-size: 0.88rem;">
+            Role: <strong>Customer Management User</strong>
+          </div>
+          <div style="font-size: 0.88rem;">
+            Status: <strong>ACTIVE</strong>
+          </div>
+        </div>
+      </section>
+
+              <!-- ============================================================
+             MAPPING CENTRE PAGE MODULE (UPLOAD CENTRE DESIGN SYSTEM)
+             ============================================================ -->
+        
+        <!-- Embedded Upload Centre Design System Styles -->
+        <style>
+          .c360-map-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 1.15rem;
+            margin-bottom: 1.5rem;
+          }
+          .c360-map-kpi-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            padding: 1.15rem 1.4rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+          }
+          .c360-map-kpi-title {
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748B;
+            font-weight: 700;
+          }
+          .c360-map-kpi-value {
+            font-size: 1.35rem;
+            font-weight: 800;
+            color: #0F172A;
+            margin-top: 0.4rem;
+          }
+          .c360-map-kpi-sub {
+            font-size: 0.74rem;
+            font-weight: 600;
+            margin-top: 0.35rem;
+          }
+          .c360-scope-banner {
+            background: #F0F9FF;
+            border: 1px solid #BAE6FD;
+            border-radius: 10px;
+            padding: 0.85rem 1.5rem;
+            font-size: 0.82rem;
+            color: #0369A1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+          }
+          .c360-scope-tag {
+            font-weight: 700;
+            color: #0C4A6E;
+            background: #E0F2FE;
+            padding: 0.2rem 0.55rem;
+            border-radius: 4px;
+            border: 1px solid #BAE6FD;
+            display: inline-flex;
+            align-items: center;
+          }
+          .c360-security-notice {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.78rem;
+            color: #0284C7;
+            font-weight: 600;
+          }
+          .c360-table-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+            margin-bottom: 1.5rem;
+          }
+          .c360-mapping-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.86rem;
+          }
+          .c360-mapping-table th {
+            background: #F8FAFC;
+            color: #475569;
+            font-weight: 700;
+            font-size: 0.76rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.75rem 1rem;
+            border-bottom: 1.5px solid #CBD5E1;
+          }
+          .c360-mapping-table td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid #F1F5F9;
+            vertical-align: middle;
+            color: #1E293B;
+          }
+          .c360-mapping-table tr:hover td {
+            background: #F8FAFC;
+          }
+          .c360-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.74rem;
+            font-weight: 700;
+          }
+          .c360-badge-green  { background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; }
+          .c360-badge-cyan   { background: #E0F2FE; color: #0284C7; border: 1px solid #BAE6FD; }
+          .c360-badge-purple { background: #F3E8FF; color: #7E22CE; border: 1px solid #E9D5FF; }
+          .c360-badge-gray   { background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1; }
+          .c360-badge-amber  { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+          .c360-filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+          }
+          .c360-search-box {
+            position: relative;
+          }
+          .c360-search-input {
+            padding: 0.42rem 0.75rem 0.42rem 2rem;
+            border: 1px solid #CBD5E1;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            background: #FFFFFF;
+            color: #0F172A;
+            outline: none;
+            width: 220px;
+            transition: all 0.2s;
+          }
+          .c360-search-input:focus {
+            border-color: #0878D1;
+            box-shadow: 0 0 0 2px rgba(8, 120, 209, 0.15);
+          }
+          .c360-search-icon {
+            position: absolute;
+            left: 0.65rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94A3B8;
+            pointer-events: none;
+          }
+          .c360-filter-tab {
+            background: #FFFFFF;
+            border: 1px solid #CBD5E1;
+            color: #64748B;
+            font-size: 0.78rem;
+            font-weight: 600;
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+          }
+          .c360-filter-tab:hover { background: #F1F5F9; color: #0F172A; }
+          .c360-filter-tab.active { background: #0878D1; border-color: #0878D1; color: #FFFFFF; font-weight: 700; }
+          .c360-btn-preview {
+            background: #0878D1;
+            color: #FFFFFF;
+            font-weight: 700;
+            font-size: 0.82rem;
+            border: none;
+            padding: 0.45rem 0.95rem;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            box-shadow: 0 2px 4px rgba(8, 120, 209, 0.25);
+            transition: all 0.2s;
+            text-decoration: none;
+          }
+          .c360-btn-preview:hover {
+            background: #065DA2;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(8, 120, 209, 0.35);
+          }
+          .c360-btn-approve {
+            background: #10B981;
+            border: none;
+            color: #FFFFFF;
+            font-weight: 700;
+            font-size: 0.86rem;
+            padding: 0.55rem 1.35rem;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+            transition: all 0.2s;
+          }
+          .c360-btn-approve:hover {
+            background: #059669;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.35);
+          }
+          .c360-btn-ghost {
+            background: transparent;
+            border: 1.5px solid #CBD5E1;
+            color: #475569;
+            font-weight: 700;
+            font-size: 0.84rem;
+            padding: 0.55rem 1.15rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .c360-btn-ghost:hover { background: #F1F5F9; color: #0F172A; }
+          .c360-preview-dialog {
+            background: #FFFFFF;
+            border-radius: 12px;
+            width: 95%;
+            max-width: 1080px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 60px -15px rgba(3, 54, 101, 0.35), 0 0 0 1px rgba(226, 232, 240, 0.8);
+            overflow: hidden;
+            color: #1E293B;
+          }
+          .c360-modal-head {
+            background: linear-gradient(135deg, #033665 0%, #063D70 100%);
+            padding: 1.25rem 1.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.12);
+            color: #FFFFFF;
+          }
+          .c360-modal-title {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            color: #FFFFFF;
+          }
+          .c360-modal-meta-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-top: 0.45rem;
+            font-size: 0.8rem;
+          }
+          .c360-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.74rem;
+            font-weight: 600;
+          }
+          .c360-chip-cyan   { background: rgba(0, 207, 239, 0.15); color: #00CFEF; border: 1px solid rgba(0, 207, 239, 0.3); }
+          .c360-chip-green  { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
+          .c360-chip-gray   { background: rgba(255,255,255,0.12); color: #E2E8F0; }
+          .c360-btn-close {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #FFFFFF;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            font-size: 1.3rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            line-height: 1;
+          }
+          .c360-btn-close:hover { background: rgba(255,255,255,0.3); }
+          .c360-modal-body {
+            padding: 1.25rem 1.75rem;
+            overflow-y: auto;
+            flex: 1;
+            background: #F8FAFC;
+          }
+          .c360-modal-foot {
+            background: #FFFFFF;
+            border-top: 1px solid #E2E8F0;
+            padding: 1.1rem 1.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+          }
+          .c360-foot-status {
+            font-size: 0.85rem;
+            color: #475569;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+          }
+          .c360-foot-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10B981;
+          }
+          .c360-mapping-select {
+            width: 100%;
+            padding: 0.45rem 0.75rem;
+            background: #FFFFFF;
+            border: 1.5px solid #CBD5E1;
+            border-radius: 6px;
+            color: #0F172A;
+            font-size: 0.85rem;
+            font-weight: 600;
+            outline: none;
+            transition: all 0.2s;
+          }
+          .c360-mapping-select:focus {
+            border-color: #0878D1;
+            box-shadow: 0 0 0 3px rgba(8, 120, 209, 0.15);
+          }
+        </style>
+
+        <!-- KPI Metrics Grid (Clean Upload Center Styling) -->
+        <div class="c360-map-kpi-grid">
+          <div class="c360-map-kpi-card" style="border-left: 4px solid #00CFEF;">
+            <div class="c360-map-kpi-title">Customer Database</div>
+            <div class="c360-map-kpi-value" style="font-family: monospace; font-size: 1.15rem; color: #0369A1;">
+              cost360_customer_cust001            </div>
+            <div class="c360-map-kpi-sub" style="color: #059669;">🛡️ Isolated Dedicated Storage</div>
+          </div>
+
+          <div class="c360-map-kpi-card" style="border-left: 4px solid #0878D1;">
+            <div class="c360-map-kpi-title">Active Company Scope</div>
+            <div class="c360-map-kpi-value" style="margin-top: 0.25rem;">
+              <span class="c360-scope-tag" style="font-size: 1.05rem; padding: 0.2rem 0.65rem;">
+                ABC02              </span>
+            </div>
+            <div class="c360-map-kpi-sub" style="color: #64748B;">
+              ✔ Authorized Company Access            </div>
+          </div>
+
+          <div class="c360-map-kpi-card" style="border-left: 4px solid #10B981;">
+            <div class="c360-map-kpi-title">Configured Datasets</div>
+            <div class="c360-map-kpi-value" style="color: #059669;">
+              11 / 11 Complete
+            </div>
+            <div class="c360-map-kpi-sub" style="color: #059669;">✔ 0 Errors &middot; All Schemas Verified</div>
+          </div>
+
+          <div class="c360-map-kpi-card" style="border-left: 4px solid #8B5CF6;">
+            <div class="c360-map-kpi-title">Active Column Mappings</div>
+            <div class="c360-map-kpi-value" style="color: #7C3AED;" id="c360TotalMappingCount">
+              126 Column Rules
+            </div>
+            <div class="c360-map-kpi-sub" style="color: #7C3AED;">⚡ Pre-loaded into Upload Center</div>
+          </div>
+        </div>
+
+        <!-- Enforced Scope Context Banner -->
+        <div class="c360-scope-banner">
+          <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+            <strong style="color: #0369A1;">Tenant Context:</strong>
+            Customer: <span class="c360-scope-tag">CUST001</span> &bull;
+            Company: <span class="c360-scope-tag">ABC02</span> &bull;
+            Database: <span class="c360-scope-tag">cost360_customer_cust001</span>
+          </div>
+          <div class="c360-security-notice">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Stored strictly in customer DB &middot; Automatically applied on file upload
+          </div>
+        </div>
+
+        <!-- Main Datasets Table Card -->
+        <div class="c360-table-card">
+          <div style="padding: 1.15rem 1.4rem; border-bottom: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; background: #FFFFFF;">
+            <div>
+              <h3 style="margin: 0; font-size: 1.05rem; font-weight: 800; color: #0F172A; display: flex; align-items: center; gap: 0.5rem;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0878D1" stroke-width="2.5"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+                Dataset Column Mappings &amp; Data Contracts
+              </h3>
+              <div style="color: #64748B; font-size: 0.8rem; margin-top: 0.25rem;">
+                Persistent mapping definitions saved in your customer database for company <strong>ABC02</strong>. Click <strong>Edit Mapping</strong> to customize.
+              </div>
+            </div>
+
+            <!-- Search and Filter Tabs -->
+            <div class="c360-filter-bar">
+              <div class="c360-search-box">
+                <svg class="c360-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="c360MapSearch" class="c360-search-input" placeholder="Search dataset or table..." oninput="filterMappingRows(this.value)">
+              </div>
+              <button type="button" class="c360-filter-tab active" data-type="ALL" onclick="filterMappingType('ALL', this)">
+                All (11)
+              </button>
+              <button type="button" class="c360-filter-tab" data-type="MASTER" onclick="filterMappingType('MASTER', this)">
+                Master Data (4)
+              </button>
+              <button type="button" class="c360-filter-tab" data-type="TRANSACTION" onclick="filterMappingType('TRANSACTION', this)">
+                Transactions (7)
+              </button>
+            </div>
+          </div>
+
+          <!-- Mappings Table -->
+          <div style="overflow-x: auto;">
+            <table class="c360-mapping-table">
+              <thead>
+                <tr>
+                  <th style="width: 24%;">Dataset &amp; Target Table</th>
+                  <th style="width: 15%;">Target Worksheet</th>
+                  <th style="width: 8%; text-align: center;">Company</th>
+                  <th style="width: 10%; text-align: center;">Mapped Columns</th>
+                  <th style="width: 20%;">Sample Rules Preview</th>
+                  <th style="width: 7%; text-align: center;">Status</th>
+                  <th style="width: 8%; text-align: center;">Last Updated</th>
+                  <th style="width: 8%; text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="c360MappingsTbody">
+                                                    <tr class="c360-map-row" data-type="TRANSACTION" data-table="bom" data-name="bill of materials bom 05.a_bom">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Bill of Materials                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-purple" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          TRANSACTION                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          bom                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        05.A_BOM                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_bom" style="font-size: 0.8rem;">
+                        18 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_bom">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="uom &rarr; uom">
+                            <span style="color: #475569;">uom</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">uom</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="wc_code &rarr; wc_code">
+                            <span style="color: #475569;">wc_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">wc_code</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="std_rate &rarr; std_rate">
+                            <span style="color: #475569;">std_rate</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">std_rate</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +15 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_bom" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('bom')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="MASTER" data-table="cost_center_master" data-name="cost center master cost_center_master 04.cost_center_master">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Cost Center Master                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-cyan" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          MASTER                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          cost_center_master                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        04.COST_CENTER_MASTER                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_cost_center_master" style="font-size: 0.8rem;">
+                        5 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_cost_center_master">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="cc_code &rarr; cc_code">
+                            <span style="color: #475569;">cc_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">cc_code</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="cc_name &rarr; cc_name">
+                            <span style="color: #475569;">cc_name</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">cc_name</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="cc_type &rarr; cc_type">
+                            <span style="color: #475569;">cc_type</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">cc_type</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +2 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_cost_center_master" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('cost_center_master')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="TRANSACTION" data-table="downtime" data-name="downtime downtime 07.downtime">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Downtime                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-purple" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          TRANSACTION                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          downtime                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        07.DOWNTIME                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_downtime" style="font-size: 0.8rem;">
+                        9 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_downtime">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="cc_code &rarr; cc_code">
+                            <span style="color: #475569;">cc_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">cc_code</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="run_hrs &rarr; run_hrs">
+                            <span style="color: #475569;">run_hrs</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">run_hrs</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="idle_hrs &rarr; idle_hrs">
+                            <span style="color: #475569;">idle_hrs</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">idle_hrs</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +6 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_downtime" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('downtime')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="TRANSACTION" data-table="finance_transaction" data-name="finance transaction finance_transaction 08.finance transaction">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Finance Transaction                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-purple" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          TRANSACTION                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          finance_transaction                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        08.FINANCE TRANSACTION                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_finance_transaction" style="font-size: 0.8rem;">
+                        9 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_finance_transaction">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="no &rarr; no">
+                            <span style="color: #475569;">no</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">no</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="date &rarr; date">
+                            <span style="color: #475569;">date</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">date</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="amount &rarr; amount">
+                            <span style="color: #475569;">amount</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">amount</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +6 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_finance_transaction" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('finance_transaction')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="MASTER" data-table="items" data-name="item master product master items 01.item-product master">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Item Master Product Master                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-cyan" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          MASTER                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          items                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        01.ITEM-PRODUCT MASTER                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_items" style="font-size: 0.8rem;">
+                        19 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_items">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="grade &rarr; grade">
+                            <span style="color: #475569;">grade</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">grade</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="total &rarr; total">
+                            <span style="color: #475569;">total</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">total</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="upload &rarr; upload">
+                            <span style="color: #475569;">upload</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">upload</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +16 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_items" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('items')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="TRANSACTION" data-table="material_transaction" data-name="material transaction material_transaction 06.material transaction">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Material Transaction                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-purple" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          TRANSACTION                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          material_transaction                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        06.MATERIAL TRANSACTION                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_material_transaction" style="font-size: 0.8rem;">
+                        24 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_material_transaction">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="qty &rarr; qty">
+                            <span style="color: #475569;">qty</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">qty</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="uom &rarr; uom">
+                            <span style="color: #475569;">uom</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">uom</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="rate &rarr; rate">
+                            <span style="color: #475569;">rate</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">rate</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +21 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_material_transaction" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('material_transaction')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="MASTER" data-table="party_master" data-name="party master party_master 03.party master">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Party Master                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-cyan" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          MASTER                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          party_master                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        03.PARTY MASTER                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_party_master" style="font-size: 0.8rem;">
+                        7 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_party_master">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="type &rarr; type">
+                            <span style="color: #475569;">type</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">type</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="state &rarr; state">
+                            <span style="color: #475569;">state</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">state</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="party_pan &rarr; party_pan">
+                            <span style="color: #475569;">party_pan</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">party_pan</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +4 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_party_master" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('party_master')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="TRANSACTION" data-table="routing" data-name="routing routing 05.b_routing">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Routing                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-purple" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          TRANSACTION                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          routing                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        05.B_ROUTING                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_routing" style="font-size: 0.8rem;">
+                        8 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_routing">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="cc_code &rarr; cc_code">
+                            <span style="color: #475569;">cc_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">cc_code</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="machine_code &rarr; machine_code">
+                            <span style="color: #475569;">machine_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">machine_code</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="product_code &rarr; product_code">
+                            <span style="color: #475569;">product_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">product_code</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +5 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_routing" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('routing')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="TRANSACTION" data-table="standard_cost" data-name="standard cost standard_cost 05. standard_cost">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Standard Cost                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-purple" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          TRANSACTION                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          standard_cost                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        05. STANDARD_COST                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_standard_cost" style="font-size: 0.8rem;">
+                        9 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_standard_cost">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="product_code &rarr; product_code">
+                            <span style="color: #475569;">product_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">product_code</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="std_material &rarr; std_material">
+                            <span style="color: #475569;">std_material</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">std_material</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="std_rev_date &rarr; std_revision_date">
+                            <span style="color: #475569;">std_rev_date</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">std_revision_date</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +6 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_standard_cost" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:57                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('standard_cost')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="TRANSACTION" data-table="trial_balance" data-name="trial balance trial_balance 09.trial balance">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Trial Balance                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-purple" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          TRANSACTION                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          trial_balance                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        09.TRIAL BALANCE                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_trial_balance" style="font-size: 0.8rem;">
+                        10 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_trial_balance">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="acc_code &rarr; acc_code">
+                            <span style="color: #475569;">acc_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">acc_code</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="description &rarr; description">
+                            <span style="color: #475569;">description</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">description</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="closing_balance &rarr; closing_balance">
+                            <span style="color: #475569;">closing_balance</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">closing_balance</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +7 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_trial_balance" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('trial_balance')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                                                    <tr class="c360-map-row" data-type="MASTER" data-table="work_centers" data-name="work center master work_centers 02.work center master">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        Work Center Master                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge c360-badge-cyan" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          MASTER                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          work_centers                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        02.WORK CENTER MASTER                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        ABC02                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_work_centers" style="font-size: 0.8rem;">
+                        8 columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_work_centers">
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="cc_code &rarr; cc_code">
+                            <span style="color: #475569;">cc_code</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">cc_code</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="cc_name &rarr; cc_name">
+                            <span style="color: #475569;">cc_name</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">cc_name</strong>
+                          </span>
+                                                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="std_mhr &rarr; std_mhr">
+                            <span style="color: #475569;">std_mhr</span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;">std_mhr</strong>
+                          </span>
+                                                                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +5 more
+                          </span>
+                                              </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_work_centers" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        13 Oct 2026, 16:38                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('work_centers')"
+                              >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
+                  </tr>
+                              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             UPLOAD CENTRE STYLE EDIT MAPPING MODAL
+             ============================================================ -->
+        <div id="c360EditMappingModal" class="c360-modal-backdrop" style="display: none; position: fixed; inset: 0; background: rgba(3, 54, 101, 0.7); backdrop-filter: blur(4px); z-index: 9999; justify-content: center; align-items: center; padding: 1.5rem;">
+          <div class="c360-preview-dialog" onclick="event.stopPropagation()">
+            <!-- HEADER (Navy Theme) -->
+            <div class="c360-modal-head">
+              <div>
+                <h3 class="c360-modal-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00CFEF" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                  <span id="c360ModalTitle">Data Contract Column Mapping</span>
+                </h3>
+                <div class="c360-modal-meta-row">
+                  <span class="c360-chip c360-chip-cyan">Target Table: <strong id="c360ModalTableCode">-</strong></span>
+                  <span class="c360-chip c360-chip-green">Database: <strong>cost360_customer_cust001</strong></span>
+                  <span class="c360-chip" id="c360ModalTypeChip" style="background: rgba(168, 85, 247, 0.2); color: #D8B4FE; border: 1px solid rgba(168, 85, 247, 0.35);">⚡ MASTER DATA</span>
+                  <span class="c360-chip c360-chip-gray">Company: <strong id="c360ModalCompanyCode">ABC02</strong></span>
+                  <span class="c360-chip" style="background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(52, 211, 153, 0.4);">💾 CUSTOMER DB MAPPING ACTIVE</span>
+                </div>
+              </div>
+              <button type="button" class="c360-btn-close" onclick="closeEditMappingModal()">&times;</button>
+            </div>
+
+            <!-- ENFORCED SCOPE BANNER -->
+            <div class="c360-scope-banner" style="border-radius: 0; margin-bottom: 0;">
+              <div>
+                <strong style="color: #0369A1;">Enforced Scope:</strong>
+                Customer: <span class="c360-scope-tag">CUST001</span> &bull;
+                Company: <span class="c360-scope-tag">ABC02</span> &bull;
+                Database: <span class="c360-scope-tag">cost360_customer_cust001</span>
+              </div>
+              <div class="c360-security-notice">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Changes persist strictly to customer DB and auto-apply when uploading
+              </div>
+            </div>
+
+            <!-- MODAL BODY -->
+            <div class="c360-modal-body">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.75rem;">
+                <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #0F172A; display: flex; align-items: center; gap: 0.5rem;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0878D1" stroke-width="2.5"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+                  Source Sheet Column &rarr; Customer Database Field Mapping
+                </h4>
+
+                <div class="c360-filter-bar">
+                  <div class="c360-search-box">
+                    <svg class="c360-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="c360ModalRuleSearch" class="c360-search-input" placeholder="Search column..." oninput="filterModalRuleRows(this.value)">
+                  </div>
+                  <button type="button" class="c360-filter-tab active" data-tab="all" onclick="setModalTabFilter('all', this)">All (<span id="c360ModalCountAll">0</span>)</button>
+                  <button type="button" class="c360-filter-tab" data-tab="matched" onclick="setModalTabFilter('matched', this)">Matched (<span id="c360ModalCountMatched">0</span>)</button>
+                  <button type="button" class="c360-filter-tab" data-tab="skipped" onclick="setModalTabFilter('skipped', this)">Skipped (<span id="c360ModalCountSkipped">0</span>)</button>
+                  <button type="button" class="c360-btn-ghost" onclick="addNewMappingRuleRow('', '')" style="color: #0878D1; border-color: #BAE6FD; padding: 0.38rem 0.75rem; font-size: 0.8rem; background: #F0F9FF;">
+                    ➕ Add Custom Rule
+                  </button>
+                </div>
+              </div>
+
+              <!-- MAPPING TABLE CARD -->
+              <div class="c360-table-card" style="margin-bottom: 0;">
+                <table class="c360-mapping-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 35px; text-align: center;">#</th>
+                      <th style="width: 34%;">Source Sheet Column (Excel/CSV)</th>
+                      <th style="width: 30px; text-align: center;"></th>
+                      <th style="width: 40%;">Target Customer DB Field (PostgreSQL)</th>
+                      <th style="width: 14%; text-align: center;">Contract Status</th>
+                      <th style="width: 5%; text-align: center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="c360ModalRulesTbody">
+                    <!-- Populated dynamically by openUploadCenterMappingModal -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- FOOTER -->
+            <div class="c360-modal-foot">
+              <div class="c360-foot-status">
+                <span class="c360-foot-status-dot"></span>
+                <span id="c360ModalFootStatus"><strong>0 of 0</strong> columns mapped &amp; ready to apply</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.65rem;">
+                <button type="button" class="c360-btn-ghost" onclick="resetActiveMappingToDefaults()" style="color: #DC2626; border-color: #FECACA;">
+                  ↺ Reset to Defaults
+                </button>
+                <button type="button" class="c360-btn-ghost" onclick="closeEditMappingModal()">
+                  Close
+                </button>
+                <button type="button" id="c360SaveMappingBtn" class="c360-btn-approve" onclick="saveActiveMappingChanges()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  Approve &amp; Save Mapping
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mapping Centre Complete Script -->
+        <script>
+          window.c360MappingsStore = [{"id":12,"company_code":"ABC02","target_table":"bom","sheet_name":"05.A_BOM","dataset_name":"Bill of Materials","dataset_type":"TRANSACTION","mapping":{"uom":"uom","wc_code":"wc_code","std_rate":"std_rate","item_code":"item_code","scrap_qty":"scrap_qty","scrap_unit":"scrap_unit","labour_rate":"labour_rate","byproduct_qty":"byproduct_qty","material_rate":"material_rate","byproduct_unit":"byproduct_unit","child_item_qty":"child_item_qty","parent_item_qty":"parent_item_qty","scrap_item_code":"scrap_item_code","parent_item_code":"parent_item_code","processed_std_rate":"processed_std_rate","byproduct_item_code":"byproduct_item_code","processed_labour_rate":"processed_labour_rate","processed_material_rate":"processed_material_rate"},"mapping_count":18,"target_columns":["id","product_code","parent_item_code","item_code","component_item_code","std_qty_per_unit","quantity","uom","std_rate","rate","std_material_cost","scrap_pct","status","created_at","customer_code","company_code","division_code","location_code","created_by","modified_at","modified_by","parent_item_qty","child_item_qty","material_rate","labour_rate","processed_material_rate","processed_labour_rate","processed_std_rate","scrap_item_code","scrap_qty","scrap_unit","byproduct_item_code","byproduct_qty","byproduct_unit","wc_code"],"updated_at":"2026-10-13 16:38:32.991003+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":10,"company_code":"ABC02","target_table":"cost_center_master","sheet_name":"04.COST_CENTER_MASTER","dataset_name":"Cost Center Master","dataset_type":"MASTER","mapping":{"cc_code":"cc_code","cc_name":"cc_name","cc_type":"cc_type","is_production":"is_production","shift_capacity_hrs_per_month":"shift_capacity_hrs_per_month"},"mapping_count":5,"target_columns":["id","cost_center_code","cc_code","cost_center_name","cc_name","name","department","cc_type","is_production","shift_capacity_hrs_month","status","created_at","customer_code","company_code","division_code","location_code","created_by","modified_at","modified_by","shift_capacity_hrs_per_month"],"updated_at":"2026-10-13 16:38:32.965241+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":15,"company_code":"ABC02","target_table":"downtime","sheet_name":"07.DOWNTIME","dataset_name":"Downtime","dataset_type":"TRANSACTION","mapping":{"cc_code":"cc_code","run_hrs":"run_hrs","idle_hrs":"idle_hrs","log_date":"log_date","rated_hrs":"rated_hrs","machine_code":"machine_code","machine_name":"machine_name","breakdown_hrs":"breakdown_hrs","power_units_kwh":"power_units_kwh"},"mapping_count":9,"target_columns":["id","customer_code","company_code","division_code","location_code","log_date","machine_code","machine_name","cc_code","rated_hrs","run_hrs","breakdown_hrs","idle_hrs","power_units_kwh","status","created_at","created_by","modified_at","modified_by","period_id","period_code"],"updated_at":"2026-10-13 16:38:33.040167+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":16,"company_code":"ABC02","target_table":"finance_transaction","sheet_name":"08.FINANCE TRANSACTION","dataset_name":"Finance Transaction","dataset_type":"TRANSACTION","mapping":{"no":"no","date":"date","amount":"amount","cc_code":"cc_code","cc_name":"cc_name","oh_code":"oh_code","oh_name":"oh_name","remarks":"remarks","oh_behaviour":"oh_behaviour"},"mapping_count":9,"target_columns":["id","customer_code","company_code","division_code","location_code","no","date","oh_code","oh_name","oh_behaviour","cc_code","cc_name","amount","remarks","status","created_at","created_by","modified_at","modified_by","period_id","period_code"],"updated_at":"2026-10-13 16:38:33.046474+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":7,"company_code":"ABC02","target_table":"items","sheet_name":"01.ITEM-PRODUCT MASTER","dataset_name":"Item Master Product Master","dataset_type":"MASTER","mapping":{"grade":"grade","total":"total","upload":"upload","product":"product","std_rate":"std_rate","item_code":"item_code","item_name":"item_name","item_type":"item_type","overheads":"overheads","actual_rate":"actual_rate","labour_rate":"labour_rate","raw_material":"raw_material","material_rate":"material_rate","net_weight_kg":"net_weight_kg","std_yield_pct":"std_yield_pct","gross_weight_kg":"gross_weight_kg","item_group_code":"item_group_code","item_group_name":"item_group_name","unit_of_measure":"unit_of_measure"},"mapping_count":19,"target_columns":["item_id","item_code","item_name","item_description","category","uom","uom_code","uom_id","rate","status","created_by","created_at","customer_code","company_code","division_code","location_code","modified_at","modified_by","item_type","item_group_code","item_group_name","unit_of_measure","std_rate","material_rate","labour_rate","overheads","actual_rate","total","grade","net_weight_kg","gross_weight_kg","upload","raw_material","product","std_yield_pct"],"updated_at":"2026-10-13 16:38:32.870324+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":14,"company_code":"ABC02","target_table":"material_transaction","sheet_name":"06.MATERIAL TRANSACTION","dataset_name":"Material Transaction","dataset_type":"TRANSACTION","mapping":{"qty":"qty","uom":"uom","rate":"rate","amount":"amount","doc_no":"doc_no","cc_code":"cc_code","remarks":"remarks","doc_date":"doc_date","doc_type":"doc_type","std_rate":"std_rate","item_code":"item_code","item_name":"item_name","std_yield":"std_yield","net_weight":"net_weight","party_code":"party_code","party_name":"party_name","actual_rate":"actual_rate","weight_unit":"weight_unit","actual_yield":"actual_yield","approval_ref":"approval_ref","gross_weight":"gross_weight","product_code":"product_code","rejected_qty":"rejected_qty","std_realisation_rate":"std_realisation_rate"},"mapping_count":24,"target_columns":["id","customer_code","company_code","division_code","location_code","doc_type","doc_no","doc_date","party_code","party_name","item_code","item_name","uom","qty","rejected_qty","gross_weight","net_weight","weight_unit","actual_yield","std_yield","rate","amount","std_rate","actual_rate","std_realisation_rate","approval_ref","remarks","cc_code","product_code","status","created_at","created_by","modified_at","modified_by","transaction_type","period_id","period_code"],"updated_at":"2026-10-13 16:38:33.030672+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":9,"company_code":"ABC02","target_table":"party_master","sheet_name":"03.PARTY MASTER","dataset_name":"Party Master","dataset_type":"MASTER","mapping":{"type":"type","state":"state","party_pan":"party_pan","party_code":"party_code","party_name":"party_name","party_account":"party_account","payment_terms_days":"payment_terms_days"},"mapping_count":7,"target_columns":["id","customer_code","company_code","division_code","location_code","type","party_code","party_name","party_pan","party_account","state","payment_terms_days","status","created_at","created_by","modified_at","modified_by"],"updated_at":"2026-10-13 16:38:32.939084+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":13,"company_code":"ABC02","target_table":"routing","sheet_name":"05.B_ROUTING","dataset_name":"Routing","dataset_type":"TRANSACTION","mapping":{"cc_code":"cc_code","machine_code":"machine_code","product_code":"product_code","std_labour_hrs":"std_labour_hrs","std_labour_rate":"std_labour_rate","std_machine_hrs":"std_machine_hrs","std_conversion_cost":"std_conversion_cost","std_machine_hr_rate":"std_machine_hr_rate"},"mapping_count":8,"target_columns":["id","product_code","item_code","cc_code","cost_center_code","work_center_code","machine_code","std_machine_hrs","std_labour_hrs","std_machine_hr_rate","std_labour_rate","std_conversion_cost","operation_seq","setup_time_mins","run_time_mins","status","created_at","customer_code","company_code","division_code","location_code","created_by","modified_at","modified_by"],"updated_at":"2026-10-13 16:38:32.997753+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":11,"company_code":"ABC02","target_table":"standard_cost","sheet_name":"05. STANDARD_COST","dataset_name":"Standard Cost","dataset_type":"TRANSACTION","mapping":{"product_code":"product_code","std_material":"std_material","std_rev_date":"std_revision_date","std_conversion":"std_conversion","std_total_cost":"std_total_cost","processed_material":"processed_material","custom_user_revision":"std_revision_date","processed_conversion":"processed_conversion","processed_total_cost":"processed_total_cost"},"mapping_count":9,"target_columns":["cost_id","id","item_id","item_code","product_code","cost_component","std_material","std_material_cost","std_conversion","std_conversion_cost","std_total_cost","cost_value","standard_rate","rate","std_rev_date","effective_date","effective_from","effective_to","currency","status","created_at","customer_code","company_code","division_code","location_code","created_by","modified_at","modified_by","std_revision_date","processed_material","processed_conversion","processed_total_cost","period_id","period_code"],"updated_at":"2026-10-13 16:57:05.964817+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":17,"company_code":"ABC02","target_table":"trial_balance","sheet_name":"09.TRIAL BALANCE","dataset_name":"Trial Balance","dataset_type":"TRANSACTION","mapping":{"acc_code":"acc_code","description":"description","closing_balance":"closing_balance","opening_balance":"opening_balance","transacted_debit":"transacted_debit","transacted_credit":"transacted_credit","closing_balance_sign_d_c":"closing_balance_sign_d_c","opening_balance_sign_d_c":"opening_balance_sign_d_c","closing_debit_closing_credit":"closing_debit_closing_credit","opening_debit_opening_credit":"opening_debit_opening_credit"},"mapping_count":10,"target_columns":["id","customer_code","company_code","division_code","location_code","acc_code","description","opening_balance","opening_balance_sign_d_c","opening_debit_opening_credit","transacted_debit","transacted_credit","closing_balance","closing_balance_sign_d_c","closing_debit_closing_credit","status","created_at","created_by","modified_at","modified_by","period_id","period_code"],"updated_at":"2026-10-13 16:38:33.054039+05:30","database_name":"cost360_customer_cust001","can_edit":true},{"id":8,"company_code":"ABC02","target_table":"work_centers","sheet_name":"02.WORK CENTER MASTER","dataset_name":"Work Center Master","dataset_type":"MASTER","mapping":{"cc_code":"cc_code","cc_name":"cc_name","std_mhr":"std_mhr","wc_code":"wc_code","wc_name":"wc_name","rated_hrs_day":"rated_hrs_day","wc_group_code":"wc_group_code","wc_group_name":"wc_group_name"},"mapping_count":8,"target_columns":["work_center_id","work_center_code","work_center_name","hourly_rate","status","customer_code","company_code","division_code","location_code","created_at","created_by","modified_at","modified_by","wc_code","wc_name","wc_group_code","wc_group_name","cc_code","cc_name","std_mhr","rated_hrs_day"],"updated_at":"2026-10-13 16:38:32.923486+05:30","database_name":"cost360_customer_cust001","can_edit":true}];
+          window.c360ActiveCompCode = "ABC02";
+          window.c360ActiveCustDb   = "cost360_customer_cust001";
+          let currentEditingTableKey = null;
+          let activeModalTabFilter = 'all';
+
+          function filterMappingRows(query) {
+            const q = (query || '').toLowerCase().trim();
+            document.querySelectorAll('.c360-map-row').forEach(row => {
+              const name = row.getAttribute('data-name') || '';
+              const matches = !q || name.includes(q);
+              row.style.display = matches ? '' : 'none';
+            });
+          }
+
+          function filterMappingType(type, btn) {
+            document.querySelectorAll('.c360-filter-tab').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+
+            document.querySelectorAll('.c360-map-row').forEach(row => {
+              const rowType = row.getAttribute('data-type') || '';
+              const matches = (type === 'ALL' || rowType === type);
+              row.style.display = matches ? '' : 'none';
+            });
+          }
+
+          function openUploadCenterMappingModal(targetTable) {
+            const record = window.c360MappingsStore.find(m => m.target_table === targetTable);
+            if (!record) return alert('Mapping record not found for ' + targetTable);
+
+            currentEditingTableKey = targetTable;
+            document.getElementById('c360ModalTitle').textContent = 'Data Contract Mapping: ' + record.dataset_name;
+            document.getElementById('c360ModalTableCode').textContent = record.target_table;
+            document.getElementById('c360ModalCompanyCode').textContent = record.company_code;
+
+            const isMaster = (record.dataset_type === 'MASTER');
+            const typeChip = document.getElementById('c360ModalTypeChip');
+            if (typeChip) {
+              typeChip.textContent = isMaster ? '⚡ MASTER DATA' : '📅 TRANSACTION DATA';
+              typeChip.style.background = isMaster ? 'rgba(0, 207, 239, 0.2)' : 'rgba(168, 85, 247, 0.2)';
+              typeChip.style.color = isMaster ? '#00CFEF' : '#D8B4FE';
+              typeChip.style.border = isMaster ? '1px solid rgba(0, 207, 239, 0.35)' : '1px solid rgba(168, 85, 247, 0.35)';
+            }
+
+            const tbody = document.getElementById('c360ModalRulesTbody');
+            tbody.innerHTML = '';
+
+            const cols = record.target_columns || [];
+            const mapping = record.mapping || {};
+
+            Object.entries(mapping).forEach(([srcCol, tgtCol]) => {
+              addNewMappingRuleRow(srcCol, tgtCol, cols);
+            });
+
+            document.getElementById('c360ModalRuleSearch').value = '';
+            setModalTabFilter('all');
+            updateModalStatusCounts();
+
+            const modal = document.getElementById('c360EditMappingModal');
+            modal.style.display = 'flex';
+          }
+
+          function closeEditMappingModal() {
+            document.getElementById('c360EditMappingModal').style.display = 'none';
+            currentEditingTableKey = null;
+          }
+
+          function addNewMappingRuleRow(srcCol = '', tgtCol = '', cols = null) {
+            const record = window.c360MappingsStore.find(m => m.target_table === currentEditingTableKey);
+            const dbCols = cols || (record ? record.target_columns : []) || [];
+            const tbody = document.getElementById('c360ModalRulesTbody');
+            const rowIdx = tbody.children.length + 1;
+
+            const tr = document.createElement('tr');
+            tr.className = 'c360-modal-rule-row';
+
+            let selectOptions = `<option value="__IGNORE__">(Ignore / Skip Column)</option>`;
+            dbCols.forEach(c => {
+              const isSelected = (c.toLowerCase() === (tgtCol || '').toLowerCase()) ? 'selected' : '';
+              selectOptions += `<option value="${escapeHtml(c)}" ${isSelected}>${escapeHtml(c)}</option>`;
+            });
+
+            const isDirectMatch = tgtCol && (tgtCol.toLowerCase() === srcCol.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+            const isSkipped = !tgtCol || tgtCol === '__IGNORE__';
+
+            let badgeHtml = '';
+            if (isSkipped) {
+              badgeHtml = '<span class="c360-badge c360-badge-gray">Skipped</span>';
+              tr.setAttribute('data-status', 'skipped');
+            } else if (isDirectMatch) {
+              badgeHtml = '<span class="c360-badge c360-badge-green"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Direct Match</span>';
+              tr.setAttribute('data-status', 'matched');
+            } else {
+              badgeHtml = '<span class="c360-badge c360-badge-cyan"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Custom Mapped</span>';
+              tr.setAttribute('data-status', 'matched');
+            }
+
+            tr.innerHTML = `
+              <td style="text-align: center; color: #94A3B8; font-size: 0.78rem; font-weight: 700;">
+                ${rowIdx}
+              </td>
+              <td>
+                <input type="text" class="c360-rule-src" value="${escapeHtml(srcCol)}" placeholder="Source Column (e.g. ${escapeHtml(tgtCol || 'column_name')})" 
+                       style="width: 100%; background: #FFFFFF; border: 1.5px solid #CBD5E1; color: #0F172A; padding: 0.45rem 0.75rem; border-radius: 6px; font-family: monospace; font-size: 0.85rem; font-weight: 600; outline: none;"
+                       oninput="onModalRowChange(this)">
+              </td>
+              <td style="text-align: center; color: #0878D1; font-weight: 800; font-size: 1.1rem;">
+                &rarr;
+              </td>
+              <td>
+                <select class="c360-mapping-select c360-rule-tgt" onchange="onModalRowChange(this)">
+                  ${selectOptions}
+                </select>
+              </td>
+              <td style="text-align: center;" class="c360-rule-status-cell">
+                ${badgeHtml}
+              </td>
+              <td style="text-align: center;">
+                <button type="button" onclick="this.closest('tr').remove(); updateModalStatusCounts();" 
+                        style="background: #FEE2E2; border: 1px solid #FECACA; color: #DC2626; border-radius: 6px; padding: 0.3rem 0.5rem; cursor: pointer; font-size: 0.85rem;" title="Remove Rule">
+                  &times;
+                </button>
+              </td>
+            `;
+
+            tbody.appendChild(tr);
+            updateModalStatusCounts();
+          }
+
+          function onModalRowChange(el) {
+            const row = el.closest('tr');
+            if (!row) return;
+
+            const src = (row.querySelector('.c360-rule-src')?.value || '').trim();
+            const tgt = (row.querySelector('.c360-rule-tgt')?.value || '').trim();
+            const statusCell = row.querySelector('.c360-rule-status-cell');
+
+            if (!tgt || tgt === '__IGNORE__') {
+              row.setAttribute('data-status', 'skipped');
+              if (statusCell) statusCell.innerHTML = '<span class="c360-badge c360-badge-gray">Skipped</span>';
+            } else if (tgt.toLowerCase() === src.toLowerCase().replace(/[^a-z0-9_]/g, '')) {
+              row.setAttribute('data-status', 'matched');
+              if (statusCell) statusCell.innerHTML = '<span class="c360-badge c360-badge-green"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Direct Match</span>';
+            } else {
+              row.setAttribute('data-status', 'matched');
+              if (statusCell) statusCell.innerHTML = '<span class="c360-badge c360-badge-cyan"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Custom Mapped</span>';
+            }
+
+            updateModalStatusCounts();
+          }
+
+          function updateModalStatusCounts() {
+            const rows = document.querySelectorAll('.c360-modal-rule-row');
+            let matched = 0;
+            let skipped = 0;
+
+            rows.forEach(r => {
+              const status = r.getAttribute('data-status');
+              if (status === 'matched') matched++;
+              else if (status === 'skipped') skipped++;
+            });
+
+            document.getElementById('c360ModalCountAll').textContent = rows.length;
+            document.getElementById('c360ModalCountMatched').textContent = matched;
+            document.getElementById('c360ModalCountSkipped').textContent = skipped;
+
+            const footStatus = document.getElementById('c360ModalFootStatus');
+            if (footStatus) {
+              footStatus.innerHTML = `<strong>${matched} of ${rows.length}</strong> columns validated &amp; active in customer database`;
+            }
+          }
+
+          function setModalTabFilter(tab, btn = null) {
+            activeModalTabFilter = tab;
+            if (btn) {
+              document.querySelectorAll('.c360-modal-body .c360-filter-tab').forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+            }
+            filterModalRules();
+          }
+
+          function filterModalRuleRows(query) {
+            filterModalRules();
+          }
+
+          function filterModalRules() {
+            const q = (document.getElementById('c360ModalRuleSearch')?.value || '').toLowerCase().trim();
+            const tab = activeModalTabFilter;
+
+            document.querySelectorAll('.c360-modal-rule-row').forEach(row => {
+              const src = (row.querySelector('.c360-rule-src')?.value || '').toLowerCase();
+              const tgt = (row.querySelector('.c360-rule-tgt')?.value || '').toLowerCase();
+              const status = row.getAttribute('data-status') || 'matched';
+
+              const matchesText = !q || src.includes(q) || tgt.includes(q);
+              const matchesTab = (tab === 'all' || status === tab);
+
+              row.style.display = (matchesText && matchesTab) ? '' : 'none';
+            });
+          }
+
+          async function saveActiveMappingChanges() {
+            if (!currentEditingTableKey) return;
+            const record = window.c360MappingsStore.find(m => m.target_table === currentEditingTableKey);
+            if (!record) return;
+
+            const rows = document.querySelectorAll('.c360-modal-rule-row');
+            const newMapping = {};
+
+            rows.forEach(r => {
+              const src = r.querySelector('.c360-rule-src')?.value.trim();
+              const tgt = r.querySelector('.c360-rule-tgt')?.value.trim();
+              if (src && tgt && tgt !== '__IGNORE__') {
+                newMapping[src] = tgt;
+              }
+            });
+
+            if (Object.keys(newMapping).length === 0) {
+              if (!confirm('Warning: You have defined 0 column mappings. Are you sure you want to save an empty mapping?')) {
+                return;
+              }
+            }
+
+            const btn = document.getElementById('c360SaveMappingBtn');
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="animation: c360Spin 1s linear infinite;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Saving to Customer DB...';
+
+            try {
+              const fd = new FormData();
+              fd.append('action', 'update_mapping');
+              fd.append('target_table', currentEditingTableKey);
+              fd.append('sheet_name', record.sheet_name || '');
+              fd.append('company_code', record.company_code || window.c360ActiveCompCode);
+              fd.append('mapping', JSON.stringify(newMapping));
+
+              const res = await fetch('api/upload_api.php', { method: 'POST', body: fd });
+              const json = await res.json();
+
+              btn.disabled = false;
+              btn.innerHTML = origHtml;
+
+              if (!json.ok) {
+                alert(json.message || 'Failed to save mapping changes.');
+                return;
+              }
+
+              // Update in-memory record
+              record.mapping = newMapping;
+              record.mapping_count = Object.keys(newMapping).length;
+              record.updated_at = json.updated_at || new Date().toISOString();
+
+              // Update UI table row
+              const countEl = document.getElementById('mapCount_' + currentEditingTableKey);
+              if (countEl) countEl.textContent = record.mapping_count + ' columns';
+
+              const samplePillsEl = document.getElementById('samplePills_' + currentEditingTableKey);
+              if (samplePillsEl) {
+                const samplePairs = Object.entries(newMapping).slice(0, 3);
+                const remaining = Object.keys(newMapping).length - samplePairs.length;
+                let html = samplePairs.map(([s, t]) => `
+                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="${escapeHtml(s)} &rarr; ${escapeHtml(t)}">
+                    <span style="color: #475569;">${escapeHtml(s)}</span>
+                    <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                    <strong style="color: #0369A1;">${escapeHtml(t)}</strong>
+                  </span>
+                `).join('');
+                if (remaining > 0) {
+                  html += `<span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">+${remaining} more</span>`;
+                }
+                samplePillsEl.innerHTML = html;
+              }
+
+              const lastUpdEl = document.getElementById('lastUpdated_' + currentEditingTableKey);
+              if (lastUpdEl) lastUpdEl.textContent = 'Just now';
+
+              // Recalculate total KPI count
+              let total = 0;
+              window.c360MappingsStore.forEach(m => total += (m.mapping_count || 0));
+              const totEl = document.getElementById('c360TotalMappingCount');
+              if (totEl) totEl.textContent = total + ' Column Rules';
+
+              // Visual success confirmation on button
+              btn.style.background = '#059669';
+              btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Mapping Saved!';
+
+              setTimeout(() => {
+                btn.style.background = '#10B981';
+                btn.innerHTML = origHtml;
+                closeEditMappingModal();
+              }, 700);
+
+            } catch (err) {
+              btn.disabled = false;
+              btn.innerHTML = origHtml;
+              alert('Network error while saving mapping: ' + err.message);
+            }
+          }
+
+          function resetActiveMappingToDefaults() {
+            if (!currentEditingTableKey) return;
+            if (!confirm(`Are you sure you want to reset "${currentEditingTableKey}" to standard column mapping defaults?`)) return;
+
+            const record = window.c360MappingsStore.find(m => m.target_table === currentEditingTableKey);
+            if (!record) return;
+
+            const dbCols = record.target_columns || [];
+            const tbody = document.getElementById('c360ModalRulesTbody');
+            tbody.innerHTML = '';
+
+            dbCols.forEach(col => {
+              if (['id', 'cost_id', 'created_at', 'created_by', 'modified_at', 'modified_by', 'period_id', 'period_code'].includes(col.toLowerCase())) return;
+              let src = col;
+              if (currentEditingTableKey === 'standard_cost' && col === 'std_revision_date') {
+                src = 'std_rev_date';
+              }
+              addNewMappingRuleRow(src, col, dbCols);
+            });
+
+            updateModalStatusCounts();
+          }
+
+          function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+          }
+
+          window.openEditMappingModal = openUploadCenterMappingModal;
+        </script>
+
+
+
+      
+      
+
+    </main>
+
+  </div>
+
+  <script>
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    /* ============================================================
+       CUSTOMER MANAGEMENT MODULE JAVASCRIPT LOGIC
+       ============================================================ */
+    let allCustomersData = [];
+    let currentWizStep = 1;
+
+    async function loadCustomersTable() {
+      const tbody = document.getElementById('customersTableBody');
+      if (!tbody) return;
+
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Loading customer accounts from Neon PostgreSQL...</td></tr>';
+
+      try {
+        const resp = await fetch('api/customers_api.php?action=list');
+        const res = await resp.json();
+
+        if (!res.success) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color: #DC2626;">Error: ${escapeHtml(res.error)}</td></tr>`;
+          return;
+        }
+
+        allCustomersData = res.customers || [];
+
+        // Update KPIs
+        if (res.kpis) {
+          document.getElementById('kpiTotalCust').innerText = res.kpis.total_customers || 0;
+          document.getElementById('kpiActiveCust').innerText = res.kpis.active_customers || 0;
+          document.getElementById('kpiInactiveCust').innerText = res.kpis.inactive_customers || 0;
+          document.getElementById('kpiTotalCompanies').innerText = res.kpis.total_companies || 0;
+        }
+
+        renderCustomersRows(allCustomersData);
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color: #DC2626;">Failed to load customers: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    function renderCustomersRows(data) {
+      const tbody = document.getElementById('customersTableBody');
+      if (!tbody) return;
+
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No customer records found in Neon PostgreSQL.</td></tr>';
+        return;
+      }
+
+      let html = '';
+      data.forEach((c, idx) => {
+        const isActive = String(c.status).toUpperCase() === 'ACTIVE';
+        const statusBadge = isActive
+          ? '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">Active</span>'
+          : '<span class="status-badge" style="background: #FEE2E2; color: #DC2626;">Inactive</span>';
+
+        // Derive plan or fallback
+        const subPlan = c.subscription_plan || 'Free Starter Plan';
+        const subClass = subPlan.toLowerCase().includes('enterprise') ? 'perm-create' : (subPlan.toLowerCase().includes('pro') ? 'perm-read' : 'perm-update');
+
+        html += `
+          <tr>
+            <td>${idx + 1}</td>
+            <td><code>${escapeHtml(c.customer_code)}</code></td>
+            <td><strong>${escapeHtml(c.customer_name)}</strong></td>
+            <td>
+              <div>${escapeHtml(c.contact_person || 'N/A')}</div>
+              <div style="font-size: 0.78rem; color: var(--color-secondary-text);">${escapeHtml(c.contact_email || '')}</div>
+            </td>
+            <td><span class="perm-pill ${subClass}">${escapeHtml(subPlan)}</span></td>
+            <td>${statusBadge}</td>
+            <td style="text-align: right;">
+              <div style="display: flex; gap: 0.4rem; justify-content: flex-end;">
+                <button type="button" class="btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.78rem;" onclick="viewCustomerDetails(${c.customer_id})" title="View Details">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path></svg>
+                </button>
+                <button type="button" class="btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.78rem;" onclick="toggleCustomerStatus(${c.customer_id}, '${escapeJs(c.status)}')" title="${isActive ? 'Deactivate' : 'Activate'}">
+                  ${isActive
+                    ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#DC2626" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>'
+                    : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#059669" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = html;
+    }
+
+    function filterCustomersList() {
+      const q = (document.getElementById('custSearchInput')?.value || '').toLowerCase().trim();
+      const statusF = document.getElementById('custStatusFilter')?.value || 'ALL';
+      const subF = document.getElementById('custSubscriptionFilter')?.value || 'ALL';
+
+      const filtered = allCustomersData.filter((c, idx) => {
+        const matchesSearch = !q ||
+          (c.customer_code || '').toLowerCase().includes(q) ||
+          (c.customer_name || '').toLowerCase().includes(q) ||
+          (c.contact_person || '').toLowerCase().includes(q) ||
+          (c.contact_email || '').toLowerCase().includes(q);
+
+        const matchesStatus = statusF === 'ALL' || (c.status || '').toUpperCase() === statusF.toUpperCase();
+
+        const plan = c.subscription_plan || (idx % 2 === 0 ? 'Enterprise' : 'Professional');
+        const matchesSub = subF === 'ALL' || plan.toUpperCase() === subF.toUpperCase();
+
+        return matchesSearch && matchesStatus && matchesSub;
+      });
+
+      renderCustomersRows(filtered);
+    }
+
+    function resetCustomerFilters() {
+      if (document.getElementById('custSearchInput')) document.getElementById('custSearchInput').value = '';
+      if (document.getElementById('custStatusFilter')) document.getElementById('custStatusFilter').value = 'ALL';
+      if (document.getElementById('custSubscriptionFilter')) document.getElementById('custSubscriptionFilter').value = 'ALL';
+      renderCustomersRows(allCustomersData);
+    }
+
+    async function loadSubscriptionPlansForWizard() {
+      const select = document.getElementById('wizSubPlan');
+      if (!select) return;
+
+      try {
+        const res = await fetch('api/subscriptions_api.php?action=list_plans');
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.plans) && data.plans.length > 0) {
+          select.innerHTML = data.plans.map(p => {
+            const priceVal = parseFloat(p.price || 0);
+            const priceStr = priceVal > 0 
+              ? `${p.currency === 'USD' ? '$' : '₹'}${priceVal.toLocaleString()} / ${(p.billing_cycle || 'MONTHLY').toLowerCase()}`
+              : 'Free';
+            const usersStr = p.max_users > 0 ? `${p.max_users} Users` : 'Unlimited / Starter';
+            return `<option value="${p.plan_id}">${escapeHtml(p.plan_name)} (${usersStr} - ${priceStr})</option>`;
+          }).join('');
+        } else {
+          select.innerHTML = '<option value="">No active subscription plans available</option>';
+        }
+      } catch (err) {
+        console.error('Failed to load subscription plans for wizard:', err);
+        select.innerHTML = '<option value="">Error loading subscription plans</option>';
+      }
+    }
+
+    /* WIZARD LOGIC */
+    async function openAddCustomerWizard() {
+      document.getElementById('addCustomerForm').reset();
+      currentWizStep = 1;
+      await loadSubscriptionPlansForWizard();
+      renderWizStep();
+      document.getElementById('addCustomerWizardModal').style.display = 'flex';
+    }
+
+    function changeWizStep(delta) {
+      if (delta > 0) {
+        // Validate inputs before advancing
+        if (currentWizStep === 1) {
+          const code = document.getElementById('wizCustomerCode').value.trim();
+          const name = document.getElementById('wizCustomerName').value.trim();
+          const person = document.getElementById('wizContactPerson').value.trim();
+          const email = document.getElementById('wizContactEmail').value.trim();
+
+          if (!code || !name || !person || !email) {
+            alert('Please fill out all mandatory fields in Basic Information (*).');
+            return;
+          }
+        } else if (currentWizStep === 4) {
+          const adminName = document.getElementById('wizAdminName').value.trim();
+          const adminEmail = document.getElementById('wizAdminEmail').value.trim();
+          const adminPass = document.getElementById('wizAdminPass').value.trim();
+
+          if (!adminName || !adminEmail || !adminPass) {
+            alert('Please fill out Customer Administrator Name, Email, and Password (*).');
+            return;
+          }
+        }
+      }
+
+      currentWizStep += delta;
+      if (currentWizStep < 1) currentWizStep = 1;
+      if (currentWizStep > 6) currentWizStep = 6;
+      renderWizStep();
+    }
+
+    function renderWizStep() {
+      for (let i = 1; i <= 6; i++) {
+        const content = document.getElementById(`wizStepContent${i}`);
+        const pill = document.getElementById(`wizStepPill${i}`);
+        if (content) content.style.display = (i === currentWizStep) ? 'block' : 'none';
+        if (pill) {
+          if (i === currentWizStep) {
+            pill.style.fontWeight = '700';
+            pill.style.color = 'var(--color-primary-blue)';
+          } else {
+            pill.style.fontWeight = '400';
+            pill.style.color = 'var(--color-secondary-text)';
+          }
+        }
+      }
+
+      document.getElementById('btnWizPrev').style.display = (currentWizStep > 1) ? 'inline-block' : 'none';
+      document.getElementById('btnWizNext').style.display = (currentWizStep < 6) ? 'inline-block' : 'none';
+      document.getElementById('btnWizSubmit').style.display = (currentWizStep === 6) ? 'inline-block' : 'none';
+
+      if (currentWizStep === 6) {
+        populateWizReview();
+      }
+    }
+
+    function populateWizReview() {
+      const reviewBox = document.getElementById('wizReviewBox');
+      if (!reviewBox) return;
+
+      const code = document.getElementById('wizCustomerCode').value.trim();
+      const name = document.getElementById('wizCustomerName').value.trim();
+      const contactPerson = document.getElementById('wizContactPerson').value.trim();
+      const contactEmail = document.getElementById('wizContactEmail').value.trim();
+      const subPlanSelect = document.getElementById('wizSubPlan');
+      const subPlan = subPlanSelect && subPlanSelect.options[subPlanSelect.selectedIndex] 
+        ? subPlanSelect.options[subPlanSelect.selectedIndex].text 
+        : 'Default Plan';
+      const adminName = document.getElementById('wizAdminName').value.trim();
+      const adminEmail = document.getElementById('wizAdminEmail').value.trim();
+      const compCode = document.getElementById('wizCompCode').value.trim();
+      const compName = document.getElementById('wizCompName').value.trim();
+
+      reviewBox.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.88rem;">
+          <div>
+            <strong>Customer:</strong> ${escapeHtml(name)} (${escapeHtml(code)})<br>
+            <strong>Contact:</strong> ${escapeHtml(contactPerson)} (${escapeHtml(contactEmail)})
+          </div>
+          <div>
+            <strong>Subscription Plan:</strong> ${escapeHtml(subPlan)}<br>
+            <strong>Provisioning DB:</strong> Dedicated PostgreSQL Customer DB (cust&lt;ID&gt;)
+          </div>
+          <div style="grid-column: span 2; border-top: 1px solid var(--color-border); padding-top: 0.75rem; margin-top: 0.5rem;">
+            <strong>Customer Administrator:</strong> ${escapeHtml(adminName)} (${escapeHtml(adminEmail)})<br>
+            <strong>Assigned Role:</strong> Customer Administrator (CUSTOMER_ADMIN)<br>
+            <strong>Assigned Scope:</strong> Full Customer Scope
+          </div>
+          ${compName ? `
+          <div style="grid-column: span 2; border-top: 1px solid var(--color-border); padding-top: 0.75rem;">
+            <strong>Initial Company:</strong> ${escapeHtml(compName)} (${escapeHtml(compCode)})
+          </div>` : ''}
+        </div>
+      `;
+    }
+
+    async function submitCustomerWizard(evt) {
+      evt.preventDefault();
+      const form = document.getElementById('addCustomerForm');
+      const formData = new FormData(form);
+      formData.append('action', 'create_customer');
+
+      const submitBtn = document.getElementById('btnWizSubmit');
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Creating Customer...';
+
+      try {
+        const resp = await fetch('api/customers_api.php', {
+          method: 'POST',
+          body: formData
+        });
+        const res = await resp.json();
+
+        if (!res.success) {
+          alert('Failed to create customer: ' + (res.error || 'Unknown error'));
+          submitBtn.disabled = false;
+          submitBtn.innerText = 'Create Customer';
+          return;
+        }
+
+        alert(`Customer Created & Provisioned Successfully!\nCustomer Code: ${res.customer_code}\nDatabase: ${res.database_name || 'cust' + res.customer_id}\nAdmin Email: ${res.admin_email}`);
+        closeModal('addCustomerWizardModal');
+        loadCustomersTable();
+      } catch (err) {
+        alert('Request error: ' + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Create Customer';
+      }
+    }
+
+    async function viewCustomerDetails(customerId) {
+      const modal = document.getElementById('customerDetailsModal');
+      if (!modal) return;
+
+      modal.style.display = 'flex';
+      document.getElementById('dtlCustName').innerText = 'Loading details...';
+
+      try {
+        const resp = await fetch(`api/customers_api.php?action=get_details&customer_id=${customerId}`);
+        const res = await resp.json();
+
+        if (!res.success) {
+          alert('Error fetching customer details: ' + res.error);
+          closeModal('customerDetailsModal');
+          return;
+        }
+
+        const c = res.customer;
+        document.getElementById('dtlCustCode').innerText = c.customer_code;
+        document.getElementById('dtlCustName').innerText = c.customer_name;
+        document.getElementById('dtlCustContact').innerText = `Contact: ${c.contact_person || 'N/A'} | Email: ${c.contact_email || 'N/A'} | Phone: ${c.contact_phone || 'N/A'}`;
+        document.getElementById('dtlCustStatusBadge').innerHTML = c.status.toUpperCase() === 'ACTIVE'
+          ? '<span class="status-badge" style="background: #E6F9F6; color: #00A88F;">Active</span>'
+          : '<span class="status-badge" style="background: #FEE2E2; color: #DC2626;">Inactive</span>';
+
+        // Overview KPIs
+        if (res.kpis) {
+          document.getElementById('dtlKpiComp').innerText = res.kpis.company_count;
+          document.getElementById('dtlKpiDiv').innerText = res.kpis.division_count;
+          document.getElementById('dtlKpiPlant').innerText = res.kpis.plant_count;
+          document.getElementById('dtlKpiWh').innerText = res.kpis.warehouse_count;
+          document.getElementById('dtlKpiUser').innerText = res.kpis.user_count;
+        }
+
+        // Admin Box
+        const adm = res.admin;
+        document.getElementById('custAdminBox').innerHTML = adm ? `
+          <div style="font-size: 0.9rem;">
+            <strong>Admin Name:</strong> ${escapeHtml(adm.full_name)}<br>
+            <strong>Email:</strong> ${escapeHtml(adm.email)}<br>
+            <strong>Phone:</strong> ${escapeHtml(adm.phone || 'N/A')}<br>
+            <strong>Role:</strong> Customer Administrator (CUSTOMER_ADMIN)<br>
+            <strong>Status:</strong> ${escapeHtml(adm.status)}
+          </div>
+        ` : '<em>No Customer Administrator user assigned.</em>';
+
+        // Companies Table
+        let compHtml = '';
+        (res.companies || []).forEach(cp => {
+          compHtml += `<tr><td><code>${escapeHtml(cp.company_code)}</code></td><td><strong>${escapeHtml(cp.company_name)}</strong></td><td>${escapeHtml(cp.address || '')}</td><td><span class="status-badge">${escapeHtml(cp.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlCompaniesBody').innerHTML = compHtml || '<tr><td colspan="4" class="empty-state">No companies registered.</td></tr>';
+
+        // Divisions Table
+        let divHtml = '';
+        (res.divisions || []).forEach(d => {
+          divHtml += `<tr><td><code>${escapeHtml(d.division_code)}</code></td><td>${escapeHtml(d.division_name)}</td><td>${escapeHtml(d.company_name)}</td><td><span class="status-badge">${escapeHtml(d.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlDivisionsBody').innerHTML = divHtml || '<tr><td colspan="4" class="empty-state">No divisions registered.</td></tr>';
+
+        // Plants Table
+        let plantHtml = '';
+        (res.plants || []).forEach(p => {
+          plantHtml += `<tr><td><code>${escapeHtml(p.plant_code)}</code></td><td>${escapeHtml(p.plant_name)}</td><td>${escapeHtml(p.company_name)} / ${escapeHtml(p.division_name)}</td><td><span class="status-badge">${escapeHtml(p.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlPlantsBody').innerHTML = plantHtml || '<tr><td colspan="4" class="empty-state">No plants registered.</td></tr>';
+
+        // Warehouses Table
+        let whHtml = '';
+        (res.warehouses || []).forEach(w => {
+          whHtml += `<tr><td><code>${escapeHtml(w.warehouse_code)}</code></td><td>${escapeHtml(w.warehouse_name)}</td><td>${escapeHtml(w.company_name)} / ${escapeHtml(w.plant_name)}</td><td><span class="status-badge">${escapeHtml(w.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlWarehousesBody').innerHTML = whHtml || '<tr><td colspan="4" class="empty-state">No warehouses registered.</td></tr>';
+
+        // Users & Scope Table
+        let userHtml = '';
+        (res.users || []).forEach(u => {
+          userHtml += `<tr><td><strong>${escapeHtml(u.full_name)}</strong></td><td>${escapeHtml(u.email)}</td><td><span class="perm-pill perm-view">${escapeHtml(u.role_name || u.role_code || 'User')}</span></td><td>${escapeHtml(u.company_name || 'All Companies (Customer Scope)')}</td><td>${escapeHtml(u.plant_name || 'All Plants')}</td><td><span class="status-badge">${escapeHtml(u.status)}</span></td></tr>`;
+        });
+        document.getElementById('dtlUsersBody').innerHTML = userHtml || '<tr><td colspan="6" class="empty-state">No users assigned.</td></tr>';
+
+        // Audit Logs Table
+        let auditHtml = '';
+        (res.audit_logs || []).forEach(a => {
+          auditHtml += `<tr><td>${escapeHtml(a.timestamp)}</td><td>${escapeHtml(a.operator_name || 'System')}</td><td><span class="perm-pill perm-update">${escapeHtml(a.action)}</span></td><td>${escapeHtml(a.new_value || a.old_value || '')}</td></tr>`;
+        });
+        document.getElementById('dtlAuditBody').innerHTML = auditHtml || '<tr><td colspan="4" class="empty-state">No audit logs recorded yet.</td></tr>';
+
+      } catch (err) {
+        alert('Failed to load customer details: ' + err.message);
+      }
+    }
+
+    function switchCustTab(tabName, btn) {
+      document.querySelectorAll('.cust-tab-pane').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.cust-tab-btn').forEach(b => b.classList.remove('active'));
+
+      const paneMap = {
+        'overview': 'custTabOverview',
+        'admin': 'custTabAdmin',
+        'companies': 'custTabCompanies',
+        'divisions': 'custTabDivisions',
+        'plants': 'custTabPlants',
+        'warehouses': 'custTabWarehouses',
+        'users': 'custTabUsers',
+        'audit': 'custTabAudit'
+      };
+
+      if (paneMap[tabName]) {
+        document.getElementById(paneMap[tabName]).style.display = 'block';
+      }
+      if (btn) btn.classList.add('active');
+    }
+
+    async function toggleCustomerStatus(customerId, currentStatus) {
+      const isAct = String(currentStatus).toUpperCase() === 'ACTIVE';
+      const targetStatus = isAct ? 'Inactive' : 'Active';
+
+      if (!confirm(`Are you sure you want to ${isAct ? 'DEACTIVATE' : 'ACTIVATE'} this customer tenant account?`)) {
+        return;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('action', 'deactivate_customer');
+        formData.append('customer_id', customerId);
+        formData.append('status', targetStatus);
+
+        const resp = await fetch('api/customers_api.php', { method: 'POST', body: formData });
+        const res = await resp.json();
+
+        if (!res.success) {
+          alert('Error: ' + res.error);
+          return;
+        }
+
+        alert(res.message);
+        loadCustomersTable();
+      } catch (err) {
+        alert('Request failed: ' + err.message);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (document.getElementById('customersTableBody')) {
+        loadCustomersTable();
+      }
+    });
+
+    window.openAddCustomerWizard = openAddCustomerWizard;
+    window.changeWizStep = changeWizStep;
+    window.submitCustomerWizard = submitCustomerWizard;
+    window.filterCustomersList = filterCustomersList;
+    window.resetCustomerFilters = resetCustomerFilters;
+    window.viewCustomerDetails = viewCustomerDetails;
+    window.switchCustTab = switchCustTab;
+    window.toggleCustomerStatus = toggleCustomerStatus;
+
+    function escapeJs(str) {
+      if (!str) return '';
+      return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
+    function closeModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.style.display = 'none';
+      }
+    }
+
+    function toggleSubmenu(btnEl) {
+      const group = btnEl.closest('.nav-parent-group');
+      const container = group ? group.querySelector('.submenu-container') : null;
+      if (!container) return;
+
+      const isShow = container.classList.contains('show');
+      if (isShow) {
+        container.classList.remove('show');
+        group.classList.remove('open');
+        btnEl.setAttribute('aria-expanded', 'false');
+      } else {
+        container.classList.add('show');
+        group.classList.add('open');
+        btnEl.setAttribute('aria-expanded', 'true');
+      }
+    }
+    function switchActivePeriod(periodId) {
+      if (!periodId) return;
+      fetch(window.cost360BaseUrlPrefix + 'api/context_api.php?action=switch_period', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'period_id=' + encodeURIComponent(periodId)
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          window.location.reload();
+        } else {
+          alert('Failed to switch period: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(err => {
+        alert('Error communicating with server when switching period.');
+      });
+    }
+
+    function toggleContextPopover(e) {
+      if (e) e.stopPropagation();
+      const popover = document.getElementById('contextPopover');
+      const toggleBtn = document.getElementById('contextPopoverToggle');
+      if (!popover) return;
+      const isOpen = popover.classList.contains('active');
+      if (isOpen) {
+        popover.classList.remove('active');
+        if (toggleBtn) toggleBtn.classList.remove('active');
+      } else {
+        popover.classList.add('active');
+        if (toggleBtn) toggleBtn.classList.add('active');
+      }
+    }
+
+    function toggleAddPeriodForm() {
+      const f = document.getElementById('popoverAddPeriodForm');
+      if (!f) return;
+      f.classList.toggle('active');
+      const err = document.getElementById('addPeriodErrorMsg');
+      if (err) { err.style.display = 'none'; err.textContent = ''; }
+      if (f.classList.contains('active')) {
+        const input = document.getElementById('newPeriodName');
+        if (input) input.focus();
+      }
+    }
+
+    function submitPopoverNewPeriod(e) {
+      e.preventDefault();
+      const form = e.target;
+      const btn = document.getElementById('btnSaveNewPeriod');
+      const err = document.getElementById('addPeriodErrorMsg');
+      if (err) { err.style.display = 'none'; err.textContent = ''; }
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+      const formData = new FormData(form);
+      formData.append('action', 'create_and_select_period');
+      formData.append('is_ajax', '1');
+
+      fetch(window.location.href, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          window.location.reload();
+        } else {
+          if (err) {
+            err.textContent = data.error || 'Failed to create period.';
+            err.style.display = 'block';
+          } else {
+            alert(data.error || 'Failed to create period.');
+          }
+          if (btn) { btn.disabled = false; btn.textContent = 'Save & Activate'; }
+        }
+      })
+      .catch(errObj => {
+        if (err) {
+          err.textContent = 'Server error occurred while creating period.';
+          err.style.display = 'block';
+        }
+        if (btn) { btn.disabled = false; btn.textContent = 'Save & Activate'; }
+      });
+    }
+
+    document.addEventListener('click', function(e) {
+      const popover = document.getElementById('contextPopover');
+      const toggleBtn = document.getElementById('contextPopoverToggle');
+      if (!popover || !popover.classList.contains('active')) return;
+      if (!popover.contains(e.target) && (!toggleBtn || !toggleBtn.contains(e.target))) {
+        popover.classList.remove('active');
+        if (toggleBtn) toggleBtn.classList.remove('active');
+      }
+    });
+
+    window.toggleSubmenu = toggleSubmenu;
+    window.escapeHtml = escapeHtml;
+    window.escapeJs = escapeJs;
+    window.closeModal = closeModal;
+    window.switchActivePeriod = switchActivePeriod;
+    window.toggleContextPopover = toggleContextPopover;
+    window.toggleAddPeriodForm = toggleAddPeriodForm;
+    window.submitPopoverNewPeriod = submitPopoverNewPeriod;
+  </script>
+  <script src="../assets/js/upload_centre.js?v=1791891477"></script>
+</body>
+</html>
