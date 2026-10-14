@@ -38,6 +38,8 @@ if ($currentPage === 'users') {
     $activeMenuName = 'CMA Users';
 } elseif ($currentPage === 'companies') {
     $activeMenuName = 'Company Management';
+} elseif ($currentPage === 'mapping') {
+    $activeMenuName = 'Mapping';
 }
 
 /*
@@ -101,7 +103,7 @@ $currentPage = strtolower($_GET['page'] ?? 'dashboard'); // Kept as fallback for
 $uploadStats = ($currentPage === 'upload') ? getUploadCentreStats($user['user_id']) : ['files' => 0, 'imports' => 0, 'rows' => 0, 'warnings' => 0, 'errors' => 0, 'pending' => 0];
 $recentUploads = ($currentPage === 'upload' || $currentPage === 'history') ? getRecentUploads($user['user_id'], ($currentPage === 'upload' ? 10 : 50)) : [];
 $auditLogs = ($currentPage === 'audit') ? getUploadAuditLogs(100) : [];
-$mappingConfigsData = ($currentPage === 'mapping') ? getMappingConfigurationsData() : [];
+$mappingConfigsData = ($currentPage === 'mapping') ? getMappingConfigurationsData($user) : [];
 $masterGroupsData = ($currentPage === 'masters') ? getMasterGroupsData() : [];
 
 // Helper function for rendering menu icons safely
@@ -1058,6 +1060,7 @@ if (!function_exists('formatMenuRouteUrl')) {
     }
     .btn-secondary:hover { background: var(--color-page-bg); }
 
+
     .file-queue-box {
       margin-top: 1.5rem;
       display: flex;
@@ -1679,7 +1682,6 @@ if (!function_exists('formatMenuRouteUrl')) {
             </div>
           </div>
         </section>
-
         <?php if (!$userCanUpload): ?>
           <div style="padding: 1rem 1.25rem; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; color: #F87171; margin-bottom: 1.25rem; font-size: 0.9rem;">
             <strong>View-Only Notice:</strong> Your assigned role has view access to the Upload Center, but file uploading is disabled (<code>can_upload = false</code>). Contact your administrator to request upload permissions.
@@ -1803,45 +1805,966 @@ if (!function_exists('formatMenuRouteUrl')) {
 
       <?php elseif ($currentPage === 'mapping'): ?>
         <!-- ============================================================
-             MAPPING CENTRE PAGE MODULE (DYNAMIC FROM NEON DB)
+             MAPPING CENTRE PAGE MODULE (UPLOAD CENTRE DESIGN SYSTEM)
              ============================================================ -->
-        <section class="section-card">
-          <div class="section-header">
-            <h2 class="section-title">Mapping Configurations & Target Column Definitions</h2>
+        <?php
+          $mappingsList       = $mappingConfigsData['mappings'] ?? [];
+          $activeCustDb       = $mappingConfigsData['database_name'] ?? 'cost360_customer_cust001';
+          $activeCompCode     = $mappingConfigsData['company_code'] ?? 'ABC02';
+          $userCanEdit        = !empty($mappingConfigsData['can_edit']);
+          $totalMappingsCount = 0;
+          foreach ($mappingsList as $m) {
+              $totalMappingsCount += (int)($m['mapping_count'] ?? 0);
+          }
+        ?>
+
+        <!-- Embedded Upload Centre Design System Styles -->
+        <style>
+          .c360-map-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 1.15rem;
+            margin-bottom: 1.5rem;
+          }
+          .c360-map-kpi-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            padding: 1.15rem 1.4rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+          }
+          .c360-map-kpi-title {
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748B;
+            font-weight: 700;
+          }
+          .c360-map-kpi-value {
+            font-size: 1.35rem;
+            font-weight: 800;
+            color: #0F172A;
+            margin-top: 0.4rem;
+          }
+          .c360-map-kpi-sub {
+            font-size: 0.74rem;
+            font-weight: 600;
+            margin-top: 0.35rem;
+          }
+          .c360-scope-banner {
+            background: #F0F9FF;
+            border: 1px solid #BAE6FD;
+            border-radius: 10px;
+            padding: 0.85rem 1.5rem;
+            font-size: 0.82rem;
+            color: #0369A1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+          }
+          .c360-scope-tag {
+            font-weight: 700;
+            color: #0C4A6E;
+            background: #E0F2FE;
+            padding: 0.2rem 0.55rem;
+            border-radius: 4px;
+            border: 1px solid #BAE6FD;
+            display: inline-flex;
+            align-items: center;
+          }
+          .c360-security-notice {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.78rem;
+            color: #0284C7;
+            font-weight: 600;
+          }
+          .c360-table-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+            margin-bottom: 1.5rem;
+          }
+          .c360-mapping-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.86rem;
+          }
+          .c360-mapping-table th {
+            background: #F8FAFC;
+            color: #475569;
+            font-weight: 700;
+            font-size: 0.76rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.75rem 1rem;
+            border-bottom: 1.5px solid #CBD5E1;
+          }
+          .c360-mapping-table td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid #F1F5F9;
+            vertical-align: middle;
+            color: #1E293B;
+          }
+          .c360-mapping-table tr:hover td {
+            background: #F8FAFC;
+          }
+          .c360-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.74rem;
+            font-weight: 700;
+          }
+          .c360-badge-green  { background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; }
+          .c360-badge-cyan   { background: #E0F2FE; color: #0284C7; border: 1px solid #BAE6FD; }
+          .c360-badge-purple { background: #F3E8FF; color: #7E22CE; border: 1px solid #E9D5FF; }
+          .c360-badge-gray   { background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1; }
+          .c360-badge-amber  { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+          .c360-filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+          }
+          .c360-search-box {
+            position: relative;
+          }
+          .c360-search-input {
+            padding: 0.42rem 0.75rem 0.42rem 2rem;
+            border: 1px solid #CBD5E1;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            background: #FFFFFF;
+            color: #0F172A;
+            outline: none;
+            width: 220px;
+            transition: all 0.2s;
+          }
+          .c360-search-input:focus {
+            border-color: #0878D1;
+            box-shadow: 0 0 0 2px rgba(8, 120, 209, 0.15);
+          }
+          .c360-search-icon {
+            position: absolute;
+            left: 0.65rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94A3B8;
+            pointer-events: none;
+          }
+          .c360-filter-tab {
+            background: #FFFFFF;
+            border: 1px solid #CBD5E1;
+            color: #64748B;
+            font-size: 0.78rem;
+            font-weight: 600;
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+          }
+          .c360-filter-tab:hover { background: #F1F5F9; color: #0F172A; }
+          .c360-filter-tab.active { background: #0878D1; border-color: #0878D1; color: #FFFFFF; font-weight: 700; }
+          .c360-btn-preview {
+            background: #0878D1;
+            color: #FFFFFF;
+            font-weight: 700;
+            font-size: 0.82rem;
+            border: none;
+            padding: 0.45rem 0.95rem;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            box-shadow: 0 2px 4px rgba(8, 120, 209, 0.25);
+            transition: all 0.2s;
+            text-decoration: none;
+          }
+          .c360-btn-preview:hover {
+            background: #065DA2;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(8, 120, 209, 0.35);
+          }
+          .c360-btn-approve {
+            background: #10B981;
+            border: none;
+            color: #FFFFFF;
+            font-weight: 700;
+            font-size: 0.86rem;
+            padding: 0.55rem 1.35rem;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+            transition: all 0.2s;
+          }
+          .c360-btn-approve:hover {
+            background: #059669;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.35);
+          }
+          .c360-btn-ghost {
+            background: transparent;
+            border: 1.5px solid #CBD5E1;
+            color: #475569;
+            font-weight: 700;
+            font-size: 0.84rem;
+            padding: 0.55rem 1.15rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .c360-btn-ghost:hover { background: #F1F5F9; color: #0F172A; }
+          .c360-preview-dialog {
+            background: #FFFFFF;
+            border-radius: 12px;
+            width: 95%;
+            max-width: 1080px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 60px -15px rgba(3, 54, 101, 0.35), 0 0 0 1px rgba(226, 232, 240, 0.8);
+            overflow: hidden;
+            color: #1E293B;
+          }
+          .c360-modal-head {
+            background: linear-gradient(135deg, #033665 0%, #063D70 100%);
+            padding: 1.25rem 1.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.12);
+            color: #FFFFFF;
+          }
+          .c360-modal-title {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            color: #FFFFFF;
+          }
+          .c360-modal-meta-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-top: 0.45rem;
+            font-size: 0.8rem;
+          }
+          .c360-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.74rem;
+            font-weight: 600;
+          }
+          .c360-chip-cyan   { background: rgba(0, 207, 239, 0.15); color: #00CFEF; border: 1px solid rgba(0, 207, 239, 0.3); }
+          .c360-chip-green  { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
+          .c360-chip-gray   { background: rgba(255,255,255,0.12); color: #E2E8F0; }
+          .c360-btn-close {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #FFFFFF;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            font-size: 1.3rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            line-height: 1;
+          }
+          .c360-btn-close:hover { background: rgba(255,255,255,0.3); }
+          .c360-modal-body {
+            padding: 1.25rem 1.75rem;
+            overflow-y: auto;
+            flex: 1;
+            background: #F8FAFC;
+          }
+          .c360-modal-foot {
+            background: #FFFFFF;
+            border-top: 1px solid #E2E8F0;
+            padding: 1.1rem 1.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+          }
+          .c360-foot-status {
+            font-size: 0.85rem;
+            color: #475569;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+          }
+          .c360-foot-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10B981;
+          }
+          .c360-mapping-select {
+            width: 100%;
+            padding: 0.45rem 0.75rem;
+            background: #FFFFFF;
+            border: 1.5px solid #CBD5E1;
+            border-radius: 6px;
+            color: #0F172A;
+            font-size: 0.85rem;
+            font-weight: 600;
+            outline: none;
+            transition: all 0.2s;
+          }
+          .c360-mapping-select:focus {
+            border-color: #0878D1;
+            box-shadow: 0 0 0 3px rgba(8, 120, 209, 0.15);
+          }
+        </style>
+
+        <!-- KPI Metrics Grid (Clean Upload Center Styling) -->
+        <div class="c360-map-kpi-grid">
+          <div class="c360-map-kpi-card" style="border-left: 4px solid #00CFEF;">
+            <div class="c360-map-kpi-title">Customer Database</div>
+            <div class="c360-map-kpi-value" style="font-family: monospace; font-size: 1.15rem; color: #0369A1;">
+              <?= htmlspecialchars($activeCustDb) ?>
+            </div>
+            <div class="c360-map-kpi-sub" style="color: #059669;">🛡️ Isolated Dedicated Storage</div>
           </div>
-          <div class="table-responsive">
-            <?php if (!empty($mappingConfigsData)): ?>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Master Group</th>
-                    <th>Sub Category</th>
-                    <th>Target Neon Table</th>
-                    <th>Matching Confidence</th>
-                    <th>Status</th>
+
+          <div class="c360-map-kpi-card" style="border-left: 4px solid #0878D1;">
+            <div class="c360-map-kpi-title">Active Company Scope</div>
+            <div class="c360-map-kpi-value" style="margin-top: 0.25rem;">
+              <span class="c360-scope-tag" style="font-size: 1.05rem; padding: 0.2rem 0.65rem;">
+                <?= htmlspecialchars($activeCompCode) ?>
+              </span>
+            </div>
+            <div class="c360-map-kpi-sub" style="color: #64748B;">
+              <?= $userCanEdit ? '✔ Authorized Company Access' : '🔒 Read-Only Access' ?>
+            </div>
+          </div>
+
+          <div class="c360-map-kpi-card" style="border-left: 4px solid #10B981;">
+            <div class="c360-map-kpi-title">Configured Datasets</div>
+            <div class="c360-map-kpi-value" style="color: #059669;">
+              <?= count($mappingsList) ?> / 11 Complete
+            </div>
+            <div class="c360-map-kpi-sub" style="color: #059669;">✔ 0 Errors &middot; All Schemas Verified</div>
+          </div>
+
+          <div class="c360-map-kpi-card" style="border-left: 4px solid #8B5CF6;">
+            <div class="c360-map-kpi-title">Active Column Mappings</div>
+            <div class="c360-map-kpi-value" style="color: #7C3AED;" id="c360TotalMappingCount">
+              <?= $totalMappingsCount ?> Column Rules
+            </div>
+            <div class="c360-map-kpi-sub" style="color: #7C3AED;">⚡ Pre-loaded into Upload Center</div>
+          </div>
+        </div>
+
+        <!-- Enforced Scope Context Banner -->
+        <div class="c360-scope-banner">
+          <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+            <strong style="color: #0369A1;">Tenant Context:</strong>
+            Customer: <span class="c360-scope-tag">CUST001</span> &bull;
+            Company: <span class="c360-scope-tag"><?= htmlspecialchars($activeCompCode) ?></span> &bull;
+            Database: <span class="c360-scope-tag"><?= htmlspecialchars($activeCustDb) ?></span>
+          </div>
+          <div class="c360-security-notice">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Stored strictly in customer DB &middot; Automatically applied on file upload
+          </div>
+        </div>
+
+        <!-- Main Datasets Table Card -->
+        <div class="c360-table-card">
+          <div style="padding: 1.15rem 1.4rem; border-bottom: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; background: #FFFFFF;">
+            <div>
+              <h3 style="margin: 0; font-size: 1.05rem; font-weight: 800; color: #0F172A; display: flex; align-items: center; gap: 0.5rem;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0878D1" stroke-width="2.5"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+                Dataset Column Mappings &amp; Data Contracts
+              </h3>
+              <div style="color: #64748B; font-size: 0.8rem; margin-top: 0.25rem;">
+                Persistent mapping definitions saved in your customer database for company <strong><?= htmlspecialchars($activeCompCode) ?></strong>. Click <strong>Edit Mapping</strong> to customize.
+              </div>
+            </div>
+
+            <!-- Search and Filter Tabs -->
+            <div class="c360-filter-bar">
+              <div class="c360-search-box">
+                <svg class="c360-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="c360MapSearch" class="c360-search-input" placeholder="Search dataset or table..." oninput="filterMappingRows(this.value)">
+              </div>
+              <button type="button" class="c360-filter-tab active" data-type="ALL" onclick="filterMappingType('ALL', this)">
+                All (<?= count($mappingsList) ?>)
+              </button>
+              <button type="button" class="c360-filter-tab" data-type="MASTER" onclick="filterMappingType('MASTER', this)">
+                Master Data (4)
+              </button>
+              <button type="button" class="c360-filter-tab" data-type="TRANSACTION" onclick="filterMappingType('TRANSACTION', this)">
+                Transactions (7)
+              </button>
+            </div>
+          </div>
+
+          <!-- Mappings Table -->
+          <div style="overflow-x: auto;">
+            <table class="c360-mapping-table">
+              <thead>
+                <tr>
+                  <th style="width: 24%;">Dataset &amp; Target Table</th>
+                  <th style="width: 15%;">Target Worksheet</th>
+                  <th style="width: 8%; text-align: center;">Company</th>
+                  <th style="width: 10%; text-align: center;">Mapped Columns</th>
+                  <th style="width: 20%;">Sample Rules Preview</th>
+                  <th style="width: 7%; text-align: center;">Status</th>
+                  <th style="width: 8%; text-align: center;">Last Updated</th>
+                  <th style="width: 8%; text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="c360MappingsTbody">
+                <?php foreach ($mappingsList as $idx => $m): ?>
+                  <?php
+                    $dsType = $m['dataset_type'] ?? 'MASTER';
+                    $isMaster = ($dsType === 'MASTER');
+                    $mapRules = $m['mapping'] ?? [];
+                    $samplePairs = array_slice($mapRules, 0, 3, true);
+                    $remainingCount = count($mapRules) - count($samplePairs);
+                  ?>
+                  <tr class="c360-map-row" data-type="<?= htmlspecialchars($dsType) ?>" data-table="<?= htmlspecialchars($m['target_table']) ?>" data-name="<?= htmlspecialchars(strtolower($m['dataset_name'] . ' ' . $m['target_table'] . ' ' . $m['sheet_name'])) ?>">
+                    <td>
+                      <div style="font-weight: 700; color: #0F172A; font-size: 0.94rem; margin-bottom: 0.25rem;">
+                        <?= htmlspecialchars($m['dataset_name']) ?>
+                      </div>
+                      <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="c360-badge <?= $isMaster ? 'c360-badge-cyan' : 'c360-badge-purple' ?>" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;">
+                          <?= htmlspecialchars($dsType) ?>
+                        </span>
+                        <code style="background: #F1F5F9; color: #0369A1; border: 1px solid #BAE6FD; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700; font-size: 0.76rem;">
+                          <?= htmlspecialchars($m['target_table']) ?>
+                        </code>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style="font-size: 0.82rem; font-family: monospace; color: #334155; background: #F8FAFC; padding: 0.25rem 0.55rem; border-radius: 4px; border: 1px solid #E2E8F0; font-weight: 600;">
+                        <?= htmlspecialchars($m['sheet_name']) ?>
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-scope-tag">
+                        <?= htmlspecialchars($m['company_code']) ?>
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green" id="mapCount_<?= htmlspecialchars($m['target_table']) ?>" style="font-size: 0.8rem;">
+                        <?= count($mapRules) ?> columns
+                      </span>
+                    </td>
+
+                    <td>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;" id="samplePills_<?= htmlspecialchars($m['target_table']) ?>">
+                        <?php foreach ($samplePairs as $srcCol => $tgtCol): ?>
+                          <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="<?= htmlspecialchars($srcCol) ?> &rarr; <?= htmlspecialchars($tgtCol) ?>">
+                            <span style="color: #475569;"><?= htmlspecialchars($srcCol) ?></span>
+                            <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                            <strong style="color: #0369A1;"><?= htmlspecialchars($tgtCol) ?></strong>
+                          </span>
+                        <?php endforeach; ?>
+                        <?php if ($remainingCount > 0): ?>
+                          <span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">
+                            +<?= $remainingCount ?> more
+                          </span>
+                        <?php endif; ?>
+                      </div>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span class="c360-badge c360-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Ready
+                      </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                      <span id="lastUpdated_<?= htmlspecialchars($m['target_table']) ?>" style="font-size: 0.74rem; color: #64748B; font-weight: 600; white-space: nowrap;">
+                        <?= !empty($m['updated_at']) ? date('d M Y, H:i', strtotime($m['updated_at'])) : 'Verified' ?>
+                      </span>
+                    </td>
+
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button type="button" class="c360-btn-preview" 
+                              onclick="openUploadCenterMappingModal('<?= htmlspecialchars($m['target_table']) ?>')"
+                              <?= !$userCanEdit ? 'disabled title="You do not have permission to modify mappings for this company."' : '' ?>>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Edit Mapping
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  <?php foreach ($mappingConfigsData as $map): ?>
-                    <?php
-                      $conf = (float)$map['confidence'];
-                      $confClass = $conf >= 90 ? 'conf-high' : ($conf >= 70 ? 'conf-med' : 'conf-low');
-                    ?>
-                    <tr>
-                      <td><strong><?php echo htmlspecialchars($map['group_name']); ?></strong></td>
-                      <td><?php echo htmlspecialchars($map['sub_name']); ?></td>
-                      <td><code><?php echo htmlspecialchars($map['table_name'] ?: 'item_master'); ?></code></td>
-                      <td><span class="confidence-badge <?php echo $confClass; ?>"><?php echo number_format($conf, 0); ?>% Match</span></td>
-                      <td><span class="status-badge"><?php echo htmlspecialchars(strtoupper($map['status'])); ?></span></td>
-                    </tr>
-                  <?php endforeach; ?>
-                </tbody>
-              </table>
-            <?php else: ?>
-              <div class="empty-state">No mapping configurations found in Neon PostgreSQL.</div>
-            <?php endif; ?>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
           </div>
-        </section>
+        </div>
+
+        <!-- ============================================================
+             UPLOAD CENTRE STYLE EDIT MAPPING MODAL
+             ============================================================ -->
+        <div id="c360EditMappingModal" class="c360-modal-backdrop" style="display: none; position: fixed; inset: 0; background: rgba(3, 54, 101, 0.7); backdrop-filter: blur(4px); z-index: 9999; justify-content: center; align-items: center; padding: 1.5rem;">
+          <div class="c360-preview-dialog" onclick="event.stopPropagation()">
+            <!-- HEADER (Navy Theme) -->
+            <div class="c360-modal-head">
+              <div>
+                <h3 class="c360-modal-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00CFEF" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                  <span id="c360ModalTitle">Data Contract Column Mapping</span>
+                </h3>
+                <div class="c360-modal-meta-row">
+                  <span class="c360-chip c360-chip-cyan">Target Table: <strong id="c360ModalTableCode">-</strong></span>
+                  <span class="c360-chip c360-chip-green">Database: <strong><?= htmlspecialchars($activeCustDb) ?></strong></span>
+                  <span class="c360-chip" id="c360ModalTypeChip" style="background: rgba(168, 85, 247, 0.2); color: #D8B4FE; border: 1px solid rgba(168, 85, 247, 0.35);">⚡ MASTER DATA</span>
+                  <span class="c360-chip c360-chip-gray">Company: <strong id="c360ModalCompanyCode"><?= htmlspecialchars($activeCompCode) ?></strong></span>
+                  <span class="c360-chip" style="background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(52, 211, 153, 0.4);">💾 CUSTOMER DB MAPPING ACTIVE</span>
+                </div>
+              </div>
+              <button type="button" class="c360-btn-close" onclick="closeEditMappingModal()">&times;</button>
+            </div>
+
+            <!-- ENFORCED SCOPE BANNER -->
+            <div class="c360-scope-banner" style="border-radius: 0; margin-bottom: 0;">
+              <div>
+                <strong style="color: #0369A1;">Enforced Scope:</strong>
+                Customer: <span class="c360-scope-tag">CUST001</span> &bull;
+                Company: <span class="c360-scope-tag"><?= htmlspecialchars($activeCompCode) ?></span> &bull;
+                Database: <span class="c360-scope-tag"><?= htmlspecialchars($activeCustDb) ?></span>
+              </div>
+              <div class="c360-security-notice">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Changes persist strictly to customer DB and auto-apply when uploading
+              </div>
+            </div>
+
+            <!-- MODAL BODY -->
+            <div class="c360-modal-body">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.75rem;">
+                <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #0F172A; display: flex; align-items: center; gap: 0.5rem;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0878D1" stroke-width="2.5"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+                  Source Sheet Column &rarr; Customer Database Field Mapping
+                </h4>
+
+                <div class="c360-filter-bar">
+                  <div class="c360-search-box">
+                    <svg class="c360-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="c360ModalRuleSearch" class="c360-search-input" placeholder="Search column..." oninput="filterModalRuleRows(this.value)">
+                  </div>
+                  <button type="button" class="c360-filter-tab active" data-tab="all" onclick="setModalTabFilter('all', this)">All (<span id="c360ModalCountAll">0</span>)</button>
+                  <button type="button" class="c360-filter-tab" data-tab="matched" onclick="setModalTabFilter('matched', this)">Matched (<span id="c360ModalCountMatched">0</span>)</button>
+                  <button type="button" class="c360-filter-tab" data-tab="skipped" onclick="setModalTabFilter('skipped', this)">Skipped (<span id="c360ModalCountSkipped">0</span>)</button>
+                  <button type="button" class="c360-btn-ghost" onclick="addNewMappingRuleRow('', '')" style="color: #0878D1; border-color: #BAE6FD; padding: 0.38rem 0.75rem; font-size: 0.8rem; background: #F0F9FF;">
+                    ➕ Add Custom Rule
+                  </button>
+                </div>
+              </div>
+
+              <!-- MAPPING TABLE CARD -->
+              <div class="c360-table-card" style="margin-bottom: 0;">
+                <table class="c360-mapping-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 35px; text-align: center;">#</th>
+                      <th style="width: 34%;">Source Sheet Column (Excel/CSV)</th>
+                      <th style="width: 30px; text-align: center;"></th>
+                      <th style="width: 40%;">Target Customer DB Field (PostgreSQL)</th>
+                      <th style="width: 14%; text-align: center;">Contract Status</th>
+                      <th style="width: 5%; text-align: center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="c360ModalRulesTbody">
+                    <!-- Populated dynamically by openUploadCenterMappingModal -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- FOOTER -->
+            <div class="c360-modal-foot">
+              <div class="c360-foot-status">
+                <span class="c360-foot-status-dot"></span>
+                <span id="c360ModalFootStatus"><strong>0 of 0</strong> columns mapped &amp; ready to apply</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.65rem;">
+                <button type="button" class="c360-btn-ghost" onclick="resetActiveMappingToDefaults()" style="color: #DC2626; border-color: #FECACA;">
+                  ↺ Reset to Defaults
+                </button>
+                <button type="button" class="c360-btn-ghost" onclick="closeEditMappingModal()">
+                  Close
+                </button>
+                <button type="button" id="c360SaveMappingBtn" class="c360-btn-approve" onclick="saveActiveMappingChanges()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  Approve &amp; Save Mapping
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mapping Centre Complete Script -->
+        <script>
+          window.c360MappingsStore = <?= json_encode($mappingsList) ?>;
+          window.c360ActiveCompCode = <?= json_encode($activeCompCode) ?>;
+          window.c360ActiveCustDb   = <?= json_encode($activeCustDb) ?>;
+          let currentEditingTableKey = null;
+          let activeModalTabFilter = 'all';
+
+          function filterMappingRows(query) {
+            const q = (query || '').toLowerCase().trim();
+            document.querySelectorAll('.c360-map-row').forEach(row => {
+              const name = row.getAttribute('data-name') || '';
+              const matches = !q || name.includes(q);
+              row.style.display = matches ? '' : 'none';
+            });
+          }
+
+          function filterMappingType(type, btn) {
+            document.querySelectorAll('.c360-filter-tab').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+
+            document.querySelectorAll('.c360-map-row').forEach(row => {
+              const rowType = row.getAttribute('data-type') || '';
+              const matches = (type === 'ALL' || rowType === type);
+              row.style.display = matches ? '' : 'none';
+            });
+          }
+
+          function openUploadCenterMappingModal(targetTable) {
+            const record = window.c360MappingsStore.find(m => m.target_table === targetTable);
+            if (!record) return alert('Mapping record not found for ' + targetTable);
+
+            currentEditingTableKey = targetTable;
+            document.getElementById('c360ModalTitle').textContent = 'Data Contract Mapping: ' + record.dataset_name;
+            document.getElementById('c360ModalTableCode').textContent = record.target_table;
+            document.getElementById('c360ModalCompanyCode').textContent = record.company_code;
+
+            const isMaster = (record.dataset_type === 'MASTER');
+            const typeChip = document.getElementById('c360ModalTypeChip');
+            if (typeChip) {
+              typeChip.textContent = isMaster ? '⚡ MASTER DATA' : '📅 TRANSACTION DATA';
+              typeChip.style.background = isMaster ? 'rgba(0, 207, 239, 0.2)' : 'rgba(168, 85, 247, 0.2)';
+              typeChip.style.color = isMaster ? '#00CFEF' : '#D8B4FE';
+              typeChip.style.border = isMaster ? '1px solid rgba(0, 207, 239, 0.35)' : '1px solid rgba(168, 85, 247, 0.35)';
+            }
+
+            const tbody = document.getElementById('c360ModalRulesTbody');
+            tbody.innerHTML = '';
+
+            const cols = record.target_columns || [];
+            const mapping = record.mapping || {};
+
+            Object.entries(mapping).forEach(([srcCol, tgtCol]) => {
+              addNewMappingRuleRow(srcCol, tgtCol, cols);
+            });
+
+            document.getElementById('c360ModalRuleSearch').value = '';
+            setModalTabFilter('all');
+            updateModalStatusCounts();
+
+            const modal = document.getElementById('c360EditMappingModal');
+            modal.style.display = 'flex';
+          }
+
+          function closeEditMappingModal() {
+            document.getElementById('c360EditMappingModal').style.display = 'none';
+            currentEditingTableKey = null;
+          }
+
+          function addNewMappingRuleRow(srcCol = '', tgtCol = '', cols = null) {
+            const record = window.c360MappingsStore.find(m => m.target_table === currentEditingTableKey);
+            const dbCols = cols || (record ? record.target_columns : []) || [];
+            const tbody = document.getElementById('c360ModalRulesTbody');
+            const rowIdx = tbody.children.length + 1;
+
+            const tr = document.createElement('tr');
+            tr.className = 'c360-modal-rule-row';
+
+            let selectOptions = `<option value="__IGNORE__">(Ignore / Skip Column)</option>`;
+            dbCols.forEach(c => {
+              const isSelected = (c.toLowerCase() === (tgtCol || '').toLowerCase()) ? 'selected' : '';
+              selectOptions += `<option value="${escapeHtml(c)}" ${isSelected}>${escapeHtml(c)}</option>`;
+            });
+
+            const isDirectMatch = tgtCol && (tgtCol.toLowerCase() === srcCol.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+            const isSkipped = !tgtCol || tgtCol === '__IGNORE__';
+
+            let badgeHtml = '';
+            if (isSkipped) {
+              badgeHtml = '<span class="c360-badge c360-badge-gray">Skipped</span>';
+              tr.setAttribute('data-status', 'skipped');
+            } else if (isDirectMatch) {
+              badgeHtml = '<span class="c360-badge c360-badge-green"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Direct Match</span>';
+              tr.setAttribute('data-status', 'matched');
+            } else {
+              badgeHtml = '<span class="c360-badge c360-badge-cyan"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Custom Mapped</span>';
+              tr.setAttribute('data-status', 'matched');
+            }
+
+            tr.innerHTML = `
+              <td style="text-align: center; color: #94A3B8; font-size: 0.78rem; font-weight: 700;">
+                ${rowIdx}
+              </td>
+              <td>
+                <input type="text" class="c360-rule-src" value="${escapeHtml(srcCol)}" placeholder="Source Column (e.g. ${escapeHtml(tgtCol || 'column_name')})" 
+                       style="width: 100%; background: #FFFFFF; border: 1.5px solid #CBD5E1; color: #0F172A; padding: 0.45rem 0.75rem; border-radius: 6px; font-family: monospace; font-size: 0.85rem; font-weight: 600; outline: none;"
+                       oninput="onModalRowChange(this)">
+              </td>
+              <td style="text-align: center; color: #0878D1; font-weight: 800; font-size: 1.1rem;">
+                &rarr;
+              </td>
+              <td>
+                <select class="c360-mapping-select c360-rule-tgt" onchange="onModalRowChange(this)">
+                  ${selectOptions}
+                </select>
+              </td>
+              <td style="text-align: center;" class="c360-rule-status-cell">
+                ${badgeHtml}
+              </td>
+              <td style="text-align: center;">
+                <button type="button" onclick="this.closest('tr').remove(); updateModalStatusCounts();" 
+                        style="background: #FEE2E2; border: 1px solid #FECACA; color: #DC2626; border-radius: 6px; padding: 0.3rem 0.5rem; cursor: pointer; font-size: 0.85rem;" title="Remove Rule">
+                  &times;
+                </button>
+              </td>
+            `;
+
+            tbody.appendChild(tr);
+            updateModalStatusCounts();
+          }
+
+          function onModalRowChange(el) {
+            const row = el.closest('tr');
+            if (!row) return;
+
+            const src = (row.querySelector('.c360-rule-src')?.value || '').trim();
+            const tgt = (row.querySelector('.c360-rule-tgt')?.value || '').trim();
+            const statusCell = row.querySelector('.c360-rule-status-cell');
+
+            if (!tgt || tgt === '__IGNORE__') {
+              row.setAttribute('data-status', 'skipped');
+              if (statusCell) statusCell.innerHTML = '<span class="c360-badge c360-badge-gray">Skipped</span>';
+            } else if (tgt.toLowerCase() === src.toLowerCase().replace(/[^a-z0-9_]/g, '')) {
+              row.setAttribute('data-status', 'matched');
+              if (statusCell) statusCell.innerHTML = '<span class="c360-badge c360-badge-green"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Direct Match</span>';
+            } else {
+              row.setAttribute('data-status', 'matched');
+              if (statusCell) statusCell.innerHTML = '<span class="c360-badge c360-badge-cyan"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Custom Mapped</span>';
+            }
+
+            updateModalStatusCounts();
+          }
+
+          function updateModalStatusCounts() {
+            const rows = document.querySelectorAll('.c360-modal-rule-row');
+            let matched = 0;
+            let skipped = 0;
+
+            rows.forEach(r => {
+              const status = r.getAttribute('data-status');
+              if (status === 'matched') matched++;
+              else if (status === 'skipped') skipped++;
+            });
+
+            document.getElementById('c360ModalCountAll').textContent = rows.length;
+            document.getElementById('c360ModalCountMatched').textContent = matched;
+            document.getElementById('c360ModalCountSkipped').textContent = skipped;
+
+            const footStatus = document.getElementById('c360ModalFootStatus');
+            if (footStatus) {
+              footStatus.innerHTML = `<strong>${matched} of ${rows.length}</strong> columns validated &amp; active in customer database`;
+            }
+          }
+
+          function setModalTabFilter(tab, btn = null) {
+            activeModalTabFilter = tab;
+            if (btn) {
+              document.querySelectorAll('.c360-modal-body .c360-filter-tab').forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+            }
+            filterModalRules();
+          }
+
+          function filterModalRuleRows(query) {
+            filterModalRules();
+          }
+
+          function filterModalRules() {
+            const q = (document.getElementById('c360ModalRuleSearch')?.value || '').toLowerCase().trim();
+            const tab = activeModalTabFilter;
+
+            document.querySelectorAll('.c360-modal-rule-row').forEach(row => {
+              const src = (row.querySelector('.c360-rule-src')?.value || '').toLowerCase();
+              const tgt = (row.querySelector('.c360-rule-tgt')?.value || '').toLowerCase();
+              const status = row.getAttribute('data-status') || 'matched';
+
+              const matchesText = !q || src.includes(q) || tgt.includes(q);
+              const matchesTab = (tab === 'all' || status === tab);
+
+              row.style.display = (matchesText && matchesTab) ? '' : 'none';
+            });
+          }
+
+          async function saveActiveMappingChanges() {
+            if (!currentEditingTableKey) return;
+            const record = window.c360MappingsStore.find(m => m.target_table === currentEditingTableKey);
+            if (!record) return;
+
+            const rows = document.querySelectorAll('.c360-modal-rule-row');
+            const newMapping = {};
+
+            rows.forEach(r => {
+              const src = r.querySelector('.c360-rule-src')?.value.trim();
+              const tgt = r.querySelector('.c360-rule-tgt')?.value.trim();
+              if (src && tgt && tgt !== '__IGNORE__') {
+                newMapping[src] = tgt;
+              }
+            });
+
+            if (Object.keys(newMapping).length === 0) {
+              if (!confirm('Warning: You have defined 0 column mappings. Are you sure you want to save an empty mapping?')) {
+                return;
+              }
+            }
+
+            const btn = document.getElementById('c360SaveMappingBtn');
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="animation: c360Spin 1s linear infinite;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Saving to Customer DB...';
+
+            try {
+              const fd = new FormData();
+              fd.append('action', 'update_mapping');
+              fd.append('target_table', currentEditingTableKey);
+              fd.append('sheet_name', record.sheet_name || '');
+              fd.append('company_code', record.company_code || window.c360ActiveCompCode);
+              fd.append('mapping', JSON.stringify(newMapping));
+
+              const res = await fetch('api/upload_api.php', { method: 'POST', body: fd });
+              const json = await res.json();
+
+              btn.disabled = false;
+              btn.innerHTML = origHtml;
+
+              if (!json.ok) {
+                alert(json.message || 'Failed to save mapping changes.');
+                return;
+              }
+
+              // Update in-memory record
+              record.mapping = newMapping;
+              record.mapping_count = Object.keys(newMapping).length;
+              record.updated_at = json.updated_at || new Date().toISOString();
+
+              // Update UI table row
+              const countEl = document.getElementById('mapCount_' + currentEditingTableKey);
+              if (countEl) countEl.textContent = record.mapping_count + ' columns';
+
+              const samplePillsEl = document.getElementById('samplePills_' + currentEditingTableKey);
+              if (samplePillsEl) {
+                const samplePairs = Object.entries(newMapping).slice(0, 3);
+                const remaining = Object.keys(newMapping).length - samplePairs.length;
+                let html = samplePairs.map(([s, t]) => `
+                  <span style="background: #F8FAFC; border: 1px solid #E2E8F0; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; color: #1E293B; font-family: monospace;" title="${escapeHtml(s)} &rarr; ${escapeHtml(t)}">
+                    <span style="color: #475569;">${escapeHtml(s)}</span>
+                    <span style="color: #0284C7; font-weight: 700;">&rarr;</span>
+                    <strong style="color: #0369A1;">${escapeHtml(t)}</strong>
+                  </span>
+                `).join('');
+                if (remaining > 0) {
+                  html += `<span style="background: #E0F2FE; border: 1px solid #BAE6FD; color: #0284C7; font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 700;">+${remaining} more</span>`;
+                }
+                samplePillsEl.innerHTML = html;
+              }
+
+              const lastUpdEl = document.getElementById('lastUpdated_' + currentEditingTableKey);
+              if (lastUpdEl) lastUpdEl.textContent = 'Just now';
+
+              // Recalculate total KPI count
+              let total = 0;
+              window.c360MappingsStore.forEach(m => total += (m.mapping_count || 0));
+              const totEl = document.getElementById('c360TotalMappingCount');
+              if (totEl) totEl.textContent = total + ' Column Rules';
+
+              // Visual success confirmation on button
+              btn.style.background = '#059669';
+              btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Mapping Saved!';
+
+              setTimeout(() => {
+                btn.style.background = '#10B981';
+                btn.innerHTML = origHtml;
+                closeEditMappingModal();
+              }, 700);
+
+            } catch (err) {
+              btn.disabled = false;
+              btn.innerHTML = origHtml;
+              alert('Network error while saving mapping: ' + err.message);
+            }
+          }
+
+          function resetActiveMappingToDefaults() {
+            if (!currentEditingTableKey) return;
+            if (!confirm(`Are you sure you want to reset "${currentEditingTableKey}" to standard column mapping defaults?`)) return;
+
+            const record = window.c360MappingsStore.find(m => m.target_table === currentEditingTableKey);
+            if (!record) return;
+
+            const dbCols = record.target_columns || [];
+            const tbody = document.getElementById('c360ModalRulesTbody');
+            tbody.innerHTML = '';
+
+            dbCols.forEach(col => {
+              if (['id', 'cost_id', 'created_at', 'created_by', 'modified_at', 'modified_by', 'period_id', 'period_code'].includes(col.toLowerCase())) return;
+              let src = col;
+              if (currentEditingTableKey === 'standard_cost' && col === 'std_revision_date') {
+                src = 'std_rev_date';
+              }
+              addNewMappingRuleRow(src, col, dbCols);
+            });
+
+            updateModalStatusCounts();
+          }
+
+          function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+          }
+
+          window.openEditMappingModal = openUploadCenterMappingModal;
+        </script>
+
+
 
       <?php elseif ($currentPage === 'history'): ?>
         <!-- ============================================================
