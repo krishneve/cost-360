@@ -10,6 +10,7 @@
 
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/financial_reconciliation.php';
 
 // Helper function for global database execution
 if (!function_exists('dbQuery')) {
@@ -764,6 +765,25 @@ function isMasterDataset(string $categoryKeyOrTable): bool {
 }
 
 /**
+ * Normalizes entity table names to canonical Customer DB table names.
+ */
+function normalizeCanonicalTableName(string $tableName): string {
+    $clean = strtolower(trim($tableName));
+    if ($clean === 'item_master' || $clean === '01_item_product_master') return 'items';
+    if ($clean === 'cost_centers' || $clean === '04_cost_center_master') return 'cost_center_master';
+    if ($clean === 'work_center_master' || $clean === '02_work_center_master') return 'work_centers';
+    if ($clean === '03_party_master') return 'party_master';
+    if ($clean === '05_standard_cost') return 'standard_cost';
+    if ($clean === '05a_bom') return 'bom';
+    if ($clean === '05b_routing') return 'routing';
+    if ($clean === '06_material_transaction') return 'material_transaction';
+    if ($clean === '07_downtime') return 'downtime';
+    if ($clean === '08_finance_transaction') return 'finance_transaction';
+    if ($clean === '09_trial_balance') return 'trial_balance';
+    return $clean;
+}
+
+/**
  * Returns the 11 canonical target datasets supported by COST360.
  */
 function getCanonicalTargetDatasets(): array {
@@ -1118,10 +1138,1027 @@ function getSavedMapping(?int $customerId, string $targetTable, ?string $sheetNa
 }
 
 /**
+ * Validates that no two source columns are mapped to the same canonical target column,
+ * excluding '__IGNORE__'.
+ *
+ * @param array $mapping Associative array of [source_column => target_column]
+ * @return array ['valid' => bool, 'duplicates' => array, 'message' => string]
+ */
+function validateMappingDuplicateTargets(array $mapping): array {
+    $targetToSources = [];
+    $duplicates = [];
+
+    foreach ($mapping as $sourceCol => $targetCol) {
+        $cleanTarget = trim((string)$targetCol);
+        if ($cleanTarget === '' || $cleanTarget === '__IGNORE__') {
+            continue;
+        }
+
+        $targetKey = strtolower($cleanTarget);
+        if (!isset($targetToSources[$targetKey])) {
+            $targetToSources[$targetKey] = [];
+        }
+        $targetToSources[$targetKey][] = (string)$sourceCol;
+    }
+
+    foreach ($targetToSources as $targetKey => $sources) {
+        if (count($sources) > 1) {
+            $duplicates[$targetKey] = $sources;
+        }
+    }
+
+    if (!empty($duplicates)) {
+        $details = [];
+        foreach ($duplicates as $tgt => $srcs) {
+            $details[] = "target '{$tgt}' assigned to multiple source columns (" . implode(', ', array_map(fn($s) => "'{$s}'", $srcs)) . ")";
+        }
+        return [
+            'valid'      => false,
+            'duplicates' => $duplicates,
+            'message'    => 'Conflicting target column assignment detected: ' . implode('; ', $details) . '. Each canonical target column can only be mapped to one source column (or marked as __IGNORE__).'
+        ];
+    }
+
+    return [
+        'valid'      => true,
+        'duplicates' => [],
+        'message'    => ''
+    ];
+}
+
+/**
+ * =========================================================================
+ * PHASE 2B — DATA INTEGRITY AND VALIDATION FUNCTIONS
+ * =========================================================================
+ */
+
+/**
+ * Validates a single numeric value against formatting rules and domain constraints.
+ * Empty values (null, empty string, whitespace) are permitted unless the field is a business key.
+ *
+ * @param mixed $val Raw cell value
+ * @param string $fieldName Target canonical field name
+ * @param string $datasetKey Dataset key (e.g. '05A_BOM', '05B_ROUTING')
+ * @param int $rowNum 1-based data row number
+ * @param string $sheetName Sheet or file name
+ * @param int|null $fileId File ID
+ * @return array ['valid' => bool, 'is_empty' => bool, 'value' => mixed, 'error' => ?array]
+ */
+function cleanAndValidateNumericValue($val, string $fieldName, string $datasetKey, int $rowNum, string $sheetName, ?int $fileId = null): array {
+    if ($val === null || trim((string)$val) === '') {
+        return ['valid' => true, 'is_empty' => true, 'value' => null, 'error' => null];
+    }
+
+    $raw = trim((string)$val);
+    // Strip standard thousands separators and currency symbols
+    $clean = str_replace([',', ' ', '$', '€', '£', '₹'], '', $raw);
+
+    if (!is_numeric($clean)) {
+        return [
+            'valid'    => false,
+            'is_empty' => false,
+            'value'    => $val,
+            'error'    => [
+                'upload_file_id' => $fileId,
+                'sheet_name'     => $sheetName,
+                'row_number'     => $rowNum,
+                'field'          => $fieldName,
+                'target_field'   => $fieldName,
+                'source_value'   => $raw,
+                'error_type'     => 'Malformed Numeric Value',
+                'error_message'  => "Field '{$fieldName}' in row {$rowNum} contains malformed numeric value: '{$raw}'",
+                'severity'       => 'Critical'
+            ]
+        ];
+    }
+
+    $num = (float)$clean;
+
+    // Domain constraints
+    // 1. BOM quantities: component quantity and parent quantity must be > 0
+    if ($datasetKey === '05A_BOM') {
+        if (in_array($fieldName, ['child_item_qty', 'quantity'], true) && $num <= 0) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $clean,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Invalid Quantity',
+                    'error_message'  => "BOM component quantity for '{$fieldName}' in row {$rowNum} must be strictly greater than zero (found: {$raw})",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+        if ($fieldName === 'parent_item_qty' && $num <= 0) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $clean,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Invalid Quantity',
+                    'error_message'  => "BOM parent item quantity for '{$fieldName}' in row {$rowNum} must be strictly greater than zero (found: {$raw})",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+    }
+
+    // 2. Routing: hours and rates cannot be negative (< 0)
+    if ($datasetKey === '05B_ROUTING') {
+        if (in_array($fieldName, ['std_machine_hrs', 'std_labour_hrs', 'std_machine_hr_rate', 'std_labour_rate', 'std_conversion_cost'], true) && $num < 0) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $clean,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Invalid Routing Value',
+                    'error_message'  => "Routing parameter '{$fieldName}' in row {$rowNum} cannot be negative (found: {$raw})",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+    }
+
+    // 3. Material Transaction: rates cannot be negative (< 0)
+    if ($datasetKey === '06_MATERIAL_TRANSACTION') {
+        if (in_array($fieldName, ['rate', 'std_rate', 'actual_rate', 'std_realisation_rate'], true) && $num < 0) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $clean,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Invalid Unit Rate',
+                    'error_message'  => "Material transaction rate for '{$fieldName}' in row {$rowNum} cannot be negative (found: {$raw})",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+    }
+
+    // 4. Downtime: operating hours cannot be negative (< 0)
+    if ($datasetKey === '07_DOWNTIME') {
+        if (in_array($fieldName, ['rated_hrs', 'run_hrs', 'breakdown_hrs', 'idle_hrs', 'power_units_kwh'], true) && $num < 0) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $clean,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Invalid Downtime Value',
+                    'error_message'  => "Downtime field '{$fieldName}' in row {$rowNum} cannot be negative (found: {$raw})",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+    }
+
+    return ['valid' => true, 'is_empty' => false, 'value' => $clean, 'error' => null];
+}
+
+/**
+ * Validates a date value and checks accounting-period boundaries for transaction datasets.
+ *
+ * @param mixed $val Raw date value
+ * @param string $fieldName Field name
+ * @param array|null $accountingPeriod Active period array
+ * @param bool $isTransactionSheet Whether this dataset is a transaction dataset
+ * @param int $rowNum 1-based data row number
+ * @param string $sheetName Sheet or file name
+ * @param int|null $fileId File ID
+ * @return array ['valid' => bool, 'is_empty' => bool, 'value' => ?string, 'error' => ?array]
+ */
+function cleanAndValidateDateValue($val, string $fieldName, ?array $accountingPeriod, bool $isTransactionSheet, int $rowNum, string $sheetName, ?int $fileId = null): array {
+    if ($val === null || trim((string)$val) === '') {
+        return ['valid' => true, 'is_empty' => true, 'value' => null, 'error' => null];
+    }
+
+    $raw = trim((string)$val);
+    $normalized = null;
+
+    // Excel serial date integer (e.g. 45123)
+    if (is_numeric($raw) && (float)$raw > 20000 && (float)$raw < 90000 && strpos($raw, '.') === false) {
+        $ts = ((float)$raw - 25569) * 86400;
+        $normalized = gmdate('Y-m-d', (int)$ts);
+    } else {
+        // Match YYYY-MM-DD or YYYY/MM/DD
+        if (preg_match('/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/', $raw, $m)) {
+            if (checkdate((int)$m[2], (int)$m[3], (int)$m[1])) {
+                $normalized = sprintf('%04d-%02d-%02d', (int)$m[1], (int)$m[2], (int)$m[3]);
+            }
+        } elseif (preg_match('/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/', $raw, $m)) {
+            // Assume DD-MM-YYYY or DD/MM/YYYY
+            if (checkdate((int)$m[2], (int)$m[1], (int)$m[3])) {
+                $normalized = sprintf('%04d-%02d-%02d', (int)$m[3], (int)$m[2], (int)$m[1]);
+            }
+        } else {
+            $norm = normalizeExcelDate($raw);
+            if ($norm && preg_match('/^\d{4}-\d{2}-\d{2}$/', $norm)) {
+                $parts = explode('-', $norm);
+                if (checkdate((int)$parts[1], (int)$parts[2], (int)$parts[0])) {
+                    $normalized = $norm;
+                }
+            }
+        }
+    }
+
+    if (!$normalized) {
+        return [
+            'valid'    => false,
+            'is_empty' => false,
+            'value'    => $raw,
+            'error'    => [
+                'upload_file_id' => $fileId,
+                'sheet_name'     => $sheetName,
+                'row_number'     => $rowNum,
+                'field'          => $fieldName,
+                'target_field'   => $fieldName,
+                'source_value'   => $raw,
+                'error_type'     => 'Malformed Date Format',
+                'error_message'  => "Field '{$fieldName}' in row {$rowNum} contains malformed or unparseable date value: '{$raw}'",
+                'severity'       => 'Critical'
+            ]
+        ];
+    }
+
+    // Check accounting period boundaries for transaction sheets (exempt master data and standard cost revision dates)
+    if ($isTransactionSheet && $fieldName !== 'std_revision_date' && $accountingPeriod && !empty($accountingPeriod['start_date']) && !empty($accountingPeriod['end_date'])) {
+        $pStart = $accountingPeriod['start_date'];
+        $pEnd = $accountingPeriod['end_date'];
+        if ($normalized < $pStart || $normalized > $pEnd) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $normalized,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Date Outside Period Range',
+                    'error_message'  => "Transaction date '{$raw}' ({$normalized}) in row {$rowNum} falls outside active accounting period ({$pStart} to {$pEnd})",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+    }
+
+    return ['valid' => true, 'is_empty' => false, 'value' => $normalized, 'error' => null];
+}
+
+/**
+ * Validates domain enumerations where defined in canonical models.
+ */
+function cleanAndValidateEnumeration($val, string $fieldName, string $datasetKey, int $rowNum, string $sheetName, ?int $fileId = null): array {
+    if ($val === null || trim((string)$val) === '') {
+        return ['valid' => true, 'is_empty' => true, 'value' => null, 'error' => null];
+    }
+
+    $raw = trim((string)$val);
+
+    if ($datasetKey === '08_FINANCE_TRANSACTION' && $fieldName === 'oh_behaviour') {
+        $allowed = ['fixed', 'variable', 'semi-variable'];
+        $clean = strtolower($raw);
+        if (!in_array($clean, $allowed, true)) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $raw,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Invalid Enumeration Value',
+                    'error_message'  => "Overhead behaviour '{$raw}' in row {$rowNum} is invalid. Allowed values: Fixed, Variable, Semi-Variable",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+        return ['valid' => true, 'is_empty' => false, 'value' => ucwords($clean), 'error' => null];
+    }
+
+    if ($datasetKey === '09_TRIAL_BALANCE' && in_array($fieldName, ['opening_balance_sign_d_c', 'closing_balance_sign_d_c'], true)) {
+        $allowed = ['d', 'c', 'dr', 'cr'];
+        $clean = strtolower($raw);
+        if (!in_array($clean, $allowed, true)) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $raw,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Invalid Enumeration Value',
+                    'error_message'  => "Balance sign '{$raw}' in row {$rowNum} is invalid. Expected 'D' or 'C'",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+        return ['valid' => true, 'is_empty' => false, 'value' => strtoupper($raw), 'error' => null];
+    }
+
+    if ($datasetKey === '04_COST_CENTER_MASTER' && $fieldName === 'is_production') {
+        $clean = strtolower($raw);
+        if (!in_array($clean, ['0', '1', 'true', 'false', 'yes', 'no'], true)) {
+            return [
+                'valid'    => false,
+                'is_empty' => false,
+                'value'    => $raw,
+                'error'    => [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => $fieldName,
+                    'target_field'   => $fieldName,
+                    'source_value'   => $raw,
+                    'error_type'     => 'Invalid Boolean Value',
+                    'error_message'  => "Production flag '{$raw}' in row {$rowNum} is invalid. Expected 1/0 or Yes/No",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+        $valBool = in_array($clean, ['1', 'true', 'yes'], true) ? 1 : 0;
+        return ['valid' => true, 'is_empty' => false, 'value' => $valBool, 'error' => null];
+    }
+
+    return ['valid' => true, 'is_empty' => false, 'value' => $raw, 'error' => null];
+}
+
+/**
+ * Detects circular references in BOMs using a directed graph DFS algorithm.
+ * Checks immediate self-loops and multi-node cycles without starting recursive costing calculations.
+ * Allows Diamond DAGs (shared components) without false positives.
+ *
+ * @param array $bomEdges Array of ['parent' => string, 'child' => string, 'row' => int, 'sheet' => string, 'file_id' => int]
+ * @param PDO|null $custPdo Optional customer DB connection to include existing BOM edges
+ * @param string $companyCode Optional active company code
+ * @return array ['has_cycle' => bool, 'cycle' => array, 'error' => string, 'detail' => ?array]
+ */
+function detectCircularBomReferences(array $bomEdges, ?PDO $custPdo = null, string $companyCode = ''): array {
+    $adj = [];
+    $edgeMeta = [];
+
+    // Load existing customer DB BOM edges if available
+    if ($custPdo !== null && !empty($companyCode)) {
+        try {
+            $chkTable = $custPdo->query("SELECT to_regclass('public.bom')")->fetchColumn();
+            if ($chkTable) {
+                $stmt = $custPdo->prepare("SELECT parent_item_code, item_code FROM public.bom WHERE company_code = ?");
+                $stmt->execute([$companyCode]);
+                while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $p = trim((string)($r['parent_item_code'] ?? ''));
+                    $c = trim((string)($r['item_code'] ?? ''));
+                    if ($p !== '' && $c !== '') {
+                        $adj[$p][] = $c;
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            // Table might not exist yet, which is normal for initial customer provisioning
+        }
+    }
+
+    // Add edges from current upload batch
+    foreach ($bomEdges as $e) {
+        $p = trim((string)($e['parent'] ?? ''));
+        $c = trim((string)($e['child'] ?? ''));
+        if ($p === '' || $c === '') {
+            continue;
+        }
+
+        // Direct self-loop detection
+        if ($p === $c) {
+            return [
+                'has_cycle' => true,
+                'cycle'     => [$p, $p],
+                'error'     => "Circular BOM reference detected: Item '{$p}' references itself directly as a component.",
+                'detail'    => [
+                    'upload_file_id' => $e['file_id'] ?? null,
+                    'sheet_name'     => $e['sheet'] ?? '05.A_BOM',
+                    'row_number'     => $e['row'] ?? 0,
+                    'field'          => 'item_code',
+                    'target_field'   => 'item_code',
+                    'source_value'   => $c,
+                    'error_type'     => 'Circular BOM Reference',
+                    'error_message'  => "Circular BOM reference detected in row " . ($e['row'] ?? 0) . ": Item '{$p}' references itself directly.",
+                    'severity'       => 'Critical'
+                ]
+            ];
+        }
+
+        $adj[$p][] = $c;
+        $edgeKey = "{$p}->{$c}";
+        if (!isset($edgeMeta[$edgeKey])) {
+            $edgeMeta[$edgeKey] = $e;
+        }
+    }
+
+    // DFS with 3-state tracking: unvisited (not in $visited), in current recursion stack ($recStack), fully processed ($visited)
+    $visited = [];
+    $recStack = [];
+    $cycleFound = null;
+
+    $dfs = function($node, &$visited, &$recStack, &$path) use (&$dfs, $adj, &$cycleFound) {
+        $visited[$node] = true;
+        $recStack[$node] = true;
+        $path[] = $node;
+
+        if (!empty($adj[$node])) {
+            foreach ($adj[$node] as $child) {
+                if (!isset($visited[$child])) {
+                    if ($dfs($child, $visited, $recStack, $path)) {
+                        return true;
+                    }
+                } elseif (!empty($recStack[$child])) {
+                    // Cycle detected!
+                    $idx = array_search($child, $path, true);
+                    $cyclePath = array_slice($path, $idx);
+                    $cyclePath[] = $child;
+                    $cycleFound = $cyclePath;
+                    return true;
+                }
+            }
+        }
+
+        array_pop($path);
+        $recStack[$node] = false;
+        return false;
+    };
+
+    foreach (array_keys($adj) as $node) {
+        if (!isset($visited[$node])) {
+            $path = [];
+            if ($dfs($node, $visited, $recStack, $path)) {
+                $cycleStr = implode(' -> ', $cycleFound);
+                $firstEdgeKey = ($cycleFound[0] ?? '') . '->' . ($cycleFound[1] ?? '');
+                $meta = $edgeMeta[$firstEdgeKey] ?? ($bomEdges[0] ?? []);
+
+                return [
+                    'has_cycle' => true,
+                    'cycle'     => $cycleFound,
+                    'error'     => "Circular BOM reference detected: {$cycleStr}",
+                    'detail'    => [
+                        'upload_file_id' => $meta['file_id'] ?? null,
+                        'sheet_name'     => $meta['sheet'] ?? '05.A_BOM',
+                        'row_number'     => $meta['row'] ?? 0,
+                        'field'          => 'item_code',
+                        'target_field'   => 'item_code',
+                        'source_value'   => $cycleFound[1] ?? '',
+                        'error_type'     => 'Circular BOM Reference',
+                        'error_message'  => "Circular BOM cycle detected: {$cycleStr}. Costing recursion blocked.",
+                        'severity'       => 'Critical'
+                    ]
+                ];
+            }
+        }
+    }
+
+    return ['has_cycle' => false, 'cycle' => [], 'error' => '', 'detail' => null];
+}
+
+/**
+ * Validates master-data relationships and produces non-blocking Warnings.
+ * Legitimate import dependencies are respected: missing master records in phased imports
+ * produce actionable warnings alerting users that downstream costing requires them,
+ * without aborting the import.
+ *
+ * @param array $rows Mapped row data
+ * @param string $targetTable Canonical target table name
+ * @param PDO|null $custPdo Customer database PDO
+ * @param string $companyCode Active company code
+ * @param array $batchMasterItems Item Master items present in the current upload batch ['ITEM_CODE' => ['uom' => ...]]
+ * @param int $fileId File ID
+ * @param string $sheetName Sheet name
+ * @return array Array of warning arrays
+ */
+function validateDatasetRelationships(array $rows, string $targetTable, ?PDO $custPdo, string $companyCode, array $batchMasterItems, int $fileId, string $sheetName): array {
+    $warnings = [];
+
+    // Pre-query existing customer database master records if available
+    $existingItems = [];
+    $existingWorkCenters = [];
+    $existingCostCenters = [];
+    $existingParties = [];
+    $existingRoutings = [];
+
+    if ($custPdo !== null) {
+        try {
+            if ($custPdo->query("SELECT to_regclass('public.items')")->fetchColumn()) {
+                $q = $custPdo->prepare("SELECT item_code, unit_of_measure FROM public.items WHERE company_code = ?");
+                $q->execute([$companyCode]);
+                while ($r = $q->fetch(PDO::FETCH_ASSOC)) {
+                    $existingItems[strtoupper(trim($r['item_code']))] = [
+                        'uom' => trim((string)($r['unit_of_measure'] ?? ''))
+                    ];
+                }
+            }
+            if ($custPdo->query("SELECT to_regclass('public.work_centers')")->fetchColumn()) {
+                $q = $custPdo->prepare("SELECT wc_code FROM public.work_centers WHERE company_code = ?");
+                $q->execute([$companyCode]);
+                while ($r = $q->fetch(PDO::FETCH_ASSOC)) {
+                    $existingWorkCenters[strtoupper(trim($r['wc_code']))] = true;
+                }
+            }
+            if ($custPdo->query("SELECT to_regclass('public.cost_center_master')")->fetchColumn()) {
+                $q = $custPdo->prepare("SELECT cc_code FROM public.cost_center_master WHERE company_code = ?");
+                $q->execute([$companyCode]);
+                while ($r = $q->fetch(PDO::FETCH_ASSOC)) {
+                    $existingCostCenters[strtoupper(trim($r['cc_code']))] = true;
+                }
+            }
+            if ($custPdo->query("SELECT to_regclass('public.party_master')")->fetchColumn()) {
+                $q = $custPdo->prepare("SELECT party_code FROM public.party_master WHERE company_code = ?");
+                $q->execute([$companyCode]);
+                while ($r = $q->fetch(PDO::FETCH_ASSOC)) {
+                    $existingParties[strtoupper(trim($r['party_code']))] = true;
+                }
+            }
+            if ($custPdo->query("SELECT to_regclass('public.routing')")->fetchColumn()) {
+                $q = $custPdo->prepare("SELECT DISTINCT product_code FROM public.routing WHERE company_code = ?");
+                $q->execute([$companyCode]);
+                while ($r = $q->fetch(PDO::FETCH_ASSOC)) {
+                    $existingRoutings[strtoupper(trim($r['product_code']))] = true;
+                }
+            }
+        } catch (Throwable $e) {
+            // Customer tables may not yet be provisioned
+        }
+    }
+
+    // Merge batch items with existing customer DB items
+    $allKnownItems = array_merge($existingItems, $batchMasterItems);
+
+    foreach ($rows as $r) {
+        $rowNum = $r['_row_number'] ?? 0;
+        $data = $r['_mapped_data'] ?? [];
+
+        if ($targetTable === 'bom') {
+            $parentCode = strtoupper(trim((string)($data['parent_item_code'] ?? '')));
+            $childCode = strtoupper(trim((string)($data['item_code'] ?? '')));
+            $bomUom = trim((string)($data['uom'] ?? ''));
+
+            // Check component item in Item Master
+            if ($childCode !== '' && !isset($allKnownItems[$childCode])) {
+                $warnings[] = [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => 'item_code',
+                    'target_field'   => 'item_code',
+                    'source_value'   => $childCode,
+                    'error_type'     => 'Missing Master Reference',
+                    'error_message'  => "BOM component item '{$childCode}' in row {$rowNum} does not exist in Item Master. Ensure master record is uploaded prior to running downstream costing.",
+                    'severity'       => 'Warning'
+                ];
+            } elseif ($childCode !== '' && isset($allKnownItems[$childCode])) {
+                // Check UOM consistency
+                $masterUom = trim((string)($allKnownItems[$childCode]['uom'] ?? ''));
+                if ($bomUom !== '' && $masterUom !== '' && strtolower($bomUom) !== strtolower($masterUom)) {
+                    $warnings[] = [
+                        'upload_file_id' => $fileId,
+                        'sheet_name'     => $sheetName,
+                        'row_number'     => $rowNum,
+                        'field'          => 'uom',
+                        'target_field'   => 'uom',
+                        'source_value'   => $bomUom,
+                        'error_type'     => 'Inconsistent Unit of Measure',
+                        'error_message'  => "UOM inconsistency for component '{$childCode}' in row {$rowNum}: BOM specifies '{$bomUom}', Item Master specifies '{$masterUom}'.",
+                        'severity'       => 'Warning'
+                    ];
+                }
+            }
+
+            // Check parent routing
+            if ($parentCode !== '' && !isset($existingRoutings[$parentCode])) {
+                $existingRoutings[$parentCode] = true;
+                $warnings[] = [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => 'parent_item_code',
+                    'target_field'   => 'parent_item_code',
+                    'source_value'   => $parentCode,
+                    'error_type'     => 'Missing Routing Input',
+                    'error_message'  => "Parent item '{$parentCode}' in row {$rowNum} does not have a routing defined in customer database. Downstream costing will require routing inputs.",
+                    'severity'       => 'Warning'
+                ];
+            }
+        } elseif ($targetTable === 'routing') {
+            $productCode = strtoupper(trim((string)($data['product_code'] ?? '')));
+            $ccCode = strtoupper(trim((string)($data['cc_code'] ?? '')));
+
+            if ($productCode !== '' && !isset($allKnownItems[$productCode])) {
+                $warnings[] = [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => 'product_code',
+                    'target_field'   => 'product_code',
+                    'source_value'   => $productCode,
+                    'error_type'     => 'Missing Master Reference',
+                    'error_message'  => "Routing product '{$productCode}' in row {$rowNum} does not exist in Item Master. Ensure master record is uploaded prior to running downstream costing.",
+                    'severity'       => 'Warning'
+                ];
+            }
+            if ($ccCode !== '' && !empty($existingCostCenters) && !isset($existingCostCenters[$ccCode])) {
+                $warnings[] = [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => 'cc_code',
+                    'target_field'   => 'cc_code',
+                    'source_value'   => $ccCode,
+                    'error_type'     => 'Missing Master Reference',
+                    'error_message'  => "Referenced cost center '{$ccCode}' in row {$rowNum} does not exist in Cost Center Master.",
+                    'severity'       => 'Warning'
+                ];
+            }
+        } elseif ($targetTable === 'material_transaction') {
+            $itemCode = strtoupper(trim((string)($data['item_code'] ?? '')));
+            $partyCode = strtoupper(trim((string)($data['party_code'] ?? '')));
+
+            if ($itemCode !== '' && !isset($allKnownItems[$itemCode])) {
+                $warnings[] = [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => 'item_code',
+                    'target_field'   => 'item_code',
+                    'source_value'   => $itemCode,
+                    'error_type'     => 'Missing Master Reference',
+                    'error_message'  => "Material transaction item '{$itemCode}' in row {$rowNum} does not exist in Item Master.",
+                    'severity'       => 'Warning'
+                ];
+            }
+            if ($partyCode !== '' && !empty($existingParties) && !isset($existingParties[$partyCode])) {
+                $warnings[] = [
+                    'upload_file_id' => $fileId,
+                    'sheet_name'     => $sheetName,
+                    'row_number'     => $rowNum,
+                    'field'          => 'party_code',
+                    'target_field'   => 'party_code',
+                    'source_value'   => $partyCode,
+                    'error_type'     => 'Missing Master Reference',
+                    'error_message'  => "Referenced party '{$partyCode}' in row {$rowNum} does not exist in Party Master.",
+                    'severity'       => 'Warning'
+                ];
+            }
+        }
+    }
+
+    return $warnings;
+}
+
+/**
+ * Comprehensive pre-import data integrity validation across all files selected in an import run.
+ * Executes BEFORE any writes to customer business tables.
+ *
+ * @param PDO $custPdo Customer database PDO
+ * @param int $uploadId Upload ID
+ * @param array $files Selected upload_files records
+ * @param array $user Authenticated user
+ * @param array $orgContext Organization context (company_code, customer_code, etc.)
+ * @param array|null $accountingPeriod Active period array
+ * @return array ['valid' => bool, 'blocking_errors' => array, 'warnings' => array, 'bom_edges' => array]
+ */
+function validateImportBatchIntegrity(PDO $custPdo, int $uploadId, array $files, array $user, array $orgContext, ?array $accountingPeriod): array {
+    $defs = getFinalizedCategoryDefinitions();
+    $companyCode = $orgContext['company_code'] ?? '';
+    $customerId = (int)($user['customer_id'] ?? 1);
+
+    $blockingErrors = [];
+    $warnings = [];
+    $bomEdges = [];
+    $batchMasterItems = [];
+    $parsedFileBatches = [];
+
+    // PASS 1: Parse all files, extract headers, apply mappings, and collect Item Master items
+    foreach ($files as $f) {
+        $fileId = (int)$f['id'];
+        $storagePath = $f['storage_path'] ?? '';
+        $sheetName = $f['sheet_name'] ?: pathinfo($f['original_name'], PATHINFO_FILENAME);
+        $subCatId = $f['sub_category_id'] ? (int)$f['sub_category_id'] : null;
+
+        if (!file_exists($storagePath)) {
+            continue;
+        }
+
+        // Determine target entity table
+        $targetTable = 'items';
+        if ($subCatId) {
+            $tName = dbQuery("
+                SELECT te.table_name 
+                FROM public.sub_categories sc 
+                JOIN public.target_entities te ON te.id = sc.target_entity_id 
+                WHERE sc.id = ?
+            ", [$subCatId])->fetchColumn();
+            if ($tName) {
+                $targetTable = normalizeCanonicalTableName($tName);
+            }
+        }
+
+        // Match category definition
+        $catDef = null;
+        foreach ($defs as $d) {
+            if ($d['target_table'] === $targetTable || $d['sheet_name'] === $sheetName) {
+                $catDef = $d;
+                break;
+            }
+        }
+        if (!$catDef) {
+            $catDef = $defs['01_ITEM_PRODUCT_MASTER'];
+        }
+
+        $datasetKey = $catDef['key'] ?? '';
+        $isTransaction = !isMasterDataset($targetTable);
+
+        // Load custom mapping or exact contract
+        $fileMapping = json_decode($f['column_mappings'] ?? '[]', true) ?: [];
+        if (empty($fileMapping)) {
+            $saved = getSavedMapping($customerId, $targetTable, $sheetName, $subCatId, $companyCode, $user) ?: [];
+            if (!empty($saved) && !empty($headers)) {
+                $cleanHeaders = array_map(fn($h) => strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $h)))), $headers);
+                $savedKeys = array_map(fn($k) => strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $k)))), array_keys($saved));
+                if (!empty(array_intersect($cleanHeaders, $savedKeys))) {
+                    $fileMapping = $saved;
+                }
+            }
+        }
+
+        // Parse rows
+        $ext = strtolower($f['file_type'] ?? pathinfo($storagePath, PATHINFO_EXTENSION));
+        $rawRows = [];
+        $headers = json_decode($f['headers'] ?? '[]', true) ?: [];
+
+        if ($ext === 'xlsx' || $ext === 'xls') {
+            $parsed = parseXlsxSheetRows($storagePath, $sheetName);
+            if (!empty($parsed['headers'])) {
+                $headers = $parsed['headers'];
+            }
+            $rawRows = $parsed['rows'];
+        } elseif ($ext === 'csv') {
+            $h = fopen($storagePath, 'rb');
+            if ($h !== false) {
+                $rHeaders = fgetcsv($h);
+                if ($rHeaders !== false) {
+                    $headers = array_map('trim', $rHeaders);
+                }
+                while (($line = fgetcsv($h)) !== false) {
+                    $rawRows[] = $line;
+                }
+                fclose($h);
+            }
+        }
+
+        if (empty($rawRows)) {
+            continue;
+        }
+
+        $mappedRows = [];
+        foreach ($rawRows as $rowIdx => $row) {
+            $rowNum = $rowIdx + 2;
+
+            // Skip empty rows
+            if (empty(array_filter($row, fn($v) => trim((string)$v) !== ''))) {
+                continue;
+            }
+            // Skip instruction rows
+            $nonEmpty = array_values(array_filter($row, fn($v) => trim((string)$v) !== ''));
+            if (count($nonEmpty) === 1 && strpos($nonEmpty[0], '(') === 0 && str_ends_with($nonEmpty[0], ')')) {
+                continue;
+            }
+
+            $mappedData = [];
+            $sourceRowMap = [];
+
+            foreach ($headers as $colIdx => $hName) {
+                $cleanH = strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $hName))));
+                $val = isset($row[$colIdx]) ? trim((string)$row[$colIdx]) : null;
+                if ($val === '') {
+                    $val = null;
+                }
+                $sourceRowMap[$cleanH] = $val;
+                $sourceRowMap[$hName] = $val;
+
+                $destCol = $fileMapping[$hName] ?? ($fileMapping[$cleanH] ?? $cleanH);
+                if ($destCol === '__IGNORE__') {
+                    continue;
+                }
+                $mappedData[$destCol] = $val;
+            }
+
+            // Compatibility aliases
+            if ($targetTable === 'bom') {
+                if (empty($mappedData['item_code']) && !empty($sourceRowMap['child_item_code'])) {
+                    $mappedData['item_code'] = $sourceRowMap['child_item_code'];
+                }
+            } elseif ($targetTable === 'routing') {
+                if (empty($mappedData['product_code']) && !empty($sourceRowMap['item_code'])) {
+                    $mappedData['product_code'] = $sourceRowMap['item_code'];
+                }
+            }
+
+            $mappedRows[] = [
+                '_row_number'   => $rowNum,
+                '_raw_row'      => $row,
+                '_source_map'   => $sourceRowMap,
+                '_mapped_data'  => $mappedData
+            ];
+
+            // If Item Master, collect item_code and uom
+            if ($targetTable === 'items' && !empty($mappedData['item_code'])) {
+                $codeKey = strtoupper(trim((string)$mappedData['item_code']));
+                $batchMasterItems[$codeKey] = [
+                    'uom' => trim((string)($mappedData['unit_of_measure'] ?? ''))
+                ];
+            }
+        }
+
+        $parsedFileBatches[] = [
+            'file'          => $f,
+            'file_id'       => $fileId,
+            'sheet_name'    => $sheetName,
+            'target_table'  => $targetTable,
+            'cat_def'       => $catDef,
+            'dataset_key'   => $datasetKey,
+            'is_transaction'=> $isTransaction,
+            'headers'       => $headers,
+            'file_mapping'  => $fileMapping,
+            'mapped_rows'   => $mappedRows
+        ];
+    }
+
+    // PASS 2: Validate each row's data integrity
+    foreach ($parsedFileBatches as $batch) {
+        $fileId = $batch['file_id'];
+        $sheetName = $batch['sheet_name'];
+        $targetTable = $batch['target_table'];
+        $catDef = $batch['cat_def'];
+        $datasetKey = $batch['dataset_key'];
+        $isTransaction = $batch['is_transaction'];
+        $numericFields = $catDef['numeric_fields'] ?? [];
+        $dateFields = $catDef['date_fields'] ?? [];
+        $businessKeys = $catDef['business_key'] ?? [];
+
+        foreach ($batch['mapped_rows'] as $r) {
+            $rowNum = $r['_row_number'];
+            $data = $r['_mapped_data'];
+
+            // 1. Business key presence on actual data row:
+            // If primary business key is completely blank on the row, reject row
+            foreach ($businessKeys as $bk) {
+                if ($bk === 'period_id') continue;
+                if (!isset($data[$bk]) || trim((string)$data[$bk]) === '') {
+                    $blockingErrors[] = [
+                        'upload_file_id' => $fileId,
+                        'sheet_name'     => $sheetName,
+                        'row_number'     => $rowNum,
+                        'field'          => $bk,
+                        'target_field'   => $bk,
+                        'source_value'   => null,
+                        'error_type'     => 'Missing Business Key',
+                        'error_message'  => "Business key '{$bk}' in row {$rowNum} is empty or missing.",
+                        'severity'       => 'Critical'
+                    ];
+                }
+            }
+
+            // 2. Numeric fields validation
+            foreach ($numericFields as $numField) {
+                if (isset($data[$numField])) {
+                    $numValRes = cleanAndValidateNumericValue($data[$numField], $numField, $datasetKey, $rowNum, $sheetName, $fileId);
+                    if (!$numValRes['valid']) {
+                        $blockingErrors[] = $numValRes['error'];
+                    }
+                }
+            }
+
+            // 3. Date fields validation
+            foreach ($dateFields as $dtField) {
+                if (isset($data[$dtField])) {
+                    $dtValRes = cleanAndValidateDateValue($data[$dtField], $dtField, $accountingPeriod, $isTransaction, $rowNum, $sheetName, $fileId);
+                    if (!$dtValRes['valid']) {
+                        $blockingErrors[] = $dtValRes['error'];
+                    }
+                }
+            }
+
+            // 4. Enumeration fields validation
+            $enumValRes = cleanAndValidateEnumeration($data['oh_behaviour'] ?? null, 'oh_behaviour', $datasetKey, $rowNum, $sheetName, $fileId);
+            if (!$enumValRes['valid']) {
+                $blockingErrors[] = $enumValRes['error'];
+            }
+            $enumValRes2 = cleanAndValidateEnumeration($data['opening_balance_sign_d_c'] ?? null, 'opening_balance_sign_d_c', $datasetKey, $rowNum, $sheetName, $fileId);
+            if (!$enumValRes2['valid']) {
+                $blockingErrors[] = $enumValRes2['error'];
+            }
+            $enumValRes3 = cleanAndValidateEnumeration($data['is_production'] ?? null, 'is_production', $datasetKey, $rowNum, $sheetName, $fileId);
+            if (!$enumValRes3['valid']) {
+                $blockingErrors[] = $enumValRes3['error'];
+            }
+
+            // Collect BOM edges
+            if ($targetTable === 'bom') {
+                $parentCode = trim((string)($data['parent_item_code'] ?? ''));
+                $childCode = trim((string)($data['item_code'] ?? ''));
+                if ($parentCode !== '' && $childCode !== '') {
+                    $bomEdges[] = [
+                        'parent'  => $parentCode,
+                        'child'   => $childCode,
+                        'row'     => $rowNum,
+                        'sheet'   => $sheetName,
+                        'file_id' => $fileId
+                    ];
+                }
+            }
+        }
+
+        // Master-data relationship validation (non-blocking Warnings)
+        if (in_array($targetTable, ['bom', 'routing', 'material_transaction'], true)) {
+            $relWarnings = validateDatasetRelationships(
+                $batch['mapped_rows'],
+                $targetTable,
+                $custPdo,
+                $companyCode,
+                $batchMasterItems,
+                $fileId,
+                $sheetName
+            );
+            foreach ($relWarnings as $rw) {
+                $warnings[] = $rw;
+            }
+        }
+    }
+
+    // Circular BOM reference check across all edges
+    if (!empty($bomEdges)) {
+        $cycleRes = detectCircularBomReferences($bomEdges, $custPdo, $companyCode);
+        if ($cycleRes['has_cycle']) {
+            $blockingErrors[] = $cycleRes['detail'];
+        }
+    }
+
+    return [
+        'valid'           => empty($blockingErrors),
+        'blocking_errors' => $blockingErrors,
+        'warnings'        => $warnings,
+        'bom_edges'       => $bomEdges
+    ];
+}
+
+/**
  * Persists user-defined column mapping strictly in the CUSTOMER-SPECIFIC database,
  * verified against the user's company membership.
  */
 function saveCustomMapping(int $fileId, array $mapping, int $userId, ?array $user = null): array {
+    // Validate Duplicate Target Column Assignments (Phase 2A - Change 1)
+    $dupCheck = validateMappingDuplicateTargets($mapping);
+    if (!$dupCheck['valid']) {
+        return [
+            'ok'         => false,
+            'code'       => 'DUPLICATE_TARGET_ASSIGNMENT',
+            'message'    => $dupCheck['message'],
+            'duplicates' => $dupCheck['duplicates']
+        ];
+    }
+
     $file = dbQuery("SELECT * FROM public.upload_files WHERE id = ?", [$fileId])->fetch(PDO::FETCH_ASSOC);
     if (!$file) {
         return ['ok' => false, 'message' => 'Upload file record not found.'];
@@ -1194,8 +2231,13 @@ function saveCustomMapping(int $fileId, array $mapping, int $userId, ?array $use
         }
     }
 
+    // Phase 2A (Change 3): Safe fail if company context cannot be resolved; no hardcoded fallbacks
     if (empty($companyCode)) {
-        $companyCode = 'ABC02';
+        return [
+            'ok'      => false,
+            'code'    => 'MISSING_COMPANY_CONTEXT',
+            'message' => 'Unable to resolve active company context. Please select an active company before saving column mappings.'
+        ];
     }
 
     // Security Check: Verify that the user belongs to that company
@@ -1994,6 +3036,8 @@ function ensureTargetTableExistsInCustomerDb(PDO $custPdo, string $tableName): b
             'company_code VARCHAR(100)',
             'division_code VARCHAR(100)',
             'location_code VARCHAR(100)',
+            'period_id BIGINT',
+            'period_code VARCHAR(100)',
             'created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP',
             'created_by BIGINT',
             'modified_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP',
@@ -2656,9 +3700,10 @@ function getFilePreviewData($fileId, ?array $user = null, ?int $periodId = null,
             WHERE sc.id = ?
         ", [$file['sub_category_id']])->fetchColumn();
         if ($tName) {
-            $targetTable = strtolower(trim($tName));
+            $targetTable = normalizeCanonicalTableName($tName);
         }
     }
+    $targetTable = normalizeCanonicalTableName($targetTable);
 
     ensureTargetTableExistsInCustomerDb($custPdo, $targetTable);
     $targetCols = getTargetTableColumns($targetTable, $custPdo);
@@ -2703,6 +3748,7 @@ function getFilePreviewData($fileId, ?array $user = null, ?int $periodId = null,
 
     // Organization Scope Context
     $orgContext = getActiveOrganizationContext();
+    $companyCode = !empty($orgContext['company_code']) ? $orgContext['company_code'] : ($_SESSION['active_company_code'] ?? '');
 
     // Category and Dataset Type Resolution
     $defs = getFinalizedCategoryDefinitions();
@@ -2774,6 +3820,82 @@ function getFilePreviewData($fileId, ?array $user = null, ?int $periodId = null,
     }
     $previewSummary['date_violations'] = $dateViolations;
 
+    // Phase 2B: Validate sample rows for data integrity (numeric formatting, domain constraints, date formats, enumerations, BOM cycles)
+    $sampleValidationErrors = [];
+    $sampleValidationWarnings = [];
+    $sampleBomEdges = [];
+
+    $numericFields = $catDef['numeric_fields'] ?? [];
+    $dateFields = $catDef['date_fields'] ?? [];
+    $isTransactionDataset = !isMasterDataset($targetTable);
+
+    foreach ($data as $sampleIdx => $sampleRow) {
+        $rowNum = $sampleIdx + 2;
+        $mappedSample = [];
+        foreach ($sampleRow as $colName => $colVal) {
+            $cleanCol = strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $colName))));
+            $destCol = $mapping[$colName] ?? ($mapping[$cleanCol] ?? $cleanCol);
+            if ($destCol !== '__IGNORE__') {
+                $mappedSample[$destCol] = $colVal;
+            }
+        }
+
+        // Numeric checks
+        foreach ($numericFields as $numField) {
+            if (isset($mappedSample[$numField])) {
+                $numRes = cleanAndValidateNumericValue($mappedSample[$numField], $numField, $catDef['key'] ?? '', $rowNum, $file['sheet_name'] ?: $file['original_name'], (int)$file['id']);
+                if (!$numRes['valid']) {
+                    $sampleValidationErrors[] = $numRes['error'];
+                }
+            }
+        }
+
+        // Date checks
+        foreach ($dateFields as $dtField) {
+            if (isset($mappedSample[$dtField])) {
+                $dtRes = cleanAndValidateDateValue($mappedSample[$dtField], $dtField, $periodContext, $isTransactionDataset, $rowNum, $file['sheet_name'] ?: $file['original_name'], (int)$file['id']);
+                if (!$dtRes['valid']) {
+                    $sampleValidationErrors[] = $dtRes['error'];
+                }
+            }
+        }
+
+        // Enumeration checks
+        $enumRes1 = cleanAndValidateEnumeration($mappedSample['oh_behaviour'] ?? null, 'oh_behaviour', $catDef['key'] ?? '', $rowNum, $file['sheet_name'] ?: $file['original_name'], (int)$file['id']);
+        if (!$enumRes1['valid']) {
+            $sampleValidationErrors[] = $enumRes1['error'];
+        }
+        $enumRes2 = cleanAndValidateEnumeration($mappedSample['opening_balance_sign_d_c'] ?? null, 'opening_balance_sign_d_c', $catDef['key'] ?? '', $rowNum, $file['sheet_name'] ?: $file['original_name'], (int)$file['id']);
+        if (!$enumRes2['valid']) {
+            $sampleValidationErrors[] = $enumRes2['error'];
+        }
+
+        // BOM checks
+        if ($targetTable === 'bom') {
+            $pCode = trim((string)($mappedSample['parent_item_code'] ?? ''));
+            $cCode = trim((string)($mappedSample['item_code'] ?? ''));
+            if ($pCode !== '' && $cCode !== '') {
+                $sampleBomEdges[] = [
+                    'parent'  => $pCode,
+                    'child'   => $cCode,
+                    'row'     => $rowNum,
+                    'sheet'   => $file['sheet_name'] ?: $file['original_name'],
+                    'file_id' => (int)$file['id']
+                ];
+            }
+        }
+    }
+
+    if (!empty($sampleBomEdges)) {
+        $sampleCycleRes = detectCircularBomReferences($sampleBomEdges, $custPdo, $companyCode);
+        if ($sampleCycleRes['has_cycle']) {
+            $sampleValidationErrors[] = $sampleCycleRes['detail'];
+        }
+    }
+
+    $previewSummary['validation_errors'] = $sampleValidationErrors;
+    $previewSummary['validation_warnings'] = $sampleValidationWarnings;
+
     if (!empty($data) && !empty($catDef['business_key'])) {
         $businessKeys = $catDef['business_key'];
         foreach ($data as $sampleRow) {
@@ -2793,9 +3915,9 @@ function getFilePreviewData($fileId, ?array $user = null, ?int $periodId = null,
                     }
                 }
             }
-            if (in_array('company_code', $targetColNames, true)) {
+            if (in_array('company_code', $targetColNames, true) && !empty($companyCode)) {
                 $whereParts[] = "company_code = ?";
-                $whereVals[] = $orgContext['company_code'] ?? 'COMP001';
+                $whereVals[] = $companyCode;
             }
             if (!empty($whereParts)) {
                 $wSql = implode(' AND ', $whereParts);
@@ -2833,29 +3955,31 @@ function getFilePreviewData($fileId, ?array $user = null, ?int $periodId = null,
     }
 
     return [
-        'ok'                => true,
-        'file'              => $file,
-        'headers'           => $headers,
-        'data'              => $data,
-        'target_table'      => $targetTable,
-        'database_name'     => $custDbContext['database_name'],
-        'customer_id'       => $custDbContext['customer_id'],
-        'target_columns'    => $targetColNames,
-        'auto_mapping'      => $mapping,
-        'is_saved_mapping'  => $isSavedMapping,
-        'has_saved_mapping' => $isSavedMapping,
-        'dataset_type'      => $datasetType,
-        'active_period'     => $periodContext,
-        'period_context'    => $periodContext,
-        'period_error'      => $periodError,
-        'available_periods' => $availablePeriods,
-        'preview_summary'   => $previewSummary,
-        'date_violations'   => $dateViolations,
-        'org_context'       => [
-            'customer_code' => $orgContext['customer_code'] ?? 'CUST001',
-            'company_code'  => $orgContext['company_code'] ?? 'COMP001',
-            'division_code' => $orgContext['division_code'] ?? 'DIV001',
-            'location_code' => $orgContext['location_code'] ?? 'LOC001'
+        'ok'                  => true,
+        'file'                => $file,
+        'headers'             => $headers,
+        'data'                => $data,
+        'target_table'        => $targetTable,
+        'database_name'       => $custDbContext['database_name'],
+        'customer_id'         => $custDbContext['customer_id'],
+        'target_columns'      => $targetColNames,
+        'auto_mapping'        => $mapping,
+        'is_saved_mapping'    => $isSavedMapping,
+        'has_saved_mapping'   => $isSavedMapping,
+        'dataset_type'        => $datasetType,
+        'active_period'       => $periodContext,
+        'period_context'      => $periodContext,
+        'period_error'        => $periodError,
+        'available_periods'   => $availablePeriods,
+        'preview_summary'     => $previewSummary,
+        'date_violations'     => $dateViolations,
+        'validation_errors'   => $sampleValidationErrors,
+        'validation_warnings' => $sampleValidationWarnings,
+        'org_context'         => [
+            'customer_code' => $orgContext['customer_code'] ?? '',
+            'company_code'  => !empty($companyCode) ? $companyCode : ($orgContext['company_code'] ?? ''),
+            'division_code' => $orgContext['division_code'] ?? '',
+            'location_code' => $orgContext['location_code'] ?? ''
         ]
     ];
 }
@@ -2912,7 +4036,10 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
     if (empty($activeCompanyCode) && !empty($orgContext['company_id']) && is_numeric($orgContext['company_id'])) {
         $coStmt = $globalPdo->prepare("SELECT company_code FROM companies WHERE company_id = ?");
         $coStmt->execute([(int)$orgContext['company_id']]);
-        $activeCompanyCode = $coStmt->fetchColumn() ?: 'COMP001';
+        $activeCompanyCode = $coStmt->fetchColumn() ?: '';
+    }
+    if (empty($activeCompanyCode) && !empty($_SESSION['active_company_code'])) {
+        $activeCompanyCode = trim($_SESSION['active_company_code']);
     }
     if (empty($activeLocationCode)) {
         $loc = getActiveOperationalLocation();
@@ -2994,6 +4121,215 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
     ]);
 
     $defs = getFinalizedCategoryDefinitions();
+
+    // =========================================================================
+    // SERVER-SIDE IMPORT APPROVAL GATE (PHASE 2A - CHANGE 2)
+    // Prevent imports from starting unless every selected file or worksheet
+    // satisfies the applicable existing mapping and validation requirements.
+    // Preserves exact-contract workflow; requires persisted, valid mapping
+    // for custom-mapped files. Revalidates mapping duplicate-target integrity.
+    // Entire batch is rejected before any business data writes if any file fails.
+    // PRESERVES MANDATORY-COLUMN SKIPPING: No compulsory fields are enforced.
+    // =========================================================================
+    $gateErrors = [];
+    foreach ($files as $gateFile) {
+        $gHeaders = json_decode($gateFile['headers'] ?? '[]', true) ?: [];
+        $gSubCatId = $gateFile['sub_category_id'] ? (int)$gateFile['sub_category_id'] : null;
+        $gSheetName = $gateFile['sheet_name'] ?: pathinfo($gateFile['original_name'], PATHINFO_FILENAME);
+
+        // Determine target table
+        $gTargetTable = 'items';
+        if ($gSubCatId) {
+            $tName = dbQuery("
+                SELECT te.table_name 
+                FROM public.sub_categories sc 
+                JOIN public.target_entities te ON te.id = sc.target_entity_id 
+                WHERE sc.id = ?
+            ", [$gSubCatId])->fetchColumn();
+            if ($tName) {
+                $gTargetTable = normalizeCanonicalTableName(trim($tName));
+            }
+        }
+        $gTargetTable = normalizeCanonicalTableName($gTargetTable);
+
+        // Match category definition
+        $gCatDef = null;
+        foreach ($defs as $d) {
+            if ($d['target_table'] === $gTargetTable || $d['sheet_name'] === $gSheetName) {
+                $gCatDef = $d;
+                break;
+            }
+        }
+        if (!$gCatDef) {
+            $gCatDef = $defs['01_ITEM_PRODUCT_MASTER'];
+        }
+
+        // Check if underlying storage file exists
+        if (!file_exists($gateFile['storage_path'])) {
+            $gateErrors[] = [
+                'file_id'    => $gateFile['id'],
+                'sheet_name' => $gSheetName,
+                'reason'     => "Underlying source file not found on server storage: " . basename($gateFile['storage_path'])
+            ];
+            break;
+        }
+
+        // Check Exact Contract match
+        $expectedHeaders = $gCatDef['headers'] ?? [];
+        $missing = array_values(array_diff($expectedHeaders, $gHeaders));
+        $unexpected = array_values(array_diff($gHeaders, $expectedHeaders));
+        $isExactMatch = empty($missing) && empty($unexpected);
+        $hasExactContractValStatus = ($gateFile['validation_status'] === 'Validated (Exact Contract)');
+
+        if ($isExactMatch || $hasExactContractValStatus) {
+            // Exact contract match satisfied
+            continue;
+        }
+
+        // Custom-mapped file: must have a valid, persisted mapping in upload_files or customer DB saved_mappings
+        $persistedMapping = json_decode($gateFile['column_mappings'] ?? '[]', true) ?: [];
+        if (empty($persistedMapping)) {
+            $saved = getSavedMapping($customerId, $gTargetTable, $gSheetName, $gSubCatId, $activeCompanyCode, $user) ?: [];
+            if (!empty($saved) && !empty($gHeaders)) {
+                $cleanGateHeaders = array_map(fn($h) => strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $h)))), $gHeaders);
+                $savedKeys = array_map(fn($k) => strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $k)))), array_keys($saved));
+                if (!empty(array_intersect($cleanGateHeaders, $savedKeys))) {
+                    $persistedMapping = $saved;
+                }
+            }
+        }
+
+        if (empty($persistedMapping)) {
+            $gateErrors[] = [
+                'file_id'    => $gateFile['id'],
+                'sheet_name' => $gSheetName,
+                'reason'     => "File '{$gateFile['original_name']}' has custom columns that do not match the canonical contract and has no approved, persisted column mapping. Please preview and approve column mappings before importing."
+            ];
+            break;
+        }
+
+        // Revalidate mapping integrity on server: reject duplicate canonical target assignments
+        $dupValidation = validateMappingDuplicateTargets($persistedMapping);
+        if (!$dupValidation['valid']) {
+            $gateErrors[] = [
+                'file_id'    => $gateFile['id'],
+                'sheet_name' => $gSheetName,
+                'reason'     => "File '{$gateFile['original_name']}' mapping failed server-side integrity validation: " . $dupValidation['message']
+            ];
+            break;
+        }
+    }
+
+    if (!empty($gateErrors)) {
+        $firstGateErr = $gateErrors[0];
+        dbQuery("UPDATE public.uploads SET status = 'Failed', error_rows = 1 WHERE id = ?", [$uploadId]);
+        dbQuery("
+            INSERT INTO public.import_errors(upload_id, upload_file_id, sheet_name, row_number, field, error_type, error_message, severity)
+            VALUES(?, ?, ?, 0, 'mapping', 'Import Gate Rejected', ?, 'Critical')
+        ", [$uploadId, $firstGateErr['file_id'], $firstGateErr['sheet_name'], $firstGateErr['reason']]);
+
+        logUploadAudit($userId, $username, 'IMPORT_GATE_REJECTED', 'Upload Centre', null, 'Failed', [
+            'upload_id'   => $uploadId,
+            'file_id'     => $firstGateErr['file_id'],
+            'sheet_name'  => $firstGateErr['sheet_name'],
+            'reason'      => $firstGateErr['reason']
+        ]);
+
+        return [
+            'ok'             => false,
+            'code'           => 'IMPORT_GATE_FAILED',
+            'message'        => "Import gate rejected batch: " . $firstGateErr['reason'],
+            'failed_file_id' => $firstGateErr['file_id'],
+            'failed_sheet'   => $firstGateErr['sheet_name'],
+            'gate_errors'    => $gateErrors
+        ];
+    }
+
+    // =========================================================================
+    // PHASE 2B — DATA INTEGRITY AND VALIDATION PRE-IMPORT VERIFICATION
+    // Validates numeric formats, domain constraints, date parsing & period bounds,
+    // circular BOM detection, and master-data relationship integrity.
+    // If ANY blocking validation error exists, aborts the entire batch BEFORE
+    // any writes to customer business tables.
+    // =========================================================================
+    $integrityRes = validateImportBatchIntegrity(
+        $custPdo,
+        $uploadId,
+        $files,
+        $user,
+        [
+            'customer_code' => $activeCustomerCode,
+            'company_code'  => $activeCompanyCode,
+            'division_code' => $activeDivisionCode,
+            'location_code' => $activeLocationCode
+        ],
+        $accountingPeriod
+    );
+
+    if (!$integrityRes['valid']) {
+        $blockingErrors = $integrityRes['blocking_errors'];
+        $firstErr = $blockingErrors[0];
+
+        // Mark upload as Failed
+        dbQuery("UPDATE public.uploads SET status = 'Failed', error_rows = ? WHERE id = ?", [count($blockingErrors), $uploadId]);
+
+        // Insert all blocking errors into public.import_errors
+        foreach ($blockingErrors as $err) {
+            dbQuery("
+                INSERT INTO public.import_errors(
+                    upload_id, upload_file_id, sheet_name, row_number, field, source_value, target_field, error_type, error_message, severity
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Critical')
+            ", [
+                $uploadId,
+                $err['upload_file_id'] ?? null,
+                $err['sheet_name'] ?? '',
+                $err['row_number'] ?? 0,
+                $err['field'] ?? '',
+                $err['source_value'] ?? null,
+                $err['target_field'] ?? ($err['field'] ?? ''),
+                $err['error_type'] ?? 'Data Validation Error',
+                $err['error_message'] ?? ''
+            ]);
+        }
+
+        logUploadAudit($userId, $username, 'DATA_VALIDATION_FAILED', 'Upload Centre', null, 'Failed', [
+            'upload_id'       => $uploadId,
+            'blocking_errors' => count($blockingErrors),
+            'first_error'     => $firstErr['error_message']
+        ]);
+
+        return [
+            'ok'             => false,
+            'code'           => 'DATA_VALIDATION_FAILED',
+            'message'        => "Data integrity validation failed with " . count($blockingErrors) . " blocking error(s): " . $firstErr['error_message'],
+            'failed_file_id' => $firstErr['upload_file_id'] ?? null,
+            'failed_sheet'   => $firstErr['sheet_name'] ?? null,
+            'violations'     => $blockingErrors,
+            'warnings'       => $integrityRes['warnings'] ?? []
+        ];
+    }
+
+    // If warnings exist, log them to public.import_errors with severity 'Warning'
+    if (!empty($integrityRes['warnings'])) {
+        foreach ($integrityRes['warnings'] as $w) {
+            dbQuery("
+                INSERT INTO public.import_errors(
+                    upload_id, upload_file_id, sheet_name, row_number, field, source_value, target_field, error_type, error_message, severity
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Warning')
+            ", [
+                $uploadId,
+                $w['upload_file_id'] ?? null,
+                $w['sheet_name'] ?? '',
+                $w['row_number'] ?? 0,
+                $w['field'] ?? '',
+                $w['source_value'] ?? null,
+                $w['target_field'] ?? ($w['field'] ?? ''),
+                $w['error_type'] ?? 'Validation Warning',
+                $w['error_message'] ?? ''
+            ]);
+        }
+    }
+
     $totalImported = 0;
     $totalUpdated = 0;
     $totalUnchanged = 0;
@@ -3015,9 +4351,10 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
                 WHERE sc.id = ?
             ", [$subCatId])->fetchColumn();
             if ($tName) {
-                $targetTable = strtolower(trim($tName));
+                $targetTable = normalizeCanonicalTableName(trim($tName));
             }
         }
+        $targetTable = normalizeCanonicalTableName($targetTable);
 
         // Find category contract definition
         $catDef = null;
@@ -3087,14 +4424,21 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
             continue;
         }
 
-        // Atomic transaction on customer database for this sheet
-        $custPdo->beginTransaction();
-
         // Load custom column mappings if defined for this file or customer
         $fileMapping = json_decode($f['column_mappings'] ?? '[]', true) ?: [];
         if (empty($fileMapping)) {
-            $fileMapping = getSavedMapping($customerId, $targetTable, $sheetName, $subCatId, $activeCompanyCode, $user) ?: [];
+            $saved = getSavedMapping($customerId, $targetTable, $sheetName, $subCatId, $activeCompanyCode, $user) ?: [];
+            if (!empty($saved) && !empty($headers)) {
+                $cleanHeaders = array_map(fn($h) => strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $h)))), $headers);
+                $savedKeys = array_map(fn($k) => strtolower(trim(preg_replace('/[^a-z0-9_]/i', '', str_replace(' ', '_', $k)))), array_keys($saved));
+                if (!empty(array_intersect($cleanHeaders, $savedKeys))) {
+                    $fileMapping = $saved;
+                }
+            }
         }
+
+        // Atomic transaction on customer database for this sheet
+        $custPdo->beginTransaction();
 
         try {
             foreach ($rawRows as $rowIdx => $row) {
@@ -3272,23 +4616,20 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
                     $whereParams[] = (int)$accountingPeriod['period_id'];
                 }
 
-                $existingRow = null;
-                if (!empty($whereClauses)) {
-                    $whereSql = implode(' AND ', $whereClauses);
-                    $checkSql = "SELECT * FROM public.{$targetTable} WHERE {$whereSql} LIMIT 1";
-
-                    try {
-                        $chkStmt = $custPdo->prepare($checkSql);
-                        $chkStmt->execute($whereParams);
-                        $existingRow = $chkStmt->fetch(PDO::FETCH_ASSOC);
-                    } catch (Throwable $e) {}
-                }
-
                 // Isolate row operation with SAVEPOINT to guarantee consistency
                 $spName = "sp_r_" . $rowNum;
                 $custPdo->exec("SAVEPOINT {$spName}");
 
                 try {
+                    $existingRow = null;
+                    if (!empty($whereClauses)) {
+                        $whereSql = implode(' AND ', $whereClauses);
+                        $checkSql = "SELECT * FROM public.{$targetTable} WHERE {$whereSql} LIMIT 1";
+                        $chkStmt = $custPdo->prepare($checkSql);
+                        $chkStmt->execute($whereParams);
+                        $existingRow = $chkStmt->fetch(PDO::FETCH_ASSOC);
+                    }
+
                     $nowTimestamp = date('Y-m-d H:i:s');
                     if ($existingRow) {
                         // Compare incoming business fields vs existing row to determine if anything changed
@@ -3432,17 +4773,19 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
     clearUploadCentreCache();
 
     return [
-        'ok'            => true,
-        'upload_id'     => $uploadId,
-        'imported'      => $totalImported,
-        'updated'       => $totalUpdated,
-        'unchanged'     => $totalUnchanged,
-        'skipped'       => $totalSkipped,
-        'failed'        => $totalFailed,
-        'period'        => $accountingPeriod ? $accountingPeriod['period_name'] : null,
-        'period_id'     => $accountingPeriod ? (int)$accountingPeriod['period_id'] : null,
-        'database_name' => $custDbName,
-        'message'       => "Import Complete: {$totalImported} inserted, {$totalUpdated} updated, {$totalUnchanged} unchanged, {$totalFailed} errors."
+        'ok'             => true,
+        'upload_id'      => $uploadId,
+        'imported'       => $totalImported,
+        'updated'        => $totalUpdated,
+        'unchanged'      => $totalUnchanged,
+        'skipped'        => $totalSkipped,
+        'failed'         => $totalFailed,
+        'warnings'       => $integrityRes['warnings'] ?? [],
+        'warnings_count' => count($integrityRes['warnings'] ?? []),
+        'period'         => $accountingPeriod ? $accountingPeriod['period_name'] : null,
+        'period_id'      => $accountingPeriod ? (int)$accountingPeriod['period_id'] : null,
+        'database_name'  => $custDbName,
+        'message'        => "Import Complete: {$totalImported} inserted, {$totalUpdated} updated, {$totalUnchanged} unchanged, {$totalFailed} errors." . (!empty($integrityRes['warnings']) ? " (" . count($integrityRes['warnings']) . " warnings logged)" : "")
     ];
 }
 
@@ -3450,7 +4793,7 @@ function executeDataImport($uploadId, $user, ?array $selectedFileIds = null, ?in
 function getImportErrorsByUploadId($uploadId) {
     try {
         return dbQuery("
-            SELECT id, upload_id, upload_file_id, sheet_name, row_number, field, source_value, error_type, error_message, severity, created_at
+            SELECT id, upload_id, upload_file_id, sheet_name, row_number, field, source_value, target_field, error_type, error_message, severity, created_at
             FROM public.import_errors
             WHERE upload_id = ?
             ORDER BY sheet_name ASC, row_number ASC, id ASC
@@ -3641,6 +4984,17 @@ function ensureAllCustomerDefaultMappings(PDO $custPdo, string $companyCode, ?in
  * directly from the Mapping Centre. Strictly validates user company membership.
  */
 function updateCustomerSavedMapping(string $targetTable, array $mapping, ?string $sheetName = null, ?string $companyCode = null, ?array $user = null): array {
+    // Validate Duplicate Target Column Assignments (Phase 2A - Change 1)
+    $dupCheck = validateMappingDuplicateTargets($mapping);
+    if (!$dupCheck['valid']) {
+        return [
+            'ok'         => false,
+            'code'       => 'DUPLICATE_TARGET_ASSIGNMENT',
+            'message'    => $dupCheck['message'],
+            'duplicates' => $dupCheck['duplicates']
+        ];
+    }
+
     if (!$user) {
         $user = getAuthUser();
     }
@@ -3673,8 +5027,13 @@ function updateCustomerSavedMapping(string $targetTable, array $mapping, ?string
         }
     }
 
+    // Phase 2A (Change 3): Safe fail if company context cannot be resolved; no hardcoded fallbacks
     if (empty($companyCode)) {
-        $companyCode = 'ABC02';
+        return [
+            'ok'      => false,
+            'code'    => 'MISSING_COMPANY_CONTEXT',
+            'message' => 'Unable to resolve active company context. Please select an active company before updating column mappings.'
+        ];
     }
 
     // Security Check: Verify that the user belongs to that company
@@ -3791,7 +5150,12 @@ function getMappingConfigurationsData(?array $user = null): array {
             }
         }
         if (empty($companyCode)) {
-            $companyCode = 'ABC02';
+            return [
+                'database_name' => $custDbName,
+                'company_code'  => '',
+                'can_edit'      => false,
+                'mappings'      => []
+            ];
         }
 
         // Ensure default mappings are seeded for this customer and company
@@ -3874,7 +5238,7 @@ function getMappingConfigurationsData(?array $user = null): array {
         error_log("getMappingConfigurationsData error: " . $e->getMessage());
         return [
             'database_name' => 'Unknown',
-            'company_code'  => 'ABC02',
+            'company_code'  => '',
             'can_edit'      => false,
             'mappings'      => []
         ];

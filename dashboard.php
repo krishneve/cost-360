@@ -40,6 +40,10 @@ if ($currentPage === 'users') {
     $activeMenuName = 'Company Management';
 } elseif ($currentPage === 'mapping') {
     $activeMenuName = 'Mapping';
+} elseif ($currentPage === 'reconciliation' || $currentPage === 'audit-desk') {
+    $activeMenuName = 'Financial Reconciliation';
+} elseif ($currentPage === 'uploaded-reports' || $currentPage === 'reports') {
+    $activeMenuName = 'Uploaded Data Reports';
 }
 
 /*
@@ -66,7 +70,7 @@ $availablePeriods = getUserAccessiblePeriods($activeCompanyId);
 /* ============================================================
    HANDLE INLINE PERIOD CREATION & ACTIVATION FROM POPOVER
    ============================================================ */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_and_select_period') {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_and_select_period') {
     $pName = trim($_POST['period_name'] ?? '');
     $sDate = trim($_POST['start_date'] ?? '');
     $eDate = trim($_POST['end_date'] ?? '');
@@ -105,6 +109,21 @@ $recentUploads = ($currentPage === 'upload' || $currentPage === 'history') ? get
 $auditLogs = ($currentPage === 'audit') ? getUploadAuditLogs(100) : [];
 $mappingConfigsData = ($currentPage === 'mapping') ? getMappingConfigurationsData($user) : [];
 $masterGroupsData = ($currentPage === 'masters') ? getMasterGroupsData() : [];
+$reconciliationData = ($currentPage === 'reconciliation' || $currentPage === 'audit-desk') 
+    ? (function() use ($user, $activeCompanyCode, $activePeriodId) {
+        try {
+            $cCtx = getUserCustomerDbContext($user);
+            return getFinancialReconciliationOverview($cCtx['pdo'], [
+                'company_code' => $activeCompanyCode,
+                'period_id'    => $activePeriodId,
+                'tolerance'    => isset($_GET['tolerance']) ? (float)$_GET['tolerance'] : 0.00,
+                'user'         => $user
+            ]);
+        } catch (Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    })() 
+    : null;
 
 // Helper function for rendering menu icons safely
 if (!function_exists('getMenuIconSvg')) {
@@ -151,7 +170,7 @@ if (!function_exists('formatMenuRouteUrl')) {
 
         // Parent modules with no standalone page shouldn't navigate away to a 404
         $parentOnlyRoutes = [
-            'administration', 'admin', 'data', 'costing', 'audit', 'reports', 'settings',
+            'administration', 'admin', 'data', 'costing', 'audit', 'settings',
             'organization', 'customers', 'customer_mgmt', 'administration/subscriptions',
             'subscriptions', 'administration/cma', 'cma', 'cma/user-management', 'cma_user_mgmt'
         ];
@@ -192,6 +211,13 @@ if (!function_exists('formatMenuRouteUrl')) {
             'data/history'                           => 'import-history.php',
             'data/audit'                             => 'audit-logs.php',
             'data/masters'                           => 'master-groups.php',
+            'reports'                                => 'uploaded-reports.php',
+            'reports/'                               => 'uploaded-reports.php',
+            'reports/uploaded'                       => 'uploaded-reports.php',
+            'reports/uploaded-data'                  => 'uploaded-reports.php',
+            'data/reports'                           => 'uploaded-reports.php',
+            'uploaded-reports'                       => 'uploaded-reports.php',
+            'uploaded-reports.php'                   => 'uploaded-reports.php',
         ];
 
         if (isset($routeMap[$lower])) {
@@ -1312,6 +1338,10 @@ if (!function_exists('formatMenuRouteUrl')) {
                           $isActive = true;
                       } elseif ($currentPage === 'audit' && ($menuCode === 'AUDIT' || strpos($nodeRoute, 'audit') !== false)) {
                           $isActive = true;
+                      } elseif (($currentPage === 'reconciliation' || $currentPage === 'audit-desk') && ($menuCode === 'RECONCILIATION' || $menuCode === 'AUDIT' || $menuCode === 'AUDIT_DESK' || strpos($nodeRoute, 'audit') !== false || strpos($nodeRoute, 'reconciliation') !== false)) {
+                          $isActive = true;
+                      } elseif (($currentPage === 'uploaded-reports' || $currentPage === 'reports') && ($menuCode === 'REPORTS' || strpos($nodeRoute, 'reports') !== false || strpos($nodeRoute, 'uploaded') !== false)) {
+                          $isActive = true;
                       } elseif ($currentPage === 'subscription-plans' && strpos($nodeRoute, 'subscriptions/plans') !== false) {
                           $isActive = true;
                       } elseif ($currentPage === 'customer-subscriptions' && strpos($nodeRoute, 'subscriptions/customers') !== false) {
@@ -1677,8 +1707,12 @@ if (!function_exists('formatMenuRouteUrl')) {
                 Period: <strong style="color: var(--c360-text-primary, #0E2942);"><?php echo htmlspecialchars($activePeriodName ?: 'All Periods'); ?></strong>
               </div>
             </div>
-            <div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
               <a href="customer-selection.php" class="btn-secondary" style="font-size: 0.82rem; text-decoration: none;">Switch Scope</a>
+              <a href="uploaded-reports.php" class="btn-primary" style="font-size: 0.82rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                Uploaded Data Reports
+              </a>
             </div>
           </div>
         </section>
@@ -1715,7 +1749,11 @@ if (!function_exists('formatMenuRouteUrl')) {
         <section class="section-card">
           <div class="section-header">
             <h2 class="section-title">Upload Costing & Master Data Files</h2>
-            <div style="display: flex; gap: 0.75rem;">
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+              <a href="reconciliation.php" class="btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.45rem; background: #F0FDF4; border: 1px solid #86EFAC; color: #166534;" title="Open CMA Financial Reconciliation">
+                <span style="font-size: 0.95rem;">⚖️</span>
+                <span>Financial Reconciliation</span>
+              </a>
               <button class="btn-secondary" id="selectBtn">Select Files</button>
               <button class="btn-secondary" id="folderBtn">Select Folder</button>
             </div>
@@ -1809,8 +1847,9 @@ if (!function_exists('formatMenuRouteUrl')) {
              ============================================================ -->
         <?php
           $mappingsList       = $mappingConfigsData['mappings'] ?? [];
-          $activeCustDb       = $mappingConfigsData['database_name'] ?? 'cost360_customer_cust001';
-          $activeCompCode     = $mappingConfigsData['company_code'] ?? 'ABC02';
+          $activeCustDb       = $mappingConfigsData['database_name'] ?? '—';
+          $activeCompCode     = $mappingConfigsData['company_code'] ?? '—';
+          $activeCustCode     = $mappingConfigsData['customer_code'] ?? ($activeOrgContext['customer_code'] ?? '—');
           $userCanEdit        = !empty($mappingConfigsData['can_edit']);
           $totalMappingsCount = 0;
           foreach ($mappingsList as $m) {
@@ -2188,7 +2227,7 @@ if (!function_exists('formatMenuRouteUrl')) {
         <div class="c360-scope-banner">
           <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
             <strong style="color: #0369A1;">Tenant Context:</strong>
-            Customer: <span class="c360-scope-tag">CUST001</span> &bull;
+            Customer: <span class="c360-scope-tag"><?= htmlspecialchars($activeCustCode) ?></span> &bull;
             Company: <span class="c360-scope-tag"><?= htmlspecialchars($activeCompCode) ?></span> &bull;
             Database: <span class="c360-scope-tag"><?= htmlspecialchars($activeCustDb) ?></span>
           </div>
@@ -2358,7 +2397,7 @@ if (!function_exists('formatMenuRouteUrl')) {
             <div class="c360-scope-banner" style="border-radius: 0; margin-bottom: 0;">
               <div>
                 <strong style="color: #0369A1;">Enforced Scope:</strong>
-                Customer: <span class="c360-scope-tag">CUST001</span> &bull;
+                Customer: <span class="c360-scope-tag"><?= htmlspecialchars($activeCustCode) ?></span> &bull;
                 Company: <span class="c360-scope-tag"><?= htmlspecialchars($activeCompCode) ?></span> &bull;
                 Database: <span class="c360-scope-tag"><?= htmlspecialchars($activeCustDb) ?></span>
               </div>
@@ -2651,6 +2690,28 @@ if (!function_exists('formatMenuRouteUrl')) {
               }
             });
 
+            // Validate duplicate target assignments (Phase 2A - Change 1)
+            const targetUsage = {};
+            const duplicates = [];
+            for (const [src, tgt] of Object.entries(newMapping)) {
+              if (tgt && tgt !== '__IGNORE__') {
+                const lowerTgt = tgt.toLowerCase();
+                if (!targetUsage[lowerTgt]) {
+                  targetUsage[lowerTgt] = [src];
+                } else {
+                  targetUsage[lowerTgt].push(src);
+                  if (targetUsage[lowerTgt].length === 2) {
+                    duplicates.push(tgt);
+                  }
+                }
+              }
+            }
+
+            if (duplicates.length > 0) {
+              alert('Cannot save mapping: Conflicting target column assignments detected.\n\nThe following target column(s) are assigned to multiple source columns: ' + duplicates.join(', ') + '.\n\nPlease resolve conflicts or select __IGNORE__ before saving.');
+              return;
+            }
+
             if (Object.keys(newMapping).length === 0) {
               if (!confirm('Warning: You have defined 0 column mappings. Are you sure you want to save an empty mapping?')) {
                 return;
@@ -2877,6 +2938,447 @@ if (!function_exists('formatMenuRouteUrl')) {
             <?php endif; ?>
           </div>
         </section>
+
+      <?php elseif ($currentPage === 'reconciliation' || $currentPage === 'audit-desk'): ?>
+        <!-- ============================================================
+             FINANCIAL RECONCILIATION & TRIAL BALANCE AUDIT (PHASE 3)
+             ============================================================ -->
+        <?php
+          $tbData = $reconciliationData['trial_balance'] ?? null;
+          $invData = $reconciliationData['inventory_gl'] ?? null;
+          $tbStatus = $tbData['status'] ?? 'Unable to Reconcile';
+          $tbClosing = $tbData['closing'] ?? [];
+          $tbTrans = $tbData['transacted'] ?? [];
+          $tbOpen = $tbData['opening'] ?? [];
+          $tbIntegrity = $tbData['integrity'] ?? [];
+          $currentTolerance = $reconciliationData['tolerance'] ?? 0.00;
+        ?>
+
+        <!-- Scope & Action Header -->
+        <section class="section-card" style="margin-bottom: 1.25rem; background: linear-gradient(135deg, #F0F7FD 0%, #E8F3FC 100%); border: 1px solid #C5DEF4;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c360-royal-blue, #0077D7); font-weight: 700; margin-bottom: 0.25rem;">CMA Financial Reconciliation Scope</div>
+              <div style="font-size: 1.1rem; font-weight: 700; color: var(--c360-text-primary, #0E2942); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <span>Company: <strong style="color: var(--c360-navy-deep, #021E3B);"><?php echo htmlspecialchars($activeCompanyName ?: 'All Companies'); ?></strong> (<code><?php echo htmlspecialchars($activeCompanyCode ?: '—'); ?></code>)</span>
+                <span>&bull;</span>
+                <span>Period: <strong style="color: var(--c360-navy-deep, #021E3B);"><?php echo htmlspecialchars($activePeriodName ?: 'All Periods'); ?></strong></span>
+                <span>&bull;</span>
+                <span>Tenant: <strong style="color: var(--c360-navy-deep, #021E3B);"><?php echo htmlspecialchars($activeCustomerName ?: 'Customer DB'); ?></strong></span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <form method="GET" action="reconciliation.php" style="display: flex; align-items: center; gap: 0.5rem;">
+                <label style="font-size: 0.8rem; font-weight: 600; color: #475569;">Tolerance:</label>
+                <select name="tolerance" onchange="this.form.submit()" style="padding: 0.4rem 0.6rem; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 0.85rem; background: #fff;">
+                  <option value="0.00" <?php echo ($currentTolerance == 0.00) ? 'selected' : ''; ?>>Exact (0.00)</option>
+                  <option value="0.01" <?php echo ($currentTolerance == 0.01) ? 'selected' : ''; ?>>0.01</option>
+                  <option value="1.00" <?php echo ($currentTolerance == 1.00) ? 'selected' : ''; ?>>1.00</option>
+                  <option value="10.00" <?php echo ($currentTolerance == 10.00) ? 'selected' : ''; ?>>10.00</option>
+                </select>
+                <a href="reconciliation.php?tolerance=<?php echo $currentTolerance; ?>" class="btn-secondary" style="font-size: 0.82rem; text-decoration: none; padding: 0.4rem 0.8rem;">⟳ Re-Run</a>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- Executive Status Banner -->
+        <?php if ($tbStatus === 'Balanced'): ?>
+          <div style="padding: 1.15rem 1.5rem; background: #ECFDF5; border: 1.5px solid #A7F3D0; border-radius: 10px; margin-bottom: 1.25rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span style="font-size: 1.5rem;">🟢</span>
+              <div>
+                <h3 style="margin: 0; color: #065F46; font-size: 1.1rem; font-weight: 800;">Trial Balance Status: BALANCED</h3>
+                <p style="margin: 0.25rem 0 0; color: #047857; font-size: 0.88rem;">Total Debits match Total Credits within configured tolerance (<?php echo number_format($currentTolerance, 4); ?>). Double-entry balance integrity confirmed for downstream costing.</p>
+              </div>
+            </div>
+          </div>
+        <?php elseif ($tbStatus === 'Unbalanced'): ?>
+          <div style="padding: 1.15rem 1.5rem; background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 10px; margin-bottom: 1.25rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span style="font-size: 1.5rem;">🔴</span>
+              <div>
+                <h3 style="margin: 0; color: #991B1B; font-size: 1.1rem; font-weight: 800;">Trial Balance Status: UNBALANCED (Variance: <?php echo number_format($tbClosing['difference'] ?? 0, 4); ?>)</h3>
+                <p style="margin: 0.25rem 0 0; color: #B91C1C; font-size: 0.88rem;">Closing debits and credits do not balance. Downstream product-costing calculations will be distorted until this variance is investigated and resolved.</p>
+              </div>
+            </div>
+          </div>
+        <?php else: ?>
+          <div style="padding: 1.15rem 1.5rem; background: #FFFBEB; border: 1.5px solid #FCD34D; border-radius: 10px; margin-bottom: 1.25rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span style="font-size: 1.5rem;">⚠️</span>
+              <div>
+                <h3 style="margin: 0; color: #92400E; font-size: 1.1rem; font-weight: 800;">Trial Balance Status: UNABLE TO RECONCILE</h3>
+                <p style="margin: 0.25rem 0 0; color: #B45309; font-size: 0.88rem;"><?php echo htmlspecialchars($tbData['message'] ?? 'No data found or key identifiers missing.'); ?></p>
+              </div>
+            </div>
+          </div>
+        <?php endif; ?>
+
+        <!-- KPI Summary Cards -->
+        <section class="grid-cards" style="margin-bottom: 1.5rem;">
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Total Closing Debits</span></div>
+            <div class="stat-number" style="color: #0369A1; font-size: 1.5rem;"><?php echo number_format($tbClosing['debit'] ?? 0, 2); ?></div>
+            <div class="stat-desc">Closing Dr magnitude</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Total Closing Credits</span></div>
+            <div class="stat-number" style="color: #0284C7; font-size: 1.5rem;"><?php echo number_format($tbClosing['credit'] ?? 0, 2); ?></div>
+            <div class="stat-desc">Closing Cr magnitude</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">Net Variance</span></div>
+            <div class="stat-number" style="color: <?php echo (($tbClosing['difference'] ?? 0) <= $currentTolerance) ? '#059669' : '#DC2626'; ?>; font-size: 1.5rem;">
+              <?php echo number_format($tbClosing['difference'] ?? 0, 4); ?>
+            </div>
+            <div class="stat-desc">Tolerance: <?php echo number_format($currentTolerance, 4); ?></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header"><span class="stat-label">GL Accounts Audited</span></div>
+            <div class="stat-number"><?php echo number_format($tbData['record_count'] ?? 0); ?></div>
+            <div class="stat-desc">In customer database</div>
+          </div>
+        </section>
+
+        <!-- Double Entry Verification Table -->
+        <section class="section-card" style="margin-bottom: 1.5rem;">
+          <div class="section-header">
+            <h2 class="section-title">Double-Entry Balance Verification</h2>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Balance Category</th>
+                  <th style="text-align: right;">Total Debit Amount</th>
+                  <th style="text-align: right;">Total Credit Amount</th>
+                  <th style="text-align: right;">Variance / Difference</th>
+                  <th style="text-align: center;">Double-Entry State</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>1. Opening Balance</strong></td>
+                  <td style="text-align: right;"><?php echo number_format($tbOpen['debit'] ?? 0, 4); ?></td>
+                  <td style="text-align: right;"><?php echo number_format($tbOpen['credit'] ?? 0, 4); ?></td>
+                  <td style="text-align: right; font-weight: 700; color: <?php echo (($tbOpen['difference'] ?? 0) <= $currentTolerance) ? '#059669' : '#DC2626'; ?>;">
+                    <?php echo number_format($tbOpen['difference'] ?? 0, 4); ?>
+                  </td>
+                  <td style="text-align: center;">
+                    <span class="status-badge" style="background: <?php echo (($tbOpen['difference'] ?? 0) <= $currentTolerance) ? '#D1FAE5; color: #065F46;' : '#FEE2E2; color: #991B1B;'; ?>">
+                      <?php echo (($tbOpen['difference'] ?? 0) <= $currentTolerance) ? 'Balanced' : 'Unbalanced'; ?>
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>2. Period Transactions / Movements</strong></td>
+                  <td style="text-align: right;"><?php echo number_format($tbTrans['debit'] ?? 0, 4); ?></td>
+                  <td style="text-align: right;"><?php echo number_format($tbTrans['credit'] ?? 0, 4); ?></td>
+                  <td style="text-align: right; font-weight: 700; color: <?php echo (($tbTrans['difference'] ?? 0) <= $currentTolerance) ? '#059669' : '#DC2626'; ?>;">
+                    <?php echo number_format($tbTrans['difference'] ?? 0, 4); ?>
+                  </td>
+                  <td style="text-align: center;">
+                    <span class="status-badge" style="background: <?php echo (($tbTrans['difference'] ?? 0) <= $currentTolerance) ? '#D1FAE5; color: #065F46;' : '#FEE2E2; color: #991B1B;'; ?>">
+                      <?php echo (($tbTrans['difference'] ?? 0) <= $currentTolerance) ? 'Balanced' : 'Unbalanced'; ?>
+                    </span>
+                  </td>
+                </tr>
+                <tr style="background: #F8FAFC; font-weight: 700;">
+                  <td><strong>3. Closing Balance (Core Gate)</strong></td>
+                  <td style="text-align: right; color: #0369A1;"><?php echo number_format($tbClosing['debit'] ?? 0, 4); ?></td>
+                  <td style="text-align: right; color: #0284C7;"><?php echo number_format($tbClosing['credit'] ?? 0, 4); ?></td>
+                  <td style="text-align: right; font-weight: 800; color: <?php echo (($tbClosing['difference'] ?? 0) <= $currentTolerance) ? '#059669' : '#DC2626'; ?>;">
+                    <?php echo number_format($tbClosing['difference'] ?? 0, 4); ?>
+                  </td>
+                  <td style="text-align: center;">
+                    <span class="status-badge" style="background: <?php echo (($tbClosing['difference'] ?? 0) <= $currentTolerance) ? '#D1FAE5; color: #065F46;' : '#FEE2E2; color: #991B1B;'; ?>">
+                      <?php echo (($tbClosing['difference'] ?? 0) <= $currentTolerance) ? 'Balanced' : 'Unbalanced'; ?>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Account Integrity Issues Section -->
+        <?php
+          $dupCount = count($tbIntegrity['duplicates'] ?? []);
+          $missCount = count($tbIntegrity['missing_accounts'] ?? []);
+          $signCount = count($tbIntegrity['invalid_signs'] ?? []);
+          $flowCount = count($tbIntegrity['flow_discrepancies'] ?? []);
+          $totalIntegrityIssues = $dupCount + $missCount + $signCount + $flowCount;
+        ?>
+        <section class="section-card" style="margin-bottom: 1.5rem;">
+          <div class="section-header">
+            <h2 class="section-title">
+              Account & Period Integrity Audit
+              <?php if ($totalIntegrityIssues > 0): ?>
+                <span style="font-size: 0.8rem; background: #FEF2F2; color: #DC2626; border: 1px solid #FCA5A5; padding: 0.2rem 0.5rem; border-radius: 4px; margin-left: 0.5rem;">
+                  <?php echo $totalIntegrityIssues; ?> issue(s) detected
+                </span>
+              <?php else: ?>
+                <span style="font-size: 0.8rem; background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; padding: 0.2rem 0.5rem; border-radius: 4px; margin-left: 0.5rem;">
+                  Clean (0 issues)
+                </span>
+              <?php endif; ?>
+            </h2>
+          </div>
+          <?php if ($totalIntegrityIssues > 0): ?>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Issue Type</th>
+                    <th>Account Code</th>
+                    <th>Description</th>
+                    <th>Audit Finding & Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($tbIntegrity['missing_accounts'] ?? [] as $m): ?>
+                    <tr style="background: #FEF2F2;">
+                      <td><strong style="color: #DC2626;">Missing Account Code</strong></td>
+                      <td><code>(Empty)</code></td>
+                      <td><?php echo htmlspecialchars($m['description'] ?? '—'); ?></td>
+                      <td><?php echo htmlspecialchars($m['reason']); ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                  <?php foreach ($tbIntegrity['duplicates'] ?? [] as $d): ?>
+                    <tr style="background: #FFFBEB;">
+                      <td><strong style="color: #D97706;">Duplicate Account</strong></td>
+                      <td><code><?php echo htmlspecialchars($d['acc_code']); ?></code></td>
+                      <td><?php echo htmlspecialchars($d['description'] ?? '—'); ?></td>
+                      <td><?php echo htmlspecialchars($d['reason']); ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                  <?php foreach ($tbIntegrity['invalid_signs'] ?? [] as $s): ?>
+                    <tr style="background: #FFFBEB;">
+                      <td><strong style="color: #D97706;">Invalid Balance Sign</strong></td>
+                      <td><code><?php echo htmlspecialchars($s['acc_code']); ?></code></td>
+                      <td>Field: <code><?php echo htmlspecialchars($s['field']); ?></code></td>
+                      <td><?php echo htmlspecialchars($s['reason']); ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                  <?php foreach ($tbIntegrity['flow_discrepancies'] ?? [] as $f): ?>
+                    <tr>
+                      <td><strong style="color: #475569;">Flow Discrepancy</strong></td>
+                      <td><code><?php echo htmlspecialchars($f['acc_code']); ?></code></td>
+                      <td><?php echo htmlspecialchars($f['description'] ?? '—'); ?></td>
+                      <td>
+                        Opening Net: <?php echo number_format($f['opening_net'], 2); ?> | 
+                        Movements: <?php echo number_format($f['transacted_movement'], 2); ?> | 
+                        Expected: <?php echo number_format($f['expected_closing_net'], 2); ?> | 
+                        Actual: <?php echo number_format($f['actual_closing_net'], 2); ?> | 
+                        <strong style="color: #DC2626;">Variance: <?php echo number_format($f['variance'], 4); ?></strong>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          <?php else: ?>
+            <div style="padding: 1.5rem; text-align: center; color: #059669; font-size: 0.95rem;">
+              ✔ No duplicate accounts, missing identifiers, or flow discrepancies found. All accounts conform to integrity standards.
+            </div>
+          <?php endif; ?>
+        </section>
+
+        <!-- Inventory to GL Assessment Section -->
+        <section class="section-card" style="margin-bottom: 1.5rem;">
+          <div class="section-header">
+            <h2 class="section-title">Inventory-to-General-Ledger Inspection & CMA Analysis</h2>
+          </div>
+          <div style="padding: 1rem 1.25rem; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.88rem; color: #334155; line-height: 1.5;">
+            <div style="font-weight: 700; color: #0369A1; margin-bottom: 0.35rem;">Architectural Assessment & CMA Gap Notice:</div>
+            <?php echo htmlspecialchars($invData['gap_report'] ?? ''); ?>
+            <div style="margin-top: 0.5rem; color: #64748B; font-style: italic;">
+              Below is the macro-level comparison of period material transaction movements alongside candidate Inventory General Ledger control accounts for CMA verification.
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem;">
+            <!-- Material Transaction Activity -->
+            <div style="background: #fff; border: 1px solid #CBD5E1; border-radius: 8px; padding: 1rem;">
+              <h3 style="font-size: 0.95rem; font-weight: 700; color: #0F172A; margin: 0 0 0.75rem;">Material Transactions Flow (Period Totals)</h3>
+              <table style="width: 100%; font-size: 0.85rem;">
+                <thead>
+                  <tr style="border-bottom: 1px solid #E2E8F0;">
+                    <th style="padding: 0.4rem 0;">Transaction Type</th>
+                    <th style="text-align: right; padding: 0.4rem 0;">Count</th>
+                    <th style="text-align: right; padding: 0.4rem 0;">Quantity</th>
+                    <th style="text-align: right; padding: 0.4rem 0;">Total Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php if (!empty($invData['material_transactions']['by_transaction_type'])): ?>
+                    <?php foreach ($invData['material_transactions']['by_transaction_type'] as $mt): ?>
+                      <tr>
+                        <td style="padding: 0.4rem 0;"><strong><?php echo htmlspecialchars($mt['type']); ?></strong></td>
+                        <td style="text-align: right; padding: 0.4rem 0;"><?php echo number_format($mt['count']); ?></td>
+                        <td style="text-align: right; padding: 0.4rem 0;"><?php echo number_format($mt['qty'], 2); ?></td>
+                        <td style="text-align: right; padding: 0.4rem 0; font-weight: 600;"><?php echo number_format($mt['amount'], 2); ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                    <tr style="border-top: 2px solid #CBD5E1; font-weight: 700;">
+                      <td style="padding: 0.5rem 0;">Total Movement</td>
+                      <td style="text-align: right; padding: 0.5rem 0;"><?php echo number_format($invData['material_transactions']['total_records'] ?? 0); ?></td>
+                      <td style="text-align: right; padding: 0.5rem 0;"><?php echo number_format($invData['material_transactions']['total_qty'] ?? 0, 2); ?></td>
+                      <td style="text-align: right; padding: 0.5rem 0; color: #0369A1;"><?php echo number_format($invData['material_transactions']['total_amount'] ?? 0, 2); ?></td>
+                    </tr>
+                  <?php else: ?>
+                    <tr><td colspan="4" style="text-align: center; color: #94A3B8; padding: 1rem;">No material transactions found for this period.</td></tr>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Candidate GL Inventory Accounts -->
+            <div style="background: #fff; border: 1px solid #CBD5E1; border-radius: 8px; padding: 1rem;">
+              <h3 style="font-size: 0.95rem; font-weight: 700; color: #0F172A; margin: 0 0 0.75rem;">Candidate GL Inventory Control Accounts</h3>
+              <table style="width: 100%; font-size: 0.85rem;">
+                <thead>
+                  <tr style="border-bottom: 1px solid #E2E8F0;">
+                    <th style="padding: 0.4rem 0;">Account</th>
+                    <th style="text-align: right; padding: 0.4rem 0;">Trans Dr</th>
+                    <th style="text-align: right; padding: 0.4rem 0;">Trans Cr</th>
+                    <th style="text-align: right; padding: 0.4rem 0;">Closing Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php if (!empty($invData['candidate_gl_inventory']['candidate_accounts'])): ?>
+                    <?php foreach ($invData['candidate_gl_inventory']['candidate_accounts'] as $ca): ?>
+                      <tr>
+                        <td style="padding: 0.4rem 0;">
+                          <code><?php echo htmlspecialchars($ca['acc_code']); ?></code>
+                          <div style="font-size: 0.75rem; color: #64748B;"><?php echo htmlspecialchars($ca['description']); ?></div>
+                        </td>
+                        <td style="text-align: right; padding: 0.4rem 0;"><?php echo number_format((float)($ca['transacted_debit'] ?? 0), 2); ?></td>
+                        <td style="text-align: right; padding: 0.4rem 0;"><?php echo number_format((float)($ca['transacted_credit'] ?? 0), 2); ?></td>
+                        <td style="text-align: right; padding: 0.4rem 0; font-weight: 600;"><?php echo number_format((float)($ca['signed_closing'] ?? 0), 2); ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                    <tr style="border-top: 2px solid #CBD5E1; font-weight: 700;">
+                      <td style="padding: 0.5rem 0;">Total Candidate Net</td>
+                      <td style="text-align: right; padding: 0.5rem 0;"><?php echo number_format($invData['candidate_gl_inventory']['total_transacted_debit'] ?? 0, 2); ?></td>
+                      <td style="text-align: right; padding: 0.5rem 0;"><?php echo number_format($invData['candidate_gl_inventory']['total_transacted_credit'] ?? 0, 2); ?></td>
+                      <td style="text-align: right; padding: 0.5rem 0; color: #0369A1;"><?php echo number_format($invData['candidate_gl_inventory']['total_closing_net'] ?? 0, 2); ?></td>
+                    </tr>
+                  <?php else: ?>
+                    <tr><td colspan="4" style="text-align: center; color: #94A3B8; padding: 1rem;">No accounts matching inventory keywords found in Trial Balance.</td></tr>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- CMA Suggested Investigation & Guidance Section -->
+        <section class="section-card">
+          <div class="section-header">
+            <h2 class="section-title">CMA Suggested Investigation Steps</h2>
+          </div>
+          <div style="font-size: 0.88rem; color: #334155; line-height: 1.6;">
+            <ul style="margin: 0; padding-left: 1.25rem;">
+              <li><strong>Verify Closing Variance:</strong> If the closing balance variance is non-zero, check whether manual journal vouchers were posted in ERP without corresponding offsetting credit/debit entries.</li>
+              <li><strong>Check Missing Accounts:</strong> If any rows have missing account codes, correct the source spreadsheet in ERP and re-upload the Trial Balance before running costing.</li>
+              <li><strong>Examine Flow Discrepancies:</strong> Accounts where Closing differs from [Opening + Net Movements] indicate either missing transaction batches or opening balance recalculation adjustments in the source ERP.</li>
+              <li><strong>Inventory Valuation Mapping:</strong> Before proceeding to the Product Costing Engine, ensure material purchase invoices and consumption requisitions match the inventory control accounts in the General Ledger.</li>
+            </ul>
+          </div>
+        </section>
+
+      <?php elseif ($currentPage === 'uploaded-reports' || $currentPage === 'reports'): ?>
+        <!-- ============================================================
+             UPLOADED DATA REPORTS PAGE MODULE (PHASE 2 FRONTEND)
+             ============================================================ -->
+        
+        <!-- MODULE HEADER & CONTEXT SCOPE -->
+        <section class="section-card" style="margin-bottom: 1.25rem; background: linear-gradient(135deg, #033665 0%, #063D70 100%); color: #fff; border: 1px solid rgba(0, 207, 239, 0.3); border-radius: var(--radius-card, 12px); box-shadow: 0 4px 20px rgba(3, 54, 101, 0.15); padding: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
+                <span style="font-size: 1.4rem;">📊</span>
+                <h1 style="font-size: 1.5rem; font-weight: 700; color: #fff; margin: 0; line-height: 1.2;">Uploaded Data Reports</h1>
+                <span class="c360-badge" style="background: rgba(0, 207, 239, 0.2); color: #00CFEF; border: 1px solid rgba(0, 207, 239, 0.4); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em;">
+                  DATABASE DRIVEN
+                </span>
+              </div>
+              <p style="font-size: 0.88rem; color: rgba(255, 255, 255, 0.85); margin: 0 0 0.85rem 0; max-width: 650px; line-height: 1.45;">
+                Unified reporting, operational metrics, and audited database records across all canonical upload datasets.
+              </p>
+
+              <!-- Dynamic Breadcrumbs -->
+              <div id="repBreadcrumbNav" style="display: flex; align-items: center; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                <span style="color: #fff; font-weight: 700;">📊 Catalogue Overview</span>
+              </div>
+            </div>
+
+            <!-- Global Action Controls -->
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <button type="button" id="repRefreshBtn" class="btn-secondary" style="font-size: 0.82rem; padding: 0.5rem 0.85rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                🔄 Refresh
+              </button>
+              <a href="upload-centre.php" class="btn-secondary" style="font-size: 0.82rem; padding: 0.5rem 0.85rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;">
+                📤 Upload Centre
+              </a>
+            </div>
+          </div>
+
+          <!-- TENANT & SCOPE CONTEXT BAR -->
+          <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.15); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; font-size: 0.85rem;">
+              
+              <!-- Customer Scope Pill -->
+              <div style="display: inline-flex; align-items: center; gap: 0.35rem; background: rgba(0,0,0,0.25); padding: 0.35rem 0.75rem; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);">
+                <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Tenant:</span>
+                <strong id="repActiveCustomerBadge" style="color: #00CFEF;">
+                  <?php echo htmlspecialchars($activeCustomerName ?: 'Authenticated Customer'); ?>
+                </strong>
+                <span title="Tenant scope is derived strictly from your authenticated session" style="cursor: help; opacity: 0.7; font-size: 0.75rem;">🔒</span>
+              </div>
+
+              <!-- Company Scope Dropdown / Pill -->
+              <div style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                <label for="repCompanyFilter" style="opacity: 0.85; font-size: 0.8rem; font-weight: 600;">Company:</label>
+                <select id="repCompanyFilter" class="cost360-select" style="background: rgba(255,255,255,0.95); color: #0F172A; font-size: 0.82rem; padding: 0.35rem 0.65rem; border-radius: 6px; border: none; min-width: 180px;">
+                  <option value="">Loading allocated companies...</option>
+                </select>
+              </div>
+
+              <!-- Period Scope Dropdown -->
+              <div style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                <label for="repPeriodFilter" style="opacity: 0.85; font-size: 0.8rem; font-weight: 600;">Period:</label>
+                <select id="repPeriodFilter" class="cost360-select" style="background: rgba(255,255,255,0.95); color: #0F172A; font-size: 0.82rem; padding: 0.35rem 0.65rem; border-radius: 6px; border: none; min-width: 180px;">
+                  <option value="">Loading accessible periods...</option>
+                </select>
+              </div>
+
+            </div>
+
+            <div style="font-size: 0.78rem; opacity: 0.75; font-style: italic;">
+              ⚡ Strictly isolated to allocated companies and session credentials
+            </div>
+          </div>
+        </section>
+
+        <!-- DISMISSIBLE ERROR BANNER -->
+        <div id="repErrorBanner" style="display: none; padding: 0.85rem 1.25rem; background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; color: #B91C1C; margin-bottom: 1.25rem; font-size: 0.88rem; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span>⚠️</span>
+            <span id="repErrorMessage">An error occurred while fetching reports data.</span>
+          </div>
+          <button type="button" onclick="document.getElementById('repErrorBanner').style.display='none'" style="background: none; border: none; color: #B91C1C; font-weight: bold; cursor: pointer; font-size: 1.1rem;">&times;</button>
+        </div>
+
+        <!-- MAIN DYNAMIC CONTENT CONTAINER (Managed by assets/js/uploaded_data_reports.js) -->
+        <div id="repViewContainer">
+          <div style="padding: 4rem 1rem; text-align: center; color: var(--color-royal-blue);">
+            <div class="c360-spinner" style="width: 42px; height: 42px; border: 4px solid rgba(8, 120, 209, 0.2); border-top-color: var(--color-royal-blue); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem auto;"></div>
+            <p style="font-size: 0.95rem; font-weight: 600; color: var(--color-primary-text);">Connecting to database &amp; loading catalogue...</p>
+          </div>
+        </div>
 
       <?php elseif ($currentPage === 'masters'): ?>
         <!-- ============================================================
@@ -3115,7 +3617,7 @@ if (!function_exists('formatMenuRouteUrl')) {
                     <span style="font-weight: 700; color: var(--color-deep-navy);">Provisioning Mode:</span>
                     <span class="status-badge" style="background: #D1FAE5; color: #065F46;">Auto-Provisioning Enabled (Dedicated DB)</span>
                   </div>
-                  <p style="font-size: 0.85rem; color: var(--color-secondary-text);">A dedicated PostgreSQL database <code>cust&lt;ID&gt;</code> will be automatically created on PostgreSQL Server and initialized with isolated schema tables (<code>period</code>, <code>uoms</code>, <code>items</code>).</p>
+                  <p style="font-size: 0.85rem; color: var(--color-secondary-text);">A dedicated PostgreSQL database <code>cust&lt;ID&gt;</code> will be automatically created on PostgreSQL Server with customer data isolation.</p>
                 </div>
               </div>
 
@@ -13970,5 +14472,6 @@ if (!function_exists('formatMenuRouteUrl')) {
     window.submitPopoverNewPeriod = submitPopoverNewPeriod;
   </script>
   <script src="<?php echo $baseUrlPrefix; ?>assets/js/upload_centre.js?v=<?php echo time(); ?>"></script>
+  <script src="<?php echo $baseUrlPrefix; ?>assets/js/uploaded_data_reports.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

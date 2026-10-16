@@ -1056,9 +1056,9 @@
             <div class="c360-scope-banner">
               <div>
                 <strong style="color: #0369A1;">Enforced Scope:</strong>
-                Customer: <span class="c360-scope-tag">${escapeHtml(orgContext.customer_code || 'CUST001')}</span> &bull;
-                Company: <span class="c360-scope-tag">${escapeHtml(orgContext.company_code || 'ABC02')}</span> &bull;
-                Location: <span class="c360-scope-tag">${escapeHtml(orgContext.location_code || 'NASH02')}</span> &bull;
+                Customer: <span class="c360-scope-tag">${escapeHtml(orgContext.customer_code || '—')}</span> &bull;
+                Company: <span class="c360-scope-tag">${escapeHtml(orgContext.company_code || '—')}</span> &bull;
+                Location: <span class="c360-scope-tag">${escapeHtml(orgContext.location_code || '—')}</span> &bull;
                 Period: <span class="c360-scope-tag">${escapeHtml(result.active_period ? (result.active_period.period_name || ('Period ' + result.active_period.period_id)) : (orgContext.period_name || 'Active Period'))}</span>
               </div>
               <div class="c360-security-notice">
@@ -1088,6 +1088,30 @@
 
             <!-- BODY -->
             <div class="c360-modal-body">
+              ${(result.validation_errors && result.validation_errors.length > 0) ? `
+                <div style="padding: 0.85rem 1.25rem; background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 8px; color: #991B1B; margin-bottom: 1.25rem; font-size: 0.86rem;">
+                  <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700; margin-bottom: 0.35rem;">
+                    <span style="font-size: 1.15rem;">⛔</span>
+                    <span>Data Integrity Validation: ${result.validation_errors.length} blocking error(s) detected in sample rows</span>
+                  </div>
+                  <div style="font-size: 0.8rem; color: #B91C1C; line-height: 1.5;">
+                    ${result.validation_errors.slice(0, 4).map(v => '• ' + escapeHtml(v.error_message || v.message || '')).join('<br>')}
+                    ${result.validation_errors.length > 4 ? '<br><em>• ...and ' + (result.validation_errors.length - 4) + ' more error(s)</em>' : ''}
+                  </div>
+                </div>
+              ` : ''}
+              ${(result.validation_warnings && result.validation_warnings.length > 0) ? `
+                <div style="padding: 0.85rem 1.25rem; background: #FFFBEB; border: 1.5px solid #FCD34D; border-radius: 8px; color: #92400E; margin-bottom: 1.25rem; font-size: 0.86rem;">
+                  <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700; margin-bottom: 0.35rem;">
+                    <span style="font-size: 1.15rem;">⚠️</span>
+                    <span>Data Integrity Advisory: ${result.validation_warnings.length} warning(s) detected in sample rows</span>
+                  </div>
+                  <div style="font-size: 0.8rem; color: #B45309; line-height: 1.5;">
+                    ${result.validation_warnings.slice(0, 4).map(w => '• ' + escapeHtml(w.error_message || w.message || '')).join('<br>')}
+                    ${result.validation_warnings.length > 4 ? '<br><em>• ...and ' + (result.validation_warnings.length - 4) + ' more warning(s)</em>' : ''}
+                  </div>
+                </div>
+              ` : ''}
               ${(result.date_violations && result.date_violations.length > 0) ? `
                 <div style="padding: 0.85rem 1.25rem; background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 8px; color: #991B1B; margin-bottom: 1.25rem; font-size: 0.86rem;">
                   <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700; margin-bottom: 0.35rem;">
@@ -1220,6 +1244,28 @@
             mapping[src] = sel.value;
           }
         });
+
+        // Validate duplicate target assignments (Phase 2A - Change 1)
+        const targetUsage = {};
+        const duplicates = [];
+        for (const [src, tgt] of Object.entries(mapping)) {
+          if (tgt && tgt !== '__IGNORE__') {
+            const lowerTgt = tgt.toLowerCase();
+            if (!targetUsage[lowerTgt]) {
+              targetUsage[lowerTgt] = [src];
+            } else {
+              targetUsage[lowerTgt].push(src);
+              if (targetUsage[lowerTgt].length === 2) {
+                duplicates.push(tgt);
+              }
+            }
+          }
+        }
+
+        if (duplicates.length > 0) {
+          alert('Cannot approve mapping: Conflicting target column assignments detected.\n\nThe following target column(s) are assigned to multiple source columns: ' + duplicates.join(', ') + '.\n\nPlease resolve conflicts or select __IGNORE__ for extra columns before approving.');
+          return;
+        }
 
         const origHtml = btnEl.innerHTML;
         btnEl.disabled = true;
@@ -1724,6 +1770,9 @@
           </div>
 
           <div class="c360-modal-foot">
+            <button type="button" class="c360-btn-secondary" style="background: #F0FDF4; border: 1px solid #86EFAC; color: #166534; font-weight: 700;" onclick="this.closest('.c360-modal-backdrop').remove(); window.openFinancialReconciliationModal(0.00);">
+              ⚖️ Reconcile Trial Balance
+            </button>
             <a href="dashboard.php?page=history" class="c360-btn-secondary" style="text-decoration: none;">
               Go to Import History &rarr;
             </a>
@@ -1823,6 +1872,191 @@
       showImportFailureModal('Import Execution Error', err.message, currentUploadRunId);
     }
   }
+
+  async function openFinancialReconciliationModal(tolerance = 0.00) {
+    const existing = $('.c360-recon-modal-backdrop');
+    if (existing) existing.remove();
+
+    const loadingHtml = `
+      <div class="c360-modal-backdrop c360-recon-modal-backdrop" style="position: fixed; inset: 0; background: rgba(3, 27, 50, 0.75); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px);">
+        <div class="c360-modal-card" style="background: #fff; width: 90%; max-width: 900px; max-height: 90vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);">
+          <div class="c360-modal-head" style="padding: 1.25rem 1.75rem; background: #033665; color: #fff; display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700;">⚖️ Financial Reconciliation (Trial Balance & GL)</h3>
+            <button class="c360-btn-close" onclick="this.closest('.c360-modal-backdrop').remove()">&times;</button>
+          </div>
+          <div class="c360-modal-body" style="padding: 3rem; text-align: center;">
+            <div class="spinner" style="margin: 0 auto 1rem; width: 40px; height: 40px; border: 4px solid #CBD5E1; border-top-color: #0284C7; border-radius: 50%; animation: c360Spin 1s linear infinite;"></div>
+            <p style="color: #475569; font-weight: 600;">Running Financial Reconciliation across Customer Database...</p>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', loadingHtml);
+
+    try {
+      const formData = new FormData();
+      formData.append('action', 'financial_reconciliation_overview');
+      formData.append('tolerance', tolerance);
+      if (activePeriod && activePeriod.period_id) {
+        formData.append('period_id', activePeriod.period_id);
+      }
+
+      const response = await fetch('api/upload_api.php', { method: 'POST', body: formData });
+      const res = await response.json();
+
+      const modalEl = $('.c360-recon-modal-backdrop');
+      if (!modalEl) return;
+
+      if (!res.ok) {
+        modalEl.querySelector('.c360-modal-body').innerHTML = `
+          <div style="padding: 1.5rem; text-align: center; color: #DC2626;">
+            <h4>Reconciliation Failed</h4>
+            <p>${escapeHtml(res.message || 'Error occurred during reconciliation.')}</p>
+          </div>
+        `;
+        return;
+      }
+
+      const tb = res.trial_balance || {};
+      const inv = res.inventory_gl || {};
+      const closing = tb.closing || {};
+      const trans = tb.transacted || {};
+      const open = tb.opening || {};
+      const integrity = tb.integrity || {};
+
+      const isBalanced = (tb.status === 'Balanced');
+      const isUnbalanced = (tb.status === 'Unbalanced');
+      const statusBg = isBalanced ? '#ECFDF5' : (isUnbalanced ? '#FEF2F2' : '#FFFBEB');
+      const statusBorder = isBalanced ? '#A7F3D0' : (isUnbalanced ? '#FCA5A5' : '#FCD34D');
+      const statusColor = isBalanced ? '#065F46' : (isUnbalanced ? '#991B1B' : '#92400E');
+      const statusIcon = isBalanced ? '🟢' : (isUnbalanced ? '🔴' : '⚠️');
+
+      const dupCount = (integrity.duplicates || []).length;
+      const missCount = (integrity.missing_accounts || []).length;
+      const signCount = (integrity.invalid_signs || []).length;
+      const flowCount = (integrity.flow_discrepancies || []).length;
+      const totalIssues = dupCount + missCount + signCount + flowCount;
+
+      modalEl.querySelector('.c360-modal-body').innerHTML = `
+        <!-- Scope Bar -->
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.85rem 1.25rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; font-size: 0.85rem;">
+          <div>
+            <strong>Company:</strong> <code>${escapeHtml(res.company_code || '—')}</code> &bull;
+            <strong>Period:</strong> ${escapeHtml(res.period_name || ('Period ' + (res.period_id || 'Active')))}
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem;">
+            <label style="font-weight: 600; color: #475569;">Tolerance:</label>
+            <select onchange="window.openFinancialReconciliationModal(parseFloat(this.value))" style="padding: 0.3rem 0.5rem; border-radius: 4px; border: 1px solid #CBD5E1; font-size: 0.8rem;">
+              <option value="0.00" ${tolerance === 0 ? 'selected' : ''}>Exact (0.00)</option>
+              <option value="0.01" ${tolerance === 0.01 ? 'selected' : ''}>0.01</option>
+              <option value="1.00" ${tolerance === 1 ? 'selected' : ''}>1.00</option>
+              <option value="10.00" ${tolerance === 10 ? 'selected' : ''}>10.00</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Status Banner -->
+        <div style="padding: 1rem 1.25rem; background: ${statusBg}; border: 1.5px solid ${statusBorder}; border-radius: 8px; color: ${statusColor}; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 1.5rem;">${statusIcon}</span>
+          <div>
+            <div style="font-weight: 800; font-size: 1.05rem;">Trial Balance Status: ${escapeHtml(tb.status || 'Unable to Reconcile')}</div>
+            <div style="font-size: 0.84rem; margin-top: 0.15rem;">${escapeHtml(tb.message || '')}</div>
+          </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.25rem;">
+          <div style="background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 8px; padding: 0.75rem; text-align: center;">
+            <div style="font-size: 0.72rem; color: #0369A1; font-weight: 700; text-transform: uppercase;">Closing Debits</div>
+            <div style="font-size: 1.25rem; color: #0284C7; font-weight: 800; margin-top: 0.2rem;">${(closing.debit || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+          </div>
+          <div style="background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 8px; padding: 0.75rem; text-align: center;">
+            <div style="font-size: 0.72rem; color: #0369A1; font-weight: 700; text-transform: uppercase;">Closing Credits</div>
+            <div style="font-size: 1.25rem; color: #0284C7; font-weight: 800; margin-top: 0.2rem;">${(closing.credit || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+          </div>
+          <div style="background: ${closing.is_balanced ? '#ECFDF5' : '#FEF2F2'}; border: 1px solid ${closing.is_balanced ? '#A7F3D0' : '#FECACA'}; border-radius: 8px; padding: 0.75rem; text-align: center;">
+            <div style="font-size: 0.72rem; color: ${closing.is_balanced ? '#065F46' : '#991B1B'}; font-weight: 700; text-transform: uppercase;">Net Variance</div>
+            <div style="font-size: 1.25rem; color: ${closing.is_balanced ? '#059669' : '#DC2626'}; font-weight: 800; margin-top: 0.2rem;">${(closing.difference || 0).toFixed(4)}</div>
+          </div>
+          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.75rem; text-align: center;">
+            <div style="font-size: 0.72rem; color: #475569; font-weight: 700; text-transform: uppercase;">Accounts Audited</div>
+            <div style="font-size: 1.25rem; color: #1E293B; font-weight: 800; margin-top: 0.2rem;">${(tb.record_count || 0).toLocaleString()}</div>
+          </div>
+        </div>
+
+        <!-- Double Entry Table -->
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-bottom: 1.25rem;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+            <thead>
+              <tr style="background: #F1F5F9; color: #475569; border-bottom: 1px solid #E2E8F0; text-align: left;">
+                <th style="padding: 0.6rem 0.85rem;">Balance Category</th>
+                <th style="padding: 0.6rem 0.85rem; text-align: right;">Total Debit</th>
+                <th style="padding: 0.6rem 0.85rem; text-align: right;">Total Credit</th>
+                <th style="padding: 0.6rem 0.85rem; text-align: right;">Difference</th>
+                <th style="padding: 0.6rem 0.85rem; text-align: center;">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid #F1F5F9;">
+                <td style="padding: 0.6rem 0.85rem;">Opening Balance</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right;">${(open.debit || 0).toFixed(2)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right;">${(open.credit || 0).toFixed(2)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right; font-weight: 700;">${(open.difference || 0).toFixed(4)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: center;"><span style="color: ${open.is_balanced ? '#059669' : '#DC2626'}; font-weight: 700;">${open.is_balanced ? 'Balanced' : 'Unbalanced'}</span></td>
+              </tr>
+              <tr style="border-bottom: 1px solid #F1F5F9;">
+                <td style="padding: 0.6rem 0.85rem;">Period Movements</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right;">${(trans.debit || 0).toFixed(2)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right;">${(trans.credit || 0).toFixed(2)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right; font-weight: 700;">${(trans.difference || 0).toFixed(4)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: center;"><span style="color: ${trans.is_balanced ? '#059669' : '#DC2626'}; font-weight: 700;">${trans.is_balanced ? 'Balanced' : 'Unbalanced'}</span></td>
+              </tr>
+              <tr style="background: #F8FAFC; font-weight: 700;">
+                <td style="padding: 0.6rem 0.85rem; color: #0284C7;">Closing Balance</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right; color: #0284C7;">${(closing.debit || 0).toFixed(2)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right; color: #0284C7;">${(closing.credit || 0).toFixed(2)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: right; color: ${closing.is_balanced ? '#059669' : '#DC2626'};">${(closing.difference || 0).toFixed(4)}</td>
+                <td style="padding: 0.6rem 0.85rem; text-align: center;"><span style="color: ${closing.is_balanced ? '#059669' : '#DC2626'}; font-weight: 800;">${closing.is_balanced ? 'Balanced' : 'Unbalanced'}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Inventory to GL Architectural Gap Notice -->
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 0.82rem; color: #475569;">
+          <strong style="color: #0369A1;">Inventory Valuation & GL Control Account Assessment:</strong><br>
+          ${escapeHtml(inv.gap_report || 'Canonical schema lacks item-to-GL account mappings.')}
+          <div style="margin-top: 0.4rem;">
+            Period Material Transactions: <strong>${(inv.material_transactions?.total_records || 0)} records</strong> (Valuation: <strong>$${(inv.material_transactions?.total_amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>) &bull;
+            Candidate GL Inventory Accounts: <strong>${(inv.candidate_gl_inventory?.accounts_count || 0)} accounts</strong> (Closing Net: <strong>$${(inv.candidate_gl_inventory?.total_closing_net || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>)
+          </div>
+        </div>
+
+        ${totalIssues > 0 ? `
+          <div style="padding: 0.75rem 1rem; background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; color: #991B1B; font-size: 0.82rem; margin-bottom: 0.5rem;">
+            <strong>Integrity Warnings:</strong> Detected ${totalIssues} issue(s) (Duplicates: ${dupCount}, Missing Codes: ${missCount}, Flow Variances: ${flowCount}).
+          </div>
+        ` : ''}
+      `;
+
+      // Footer
+      const foot = modalEl.querySelector('.c360-modal-card');
+      const footHtml = `
+        <div class="c360-modal-foot" style="padding: 1rem 1.5rem; background: #F8FAFC; border-top: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center;">
+          <a href="reconciliation.php?tolerance=${tolerance}" class="c360-btn-secondary" style="text-decoration: none; font-size: 0.84rem;">
+            Open Full CMA Reconciliation Desk &rarr;
+          </a>
+          <button class="c360-btn-ghost" onclick="this.closest('.c360-modal-backdrop').remove()">Close</button>
+        </div>
+      `;
+      foot.insertAdjacentHTML('beforeend', footHtml);
+    } catch (err) {
+      alert('Error running financial reconciliation: ' + err.message);
+      const modalEl = $('.c360-recon-modal-backdrop');
+      if (modalEl) modalEl.remove();
+    }
+  }
+  window.openFinancialReconciliationModal = openFinancialReconciliationModal;
 
   function formatBytes(bytes) {
     if (bytes < 1024) return bytes + ' B';

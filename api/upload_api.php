@@ -9,6 +9,7 @@ ob_start();
 
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/../config/upload_centre.php';
+require_once __DIR__ . '/../config/uploaded_data_reports.php';
 
 // Verify authentication before processing any request
 if (!isLoggedIn()) {
@@ -28,7 +29,7 @@ if (!$user) {
     exit;
 }
 
-// Verify User Role / Menu Permission for Upload Centre
+// Verify User Role / Menu Permission for Upload Centre & Financial Reconciliation
 $userId = (int)$user['user_id'];
 $hasUploadAccess = isPlatformAdmin($userId) || 
                    isCmaAdmin($userId) || 
@@ -36,6 +37,9 @@ $hasUploadAccess = isPlatformAdmin($userId) ||
                    userHasMenuAccess('UPLOAD_CENTER', $userId) || 
                    userHasMenuAccess('/data/upload', $userId) || 
                    userHasMenuAccess('DATA_MANAGEMENT', $userId) || 
+                   userHasMenuAccess('AUDIT', $userId) ||
+                   userHasMenuAccess('AUDIT_DESK', $userId) ||
+                   userHasMenuAccess('RECONCILIATION', $userId) ||
                    userHasPermission('can_upload', 'UPLOAD_CENTRE', $userId) ||
                    userHasPermission('can_view', 'UPLOAD_CENTRE', $userId);
 
@@ -78,6 +82,86 @@ if ($action === 'export_errors') {
     exit;
 }
 
+// Handle CSV Dataset Export (can be GET or POST request)
+if ($action === 'reports_export_csv' || $action === 'export_dataset_csv') {
+    if (ob_get_length()) ob_clean();
+
+    $userId = (int)($user['user_id'] ?? 0);
+    $canExport = isPlatformAdmin($userId) || 
+                 isCmaAdmin($userId) || 
+                 userHasPermission('EXPORT', 'REPORTS', $userId) || 
+                 userHasPermission('can_export', 'REPORTS', $userId) ||
+                 userHasPermission('EXPORT', 'UPLOAD_CENTRE', $userId) ||
+                 userHasPermission('can_export', 'UPLOAD_CENTRE', $userId);
+
+    if (!$canExport) {
+        http_response_code(403);
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        echo json_encode(['ok' => false, 'message' => 'Access Denied: You do not have permission to export uploaded data reports.']);
+        exit;
+    }
+
+    $datasetKey = trim((string)($_REQUEST['dataset'] ?? ($_REQUEST['dataset_key'] ?? '')));
+    if ($datasetKey === '') {
+        http_response_code(400);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'message' => 'Parameter "dataset" or "dataset_key" is required.']);
+        exit;
+    }
+
+    try {
+        $custDbContext = getUserCustomerDbContext($user);
+        $custPdo = $custDbContext['pdo'];
+        $companyCode = !empty($_REQUEST['company_code']) ? trim((string)$_REQUEST['company_code']) : null;
+        $periodId = !empty($_REQUEST['period_id']) ? (int)$_REQUEST['period_id'] : null;
+
+        // Verify company allocation
+        $accessibleCompanies = getUserAccessibleCompanies($userId, $custDbContext['customer_id']);
+        $accessibleCompanyCodes = array_map(function($c) {
+            return strtoupper(trim($c['company_code'] ?? ''));
+        }, $accessibleCompanies);
+
+        if (!isPlatformAdmin($userId)) {
+            if (empty($accessibleCompanies)) {
+                http_response_code(403);
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['ok' => false, 'message' => 'Access Denied: You have no allocated companies under this customer.']);
+                exit;
+            }
+            if ($companyCode !== null && $companyCode !== '') {
+                if (!in_array(strtoupper($companyCode), $accessibleCompanyCodes, true)) {
+                    http_response_code(403);
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode(['ok' => false, 'message' => "Access Denied: You are not authorized to access company '{$companyCode}'."]);
+                    exit;
+                }
+            } elseif (count($accessibleCompanies) === 1) {
+                $companyCode = $accessibleCompanies[0]['company_code'];
+            }
+        }
+
+        $def = findReportableDataset($datasetKey);
+        $downloadFilename = strtolower($def ? $def['target_table'] : $datasetKey) . '_export_' . date('Ymd_His') . '.csv';
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $downloadFilename . '"');
+
+        exportDatasetCsv($custPdo, $datasetKey, $_REQUEST, [
+            'company_code' => $companyCode,
+            'period_id'    => $periodId,
+            'user'         => $user
+        ]);
+        exit;
+    } catch (Throwable $e) {
+        http_response_code(400);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'message' => 'Export failed: ' . $e->getMessage()]);
+        exit;
+    }
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     if (ob_get_length()) ob_clean();
     http_response_code(405);
@@ -86,7 +170,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     exit;
 }
 
-header('Content-Type: application/json; charset=utf-8');
+if (!headers_sent()) {
+    header('Content-Type: application/json; charset=utf-8');
+}
 
 try {
     switch ($action) {
@@ -250,6 +336,121 @@ try {
             }
 
             $result = updateCustomerSavedMapping($targetTable, $mapping, $sheetName, $companyCode, $user);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
+            break;
+
+        case 'reconcile_trial_balance':
+            $custDbContext = getUserCustomerDbContext($user);
+            $custPdo = $custDbContext['pdo'];
+            $tolerance = isset($_POST['tolerance']) ? (float)$_POST['tolerance'] : 0.00;
+            $companyCode = !empty($_POST['company_code']) ? trim($_POST['company_code']) : null;
+            $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
+
+            $result = reconcileTrialBalance($custPdo, [
+                'company_code' => $companyCode,
+                'period_id'    => $periodId,
+                'tolerance'    => $tolerance,
+                'user'         => $user
+            ]);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
+            break;
+
+        case 'inventory_gl_reconciliation':
+            $custDbContext = getUserCustomerDbContext($user);
+            $custPdo = $custDbContext['pdo'];
+            $companyCode = !empty($_POST['company_code']) ? trim($_POST['company_code']) : null;
+            $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
+
+            $result = reconcileInventoryToGeneralLedger($custPdo, [
+                'company_code' => $companyCode,
+                'period_id'    => $periodId,
+                'user'         => $user
+            ]);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
+            break;
+
+        case 'financial_reconciliation_overview':
+            $custDbContext = getUserCustomerDbContext($user);
+            $custPdo = $custDbContext['pdo'];
+            $tolerance = isset($_POST['tolerance']) ? (float)$_POST['tolerance'] : 0.00;
+            $companyCode = !empty($_POST['company_code']) ? trim($_POST['company_code']) : null;
+            $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
+
+            $result = getFinancialReconciliationOverview($custPdo, [
+                'company_code' => $companyCode,
+                'period_id'    => $periodId,
+                'tolerance'    => $tolerance,
+                'user'         => $user
+            ]);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
+            break;
+
+        case 'reports_catalogue':
+            $custDbContext = getUserCustomerDbContext($user);
+            $custPdo = $custDbContext['pdo'];
+            $companyCode = !empty($_POST['company_code']) ? trim($_POST['company_code']) : null;
+            $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
+            $result = getReportableDatasetsCatalogue($custPdo, [
+                'company_code' => $companyCode,
+                'period_id'    => $periodId
+            ]);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
+            break;
+
+        case 'reports_overall_summary':
+            $globalPdo = getDbConnection();
+            $custDbContext = getUserCustomerDbContext($user);
+            $custPdo = $custDbContext['pdo'];
+            $companyCode = !empty($_POST['company_code']) ? trim($_POST['company_code']) : null;
+            $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
+            $result = getOverallUploadSummary($globalPdo, $custPdo, [
+                'customer_id'  => $custDbContext['customer_id'],
+                'company_code' => $companyCode,
+                'period_id'    => $periodId
+            ]);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
+            break;
+
+        case 'reports_dataset_summary':
+            $custDbContext = getUserCustomerDbContext($user);
+            $custPdo = $custDbContext['pdo'];
+            $datasetKey = trim((string)($_POST['dataset'] ?? ($_POST['dataset_key'] ?? '')));
+            if ($datasetKey === '') {
+                http_response_code(400);
+                if (ob_get_length()) ob_clean();
+                echo json_encode(['ok' => false, 'message' => 'Dataset key is required.']);
+                exit;
+            }
+            $result = getDatasetSummary($custPdo, $datasetKey, $_POST, [
+                'company_code' => !empty($_POST['company_code']) ? trim($_POST['company_code']) : null,
+                'period_id'    => !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null,
+                'user'         => $user
+            ]);
+            if (ob_get_length()) ob_clean();
+            echo json_encode($result);
+            break;
+
+        case 'reports_dataset_details':
+            $custDbContext = getUserCustomerDbContext($user);
+            $custPdo = $custDbContext['pdo'];
+            $datasetKey = trim((string)($_POST['dataset'] ?? ($_POST['dataset_key'] ?? '')));
+            if ($datasetKey === '') {
+                http_response_code(400);
+                if (ob_get_length()) ob_clean();
+                echo json_encode(['ok' => false, 'message' => 'Dataset key is required.']);
+                exit;
+            }
+            $result = getDatasetDetails($custPdo, $datasetKey, $_POST, [
+                'company_code' => !empty($_POST['company_code']) ? trim($_POST['company_code']) : null,
+                'period_id'    => !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null,
+                'user'         => $user
+            ]);
             if (ob_get_length()) ob_clean();
             echo json_encode($result);
             break;
