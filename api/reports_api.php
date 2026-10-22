@@ -80,14 +80,10 @@ try {
     $globalPdo = getDbConnection();
 
     // Resolve Context Parameters
-    $companyCode = !empty($_REQUEST['company_code']) ? trim((string)$_REQUEST['company_code']) : null;
     $periodId = !empty($_REQUEST['period_id']) ? (int)$_REQUEST['period_id'] : null;
 
     // Verify company allocation for current user
     $accessibleCompanies = getUserAccessibleCompanies($userId, $custDbContext['customer_id']);
-    $accessibleCompanyCodes = array_map(function($c) {
-        return strtoupper(trim($c['company_code'] ?? ''));
-    }, $accessibleCompanies);
 
     $isPlatformAdmin = isPlatformAdmin($userId);
     $isCma = isCmaAdmin($userId);
@@ -99,45 +95,46 @@ try {
                  userHasPermission('EXPORT', 'UPLOAD_CENTRE', $userId) ||
                  userHasPermission('can_export', 'UPLOAD_CENTRE', $userId);
 
-    // Company access verification for non-platform admins
-    if (!$isPlatformAdmin) {
-        if (empty($accessibleCompanies)) {
-            // User has no allocated companies under this customer
-            if ($companyCode !== null) {
-                if (ob_get_length()) ob_clean();
-                http_response_code(403);
-                if (!headers_sent()) {
-                    header('Content-Type: application/json; charset=utf-8');
-                }
-                echo json_encode(['ok' => false, 'message' => 'Access Denied: You have no allocated companies under this customer.']);
-                exit;
-            }
-            $companyCode = '__NO_AUTHORIZED_COMPANIES__';
-        } else {
-            if ($companyCode !== null && $companyCode !== '') {
-                if (!in_array(strtoupper($companyCode), $accessibleCompanyCodes, true)) {
-                    if (ob_get_length()) ob_clean();
-                    http_response_code(403);
-                    if (!headers_sent()) {
-                        header('Content-Type: application/json; charset=utf-8');
-                    }
-                    echo json_encode(['ok' => false, 'message' => "Access Denied: You are not authorized to access company '{$companyCode}'."]);
-                    exit;
-                }
-            } else {
-                // If user has access to exactly one company, scope to it automatically
-                if (count($accessibleCompanies) === 1) {
-                    $companyCode = $accessibleCompanies[0]['company_code'];
-                }
-            }
+    // Strictly resolve server-side company and organizational scope
+    $scopeRes = resolveReportingAccessScope($userId, (int)$custDbContext['customer_id'], $_REQUEST);
+    if (!$scopeRes['ok']) {
+        if (ob_get_length()) ob_clean();
+        http_response_code($scopeRes['status'] ?? 403);
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=utf-8');
         }
+        echo json_encode(['ok' => false, 'message' => $scopeRes['message']]);
+        exit;
+    }
+
+    $companyCode  = $scopeRes['company_code'];
+    $divisionCode = $scopeRes['division_code'];
+    $locationCode = $scopeRes['location_code'];
+
+    // Sanitize $_REQUEST to prevent client filter overrides
+    if (is_string($companyCode)) {
+        $_REQUEST['company_code'] = $companyCode;
+    } else {
+        unset($_REQUEST['company_code']);
+    }
+    if (is_string($divisionCode)) {
+        $_REQUEST['division_code'] = $divisionCode;
+    } else {
+        unset($_REQUEST['division_code']);
+    }
+    if (is_string($locationCode)) {
+        $_REQUEST['location_code'] = $locationCode;
+    } else {
+        unset($_REQUEST['location_code']);
     }
 
     $context = [
-        'customer_id'  => $custDbContext['customer_id'],
-        'company_code' => $companyCode,
-        'period_id'    => $periodId,
-        'user'         => $user
+        'customer_id'   => $custDbContext['customer_id'],
+        'company_code'  => $companyCode,
+        'division_code' => $divisionCode,
+        'location_code' => $locationCode,
+        'period_id'     => $periodId,
+        'user'          => $user
     ];
 
     switch ($action) {

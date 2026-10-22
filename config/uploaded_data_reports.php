@@ -361,16 +361,306 @@ function checkCustomerTableExists(PDO $custPdo, string $tableName): bool {
 }
 
 /**
+ * Resolves and strictly validates company and organizational scope for reporting.
+ *
+ * Rules:
+ *   1. Company resolution:
+ *      - If client passes company_code:
+ *        - Non-platform admin: MUST be in user's accessible companies for this customer. If not, returns 403.
+ *        - Platform admin: permitted.
+ *      - If client passes NO company_code:
+ *        - Resolve from session active company (if valid and in accessible companies).
+ *        - Else if user has exactly 1 accessible company, scope to it automatically.
+ *        - Else if user has multiple accessible companies, safely query only the array of accessible companies.
+ *        - Else if user has 0 accessible companies:
+ *          - If not platform admin, returns 403.
+ *          - If platform admin, null (all companies).
+ *   2. Sub-company organizational scope (Division & Plant / Location):
+ *      - Inspects user_organization_access via getUserEffectiveOrganizationScope.
+ *      - If user has customer-wide or company-wide access, sub-company scope is unrestricted (unless explicitly requested).
+ *      - If user is restricted to specific division(s) or plant(s):
+ *        - If client requests division_code, validate it is in allowed divisions (403 if not).
+ *        - If client requests NO division_code, auto-scope to allowed division(s).
+ *        - If client requests location_code, validate it is in allowed plants/locations (403 if not).
+ *        - If client requests NO location_code, auto-scope to allowed plant(s)/location(s).
+ *
+ * @param int   $userId
+ * @param int   $customerId
+ * @param array $request
+ * @return array ['ok' => bool, 'status' => int, 'message' => string, 'company_code' => string|array|null, 'division_code' => string|array|null, 'location_code' => string|array|null]
+ */
+function resolveReportingAccessScope(int $userId, int $customerId, array $request = []): array {
+    $isPlatformAdmin = isPlatformAdmin($userId);
+    $accessibleCompanies = getUserAccessibleCompanies($userId, $customerId);
+    $accessibleCodes = array_map(function($c) {
+        return strtoupper(trim($c['company_code'] ?? ''));
+    }, $accessibleCompanies);
+
+    // 1. Resolve Company Code
+    $reqCompany = !empty($request['company_code']) ? strtoupper(trim((string)$request['company_code'])) : null;
+    $resolvedCompany = null;
+
+    if ($reqCompany !== null && $reqCompany !== '') {
+        if (!$isPlatformAdmin && !in_array($reqCompany, $accessibleCodes, true)) {
+            return ['ok' => false, 'status' => 403, 'message' => "Access Denied: You are not authorized to access company '{$reqCompany}'."];
+        }
+        $resolvedCompany = $reqCompany;
+    } else {
+        // Check session active company
+        $activeComp = getActiveCompany();
+        $sessCode = !empty($activeComp['company_code']) ? strtoupper(trim($activeComp['company_code'])) : null;
+        if ($sessCode && $sessCode !== 'ALL' && ($isPlatformAdmin || in_array($sessCode, $accessibleCodes, true))) {
+            $resolvedCompany = $sessCode;
+        } elseif (count($accessibleCodes) === 1) {
+            $resolvedCompany = $accessibleCodes[0];
+        } elseif (count($accessibleCodes) > 1) {
+            $resolvedCompany = $accessibleCodes; // Array of authorized companies
+        } elseif (!$isPlatformAdmin) {
+            return ['ok' => false, 'status' => 403, 'message' => "Access Denied: You have no allocated companies under this customer."];
+        }
+    }
+
+    // 2. Resolve Sub-Company Organizational Scope (Division & Plant / Location)
+    $resolvedDivision = null;
+    $resolvedLocation = null;
+
+    if (!$isPlatformAdmin) {
+        $orgScope = getUserEffectiveOrganizationScope($userId);
+        if (empty($orgScope['is_global_admin'])) {
+            $direct = $orgScope['direct_assignments'] ?? [];
+            $hasCustGrant = false;
+            foreach ($direct as $d) {
+                if ($d['level'] === 'CUSTOMER') {
+                    $hasCustGrant = true;
+                    break;
+                }
+            }
+
+            if (!$hasCustGrant) {
+                // Check if user has COMPANY grant for the resolved company
+                $compGrants = [];
+                $targetCompanies = is_array($resolvedCompany) ? $resolvedCompany : ($resolvedCompany ? [$resolvedCompany] : []);
+                foreach ($direct as $d) {
+                    $dComp = strtoupper(trim($d['company_code'] ?? ''));
+                    if (empty($targetCompanies) || in_array($dComp, $targetCompanies, true)) {
+                        $compGrants[] = $d;
+                    }
+                }
+
+                $hasCompanyGrant = false;
+                foreach ($compGrants as $d) {
+                    if ($d['level'] === 'COMPANY') {
+                        $hasCompanyGrant = true;
+                        break;
+                    }
+                }
+
+                if (!$hasCompanyGrant && !empty($compGrants)) {
+                    // User has restricted division/plant assignments
+                    $allowedDivs = [];
+                    $allowedPlants = [];
+                    $hasDivWide = false;
+
+                    foreach ($compGrants as $d) {
+                        if ($d['level'] === 'DIVISION') {
+                            if (!empty($d['division_code'])) $allowedDivs[] = strtoupper(trim($d['division_code']));
+                            $hasDivWide = true;
+                        } elseif ($d['level'] === 'PLANT' || $d['level'] === 'WAREHOUSE') {
+                            if (!empty($d['division_code'])) $allowedDivs[] = strtoupper(trim($d['division_code']));
+                            if (!empty($d['plant_code'])) $allowedPlants[] = strtoupper(trim($d['plant_code']));
+                        }
+                    }
+                    $allowedDivs = array_values(array_unique(array_filter($allowedDivs)));
+                    $allowedPlants = array_values(array_unique(array_filter($allowedPlants)));
+
+                    // Check requested division
+                    $reqDiv = !empty($request['division_code']) ? strtoupper(trim((string)$request['division_code'])) : null;
+                    if ($reqDiv !== null && $reqDiv !== '') {
+                        if (!in_array($reqDiv, $allowedDivs, true)) {
+                            return ['ok' => false, 'status' => 403, 'message' => "Access Denied: You are not authorized to access division '{$reqDiv}'."];
+                        }
+                        $resolvedDivision = $reqDiv;
+                    } else {
+                        $resolvedDivision = (count($allowedDivs) === 1) ? $allowedDivs[0] : $allowedDivs;
+                    }
+
+                    // Check requested plant/location
+                    $reqLoc = !empty($request['location_code']) ? strtoupper(trim((string)$request['location_code'])) : null;
+                    if ($reqLoc !== null && $reqLoc !== '') {
+                        if (!$hasDivWide && !in_array($reqLoc, $allowedPlants, true)) {
+                            return ['ok' => false, 'status' => 403, 'message' => "Access Denied: You are not authorized to access location/plant '{$reqLoc}'."];
+                        }
+                        $resolvedLocation = $reqLoc;
+                    } elseif (!$hasDivWide && !empty($allowedPlants)) {
+                        $resolvedLocation = (count($allowedPlants) === 1) ? $allowedPlants[0] : $allowedPlants;
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback to client-requested division/location if unrestricted
+    if ($resolvedDivision === null && !empty($request['division_code'])) {
+        $resolvedDivision = trim((string)$request['division_code']);
+    }
+    if ($resolvedLocation === null && !empty($request['location_code'])) {
+        $resolvedLocation = trim((string)$request['location_code']);
+    }
+
+    return [
+        'ok'            => true,
+        'company_code'  => $resolvedCompany,
+        'division_code' => $resolvedDivision,
+        'location_code' => $resolvedLocation
+    ];
+}
+
+/**
+ * Builds a strict, parameterized WHERE clause enforcing server-side authorization:
+ * - Company scope from context (single string or array of authorized company codes)
+ * - Division scope from context or validated filters
+ * - Location / plant scope from context or validated filters
+ * - Period isolation
+ * - Generic text search
+ * - Allowlisted filterable columns (excluding scoped organizational keys)
+ *
+ * @param array $def
+ * @param array $filters
+ * @param array $context
+ * @return array ['whereSql' => string, 'params' => array, 'company' => mixed, 'division' => mixed, 'location' => mixed, 'period_id' => int|null]
+ */
+function buildReportingWhereClause(array $def, array $filters, array $context): array {
+    $whereParts = [];
+    $queryParams = [];
+    $paramIdx = 1;
+
+    // 1. Company Scope (Server-side context takes absolute precedence)
+    $companyScope = $context['company_code'] ?? (!empty($filters['company_code']) ? trim((string)$filters['company_code']) : null);
+    if (!empty($companyScope)) {
+        if (is_array($companyScope)) {
+            $inHolders = [];
+            foreach ($companyScope as $cc) {
+                $pName = ":p{$paramIdx}";
+                $inHolders[] = $pName;
+                $queryParams[$pName] = $cc;
+                $paramIdx++;
+            }
+            $whereParts[] = "company_code IN (" . implode(', ', $inHolders) . ")";
+        } else {
+            $whereParts[] = "company_code = :p{$paramIdx}";
+            $queryParams[":p{$paramIdx}"] = $companyScope;
+            $paramIdx++;
+        }
+    }
+
+    // 2. Division Scope (Server-side context takes absolute precedence)
+    $divisionScope = $context['division_code'] ?? (!empty($filters['division_code']) ? trim((string)$filters['division_code']) : null);
+    if (!empty($divisionScope)) {
+        if (is_array($divisionScope)) {
+            $inHolders = [];
+            foreach ($divisionScope as $dc) {
+                $pName = ":p{$paramIdx}";
+                $inHolders[] = $pName;
+                $queryParams[$pName] = $dc;
+                $paramIdx++;
+            }
+            $whereParts[] = "division_code IN (" . implode(', ', $inHolders) . ")";
+        } else {
+            $whereParts[] = "division_code = :p{$paramIdx}";
+            $queryParams[":p{$paramIdx}"] = $divisionScope;
+            $paramIdx++;
+        }
+    }
+
+    // 3. Location / Plant Scope (Server-side context takes absolute precedence)
+    $locationScope = $context['location_code'] ?? (!empty($filters['location_code']) ? trim((string)$filters['location_code']) : null);
+    if (!empty($locationScope)) {
+        if (is_array($locationScope)) {
+            $inHolders = [];
+            foreach ($locationScope as $lc) {
+                $pName = ":p{$paramIdx}";
+                $inHolders[] = $pName;
+                $queryParams[$pName] = $lc;
+                $paramIdx++;
+            }
+            $whereParts[] = "location_code IN (" . implode(', ', $inHolders) . ")";
+        } else {
+            $whereParts[] = "location_code = :p{$paramIdx}";
+            $queryParams[":p{$paramIdx}"] = $locationScope;
+            $paramIdx++;
+        }
+    }
+
+    // 4. Period Scope
+    $periodId = !empty($filters['period_id']) ? (int)$filters['period_id'] : (!empty($context['period_id']) ? (int)$context['period_id'] : null);
+    if ($periodId !== null) {
+        $whereParts[] = "period_id = :p{$paramIdx}";
+        $queryParams[":p{$paramIdx}"] = $periodId;
+        $paramIdx++;
+    }
+
+    // 5. Date bounds
+    $dateCol = $def['primary_date_column'] ?? null;
+    if ($dateCol) {
+        if (!empty($filters['start_date'])) {
+            $whereParts[] = "{$dateCol} >= :p{$paramIdx}";
+            $queryParams[":p{$paramIdx}"] = trim((string)$filters['start_date']);
+            $paramIdx++;
+        }
+        if (!empty($filters['end_date'])) {
+            $whereParts[] = "{$dateCol} <= :p{$paramIdx}";
+            $queryParams[":p{$paramIdx}"] = trim((string)$filters['end_date']);
+            $paramIdx++;
+        }
+    }
+
+    // 6. Generic Search
+    $search = trim((string)($filters['search'] ?? ''));
+    if ($search !== '' && !empty($def['searchable_columns'])) {
+        $searchOrs = [];
+        foreach ($def['searchable_columns'] as $sCol) {
+            $searchOrs[] = "coalesce({$sCol}::text, '') ILIKE :p{$paramIdx}";
+        }
+        $whereParts[] = "(" . implode(' OR ', $searchOrs) . ")";
+        $queryParams[":p{$paramIdx}"] = '%' . $search . '%';
+        $paramIdx++;
+    }
+
+    // 7. Filterable columns (skipping already scoped organizational columns)
+    $skipCols = ['company_code', 'division_code', 'location_code', 'period_id'];
+    foreach ($def['filterable_columns'] as $col) {
+        if (in_array($col, $skipCols, true)) continue;
+        if (isset($filters[$col]) && $filters[$col] !== '' && $filters[$col] !== null) {
+            $whereParts[] = "{$col} = :p{$paramIdx}";
+            $queryParams[":p{$paramIdx}"] = trim((string)$filters[$col]);
+            $paramIdx++;
+        }
+    }
+
+    $whereSql = !empty($whereParts) ? "WHERE " . implode(' AND ', $whereParts) : "";
+    return [
+        'whereSql'    => $whereSql,
+        'params'      => $queryParams,
+        'company'     => $companyScope,
+        'division'    => $divisionScope,
+        'location'    => $locationScope,
+        'period_id'   => $periodId
+    ];
+}
+
+/**
  * Retrieves the catalogue of all 11 supported datasets with actual availability,
  * schema status, and record counts from the dedicated customer database.
  *
  * @param PDO   $custPdo Dedicated Customer DB connection
- * @param array $context ['company_code' => string, 'period_id' => int]
+ * @param array $context ['company_code' => string|array, 'division_code' => string|array, 'location_code' => string|array, 'period_id' => int]
  * @return array Structured catalogue response
  */
 function getReportableDatasetsCatalogue(PDO $custPdo, array $context = []): array {
     $registry = getReportableDatasetsCatalogueRegistry();
-    $companyCode = !empty($context['company_code']) ? trim((string)$context['company_code']) : null;
+    $companyCode = $context['company_code'] ?? null;
+    $divisionCode = $context['division_code'] ?? null;
+    $locationCode = $context['location_code'] ?? null;
     $periodId = !empty($context['period_id']) ? (int)$context['period_id'] : null;
 
     $catalogue = [];
@@ -405,9 +695,47 @@ function getReportableDatasetsCatalogue(PDO $custPdo, array $context = []): arra
                 // Scoped record count matching context
                 $whereClauses = [];
                 $params = [];
-                if ($companyCode !== null) {
-                    $whereClauses[] = "company_code = :company_code";
-                    $params[':company_code'] = $companyCode;
+                if (!empty($companyCode)) {
+                    if (is_array($companyCode)) {
+                        $cHolders = [];
+                        foreach ($companyCode as $idx => $cc) {
+                            $k = ":cat_cc_{$idx}";
+                            $cHolders[] = $k;
+                            $params[$k] = $cc;
+                        }
+                        $whereClauses[] = "company_code IN (" . implode(', ', $cHolders) . ")";
+                    } else {
+                        $whereClauses[] = "company_code = :company_code";
+                        $params[':company_code'] = $companyCode;
+                    }
+                }
+                if (!empty($divisionCode)) {
+                    if (is_array($divisionCode)) {
+                        $dHolders = [];
+                        foreach ($divisionCode as $idx => $dc) {
+                            $k = ":cat_div_{$idx}";
+                            $dHolders[] = $k;
+                            $params[$k] = $dc;
+                        }
+                        $whereClauses[] = "division_code IN (" . implode(', ', $dHolders) . ")";
+                    } else {
+                        $whereClauses[] = "division_code = :division_code";
+                        $params[':division_code'] = $divisionCode;
+                    }
+                }
+                if (!empty($locationCode)) {
+                    if (is_array($locationCode)) {
+                        $lHolders = [];
+                        foreach ($locationCode as $idx => $lc) {
+                            $k = ":cat_loc_{$idx}";
+                            $lHolders[] = $k;
+                            $params[$k] = $lc;
+                        }
+                        $whereClauses[] = "location_code IN (" . implode(', ', $lHolders) . ")";
+                    } else {
+                        $whereClauses[] = "location_code = :location_code";
+                        $params[':location_code'] = $locationCode;
+                    }
                 }
                 if ($periodId !== null) {
                     $whereClauses[] = "period_id = :period_id";
@@ -476,7 +804,7 @@ function getReportableDatasetsCatalogue(PDO $custPdo, array $context = []): arra
  */
 function getOverallUploadSummary(PDO $globalPdo, PDO $custPdo, array $context = []): array {
     $customerId = !empty($context['customer_id']) ? (int)$context['customer_id'] : null;
-    $companyCode = !empty($context['company_code']) ? trim((string)$context['company_code']) : null;
+    $companyCode = $context['company_code'] ?? null;
     $periodId = !empty($context['period_id']) ? (int)$context['period_id'] : null;
 
     // 1. Query Upload Run Statistics from Global DB
@@ -635,55 +963,10 @@ function getDatasetSummary(PDO $custPdo, string $datasetKey, array $filters = []
         ];
     }
 
-    // Build parameterized WHERE clause based on allowed filterable columns
-    $whereParts = [];
-    $params = [];
-    $paramIdx = 1;
-
-    // Apply company scope
-    $companyCode = !empty($filters['company_code']) ? trim((string)$filters['company_code']) : (!empty($context['company_code']) ? trim((string)$context['company_code']) : null);
-    if ($companyCode !== null) {
-        $whereParts[] = "company_code = :p{$paramIdx}";
-        $params[":p{$paramIdx}"] = $companyCode;
-        $paramIdx++;
-    }
-
-    // Apply period scope
-    $periodId = !empty($filters['period_id']) ? (int)$filters['period_id'] : (!empty($context['period_id']) ? (int)$context['period_id'] : null);
-    if ($periodId !== null) {
-        $whereParts[] = "period_id = :p{$paramIdx}";
-        $params[":p{$paramIdx}"] = $periodId;
-        $paramIdx++;
-    }
-
-    // Apply date range filters if dataset has a date column
-    $dateCol = $def['primary_date_column'];
-    if ($dateCol) {
-        if (!empty($filters['start_date'])) {
-            $whereParts[] = "{$dateCol} >= :p{$paramIdx}";
-            $params[":p{$paramIdx}"] = trim((string)$filters['start_date']);
-            $paramIdx++;
-        }
-        if (!empty($filters['end_date'])) {
-            $whereParts[] = "{$dateCol} <= :p{$paramIdx}";
-            $params[":p{$paramIdx}"] = trim((string)$filters['end_date']);
-            $paramIdx++;
-        }
-    }
-
-    // Apply additional filterable columns
-    foreach ($def['filterable_columns'] as $col) {
-        if ($col === 'company_code' || $col === 'period_id') {
-            continue;
-        }
-        if (isset($filters[$col]) && $filters[$col] !== '' && $filters[$col] !== null) {
-            $whereParts[] = "{$col} = :p{$paramIdx}";
-            $params[":p{$paramIdx}"] = trim((string)$filters[$col]);
-            $paramIdx++;
-        }
-    }
-
-    $whereSql = !empty($whereParts) ? "WHERE " . implode(' AND ', $whereParts) : "";
+    // Build parameterized WHERE clause via unified reporting scope helper
+    $scopeClause = buildReportingWhereClause($def, $filters, $context);
+    $whereSql    = $scopeClause['whereSql'];
+    $params      = $scopeClause['params'];
 
     // Base Record Count & Date Range
     $baseSql = "
@@ -948,8 +1231,10 @@ function getDatasetSummary(PDO $custPdo, string $datasetKey, array $filters = []
         ],
         'metrics'       => $specificMetrics,
         'applied_scope' => [
-            'company_code' => $companyCode,
-            'period_id'    => $periodId
+            'company_code'  => $scopeClause['company'],
+            'division_code' => $scopeClause['division'],
+            'location_code' => $scopeClause['location'],
+            'period_id'     => $scopeClause['period_id']
         ]
     ];
 }
@@ -1013,67 +1298,10 @@ function getDatasetDetails(PDO $custPdo, string $datasetKey, array $params = [],
         $sortDir = 'ASC';
     }
 
-    // 3. Build Safe Parameterized WHERE Clause
-    $whereParts = [];
-    $queryParams = [];
-    $paramIdx = 1;
-
-    // Company scope
-    $companyCode = !empty($params['company_code']) ? trim((string)$params['company_code']) : (!empty($context['company_code']) ? trim((string)$context['company_code']) : null);
-    if ($companyCode !== null) {
-        $whereParts[] = "company_code = :p{$paramIdx}";
-        $queryParams[":p{$paramIdx}"] = $companyCode;
-        $paramIdx++;
-    }
-
-    // Period scope
-    $periodId = !empty($params['period_id']) ? (int)$params['period_id'] : (!empty($context['period_id']) ? (int)$context['period_id'] : null);
-    if ($periodId !== null) {
-        $whereParts[] = "period_id = :p{$paramIdx}";
-        $queryParams[":p{$paramIdx}"] = $periodId;
-        $paramIdx++;
-    }
-
-    // Date range filters
-    $dateCol = $def['primary_date_column'];
-    if ($dateCol) {
-        if (!empty($params['start_date'])) {
-            $whereParts[] = "{$dateCol} >= :p{$paramIdx}";
-            $queryParams[":p{$paramIdx}"] = trim((string)$params['start_date']);
-            $paramIdx++;
-        }
-        if (!empty($params['end_date'])) {
-            $whereParts[] = "{$dateCol} <= :p{$paramIdx}";
-            $queryParams[":p{$paramIdx}"] = trim((string)$params['end_date']);
-            $paramIdx++;
-        }
-    }
-
-    // Generic search query across searchable text columns
-    $search = trim((string)($params['search'] ?? ''));
-    if ($search !== '' && !empty($def['searchable_columns'])) {
-        $searchOrs = [];
-        foreach ($def['searchable_columns'] as $sCol) {
-            $searchOrs[] = "coalesce({$sCol}::text, '') ILIKE :p{$paramIdx}";
-        }
-        $whereParts[] = "(" . implode(' OR ', $searchOrs) . ")";
-        $queryParams[":p{$paramIdx}"] = '%' . $search . '%';
-        $paramIdx++;
-    }
-
-    // Allowed column-specific filters
-    foreach ($def['filterable_columns'] as $col) {
-        if ($col === 'company_code' || $col === 'period_id') {
-            continue;
-        }
-        if (isset($params[$col]) && $params[$col] !== '' && $params[$col] !== null) {
-            $whereParts[] = "{$col} = :p{$paramIdx}";
-            $queryParams[":p{$paramIdx}"] = trim((string)$params[$col]);
-            $paramIdx++;
-        }
-    }
-
-    $whereSql = !empty($whereParts) ? "WHERE " . implode(' AND ', $whereParts) : "";
+    // 3. Build Safe Parameterized WHERE Clause via unified reporting scope helper
+    $scopeClause = buildReportingWhereClause($def, $params, $context);
+    $whereSql    = $scopeClause['whereSql'];
+    $queryParams = $scopeClause['params'];
 
     // 4. Query Total Matching Records
     $countSql = "SELECT count(*) FROM public.{$tableName} {$whereSql}";
@@ -1127,6 +1355,12 @@ function getDatasetDetails(PDO $custPdo, string $datasetKey, array $params = [],
         ],
         'columns'         => $def['display_columns'],
         'numeric_columns' => $def['numeric_columns'],
+        'applied_scope'   => [
+            'company_code'  => $scopeClause['company'],
+            'division_code' => $scopeClause['division'],
+            'location_code' => $scopeClause['location'],
+            'period_id'     => $scopeClause['period_id']
+        ],
         'data'            => $rows
     ];
 }
@@ -1152,62 +1386,10 @@ function exportDatasetCsv(PDO $custPdo, string $datasetKey, array $params = [], 
         throw new RuntimeException("Target table '{$tableName}' does not exist in customer database.");
     }
 
-    // Build parameterized WHERE clause
-    $whereParts = [];
-    $queryParams = [];
-    $paramIdx = 1;
-
-    $companyCode = !empty($params['company_code']) ? trim((string)$params['company_code']) : (!empty($context['company_code']) ? trim((string)$context['company_code']) : null);
-    if ($companyCode !== null) {
-        $whereParts[] = "company_code = :p{$paramIdx}";
-        $queryParams[":p{$paramIdx}"] = $companyCode;
-        $paramIdx++;
-    }
-
-    $periodId = !empty($params['period_id']) ? (int)$params['period_id'] : (!empty($context['period_id']) ? (int)$context['period_id'] : null);
-    if ($periodId !== null) {
-        $whereParts[] = "period_id = :p{$paramIdx}";
-        $queryParams[":p{$paramIdx}"] = $periodId;
-        $paramIdx++;
-    }
-
-    $dateCol = $def['primary_date_column'];
-    if ($dateCol) {
-        if (!empty($params['start_date'])) {
-            $whereParts[] = "{$dateCol} >= :p{$paramIdx}";
-            $queryParams[":p{$paramIdx}"] = trim((string)$params['start_date']);
-            $paramIdx++;
-        }
-        if (!empty($params['end_date'])) {
-            $whereParts[] = "{$dateCol} <= :p{$paramIdx}";
-            $queryParams[":p{$paramIdx}"] = trim((string)$params['end_date']);
-            $paramIdx++;
-        }
-    }
-
-    $search = trim((string)($params['search'] ?? ''));
-    if ($search !== '' && !empty($def['searchable_columns'])) {
-        $searchOrs = [];
-        foreach ($def['searchable_columns'] as $sCol) {
-            $searchOrs[] = "coalesce({$sCol}::text, '') ILIKE :p{$paramIdx}";
-        }
-        $whereParts[] = "(" . implode(' OR ', $searchOrs) . ")";
-        $queryParams[":p{$paramIdx}"] = '%' . $search . '%';
-        $paramIdx++;
-    }
-
-    foreach ($def['filterable_columns'] as $col) {
-        if ($col === 'company_code' || $col === 'period_id') {
-            continue;
-        }
-        if (isset($params[$col]) && $params[$col] !== '' && $params[$col] !== null) {
-            $whereParts[] = "{$col} = :p{$paramIdx}";
-            $queryParams[":p{$paramIdx}"] = trim((string)$params[$col]);
-            $paramIdx++;
-        }
-    }
-
-    $whereSql = !empty($whereParts) ? "WHERE " . implode(' AND ', $whereParts) : "";
+    // Build parameterized WHERE clause via unified reporting scope helper
+    $scopeClause = buildReportingWhereClause($def, $params, $context);
+    $whereSql    = $scopeClause['whereSql'];
+    $queryParams = $scopeClause['params'];
 
     $sortBy = trim((string)($params['sort_by'] ?? ''));
     if (!in_array($sortBy, $def['allowed_sort_columns'], true)) {

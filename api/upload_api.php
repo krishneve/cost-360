@@ -392,11 +392,21 @@ try {
         case 'reports_catalogue':
             $custDbContext = getUserCustomerDbContext($user);
             $custPdo = $custDbContext['pdo'];
-            $companyCode = !empty($_POST['company_code']) ? trim($_POST['company_code']) : null;
+            $scopeRes = resolveReportingAccessScope($userId, (int)$custDbContext['customer_id'], $_POST);
+            if (!$scopeRes['ok']) {
+                if (ob_get_length()) ob_clean();
+                http_response_code($scopeRes['status'] ?? 403);
+                echo json_encode(['ok' => false, 'message' => $scopeRes['message']]);
+                exit;
+            }
             $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
             $result = getReportableDatasetsCatalogue($custPdo, [
-                'company_code' => $companyCode,
-                'period_id'    => $periodId
+                'customer_id'   => $custDbContext['customer_id'],
+                'company_code'  => $scopeRes['company_code'],
+                'division_code' => $scopeRes['division_code'],
+                'location_code' => $scopeRes['location_code'],
+                'period_id'     => $periodId,
+                'user'          => $user
             ]);
             if (ob_get_length()) ob_clean();
             echo json_encode($result);
@@ -406,12 +416,21 @@ try {
             $globalPdo = getDbConnection();
             $custDbContext = getUserCustomerDbContext($user);
             $custPdo = $custDbContext['pdo'];
-            $companyCode = !empty($_POST['company_code']) ? trim($_POST['company_code']) : null;
+            $scopeRes = resolveReportingAccessScope($userId, (int)$custDbContext['customer_id'], $_POST);
+            if (!$scopeRes['ok']) {
+                if (ob_get_length()) ob_clean();
+                http_response_code($scopeRes['status'] ?? 403);
+                echo json_encode(['ok' => false, 'message' => $scopeRes['message']]);
+                exit;
+            }
             $periodId = !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null;
             $result = getOverallUploadSummary($globalPdo, $custPdo, [
-                'customer_id'  => $custDbContext['customer_id'],
-                'company_code' => $companyCode,
-                'period_id'    => $periodId
+                'customer_id'   => $custDbContext['customer_id'],
+                'company_code'  => $scopeRes['company_code'],
+                'division_code' => $scopeRes['division_code'],
+                'location_code' => $scopeRes['location_code'],
+                'period_id'     => $periodId,
+                'user'          => $user
             ]);
             if (ob_get_length()) ob_clean();
             echo json_encode($result);
@@ -427,10 +446,20 @@ try {
                 echo json_encode(['ok' => false, 'message' => 'Dataset key is required.']);
                 exit;
             }
+            $scopeRes = resolveReportingAccessScope($userId, (int)$custDbContext['customer_id'], $_POST);
+            if (!$scopeRes['ok']) {
+                if (ob_get_length()) ob_clean();
+                http_response_code($scopeRes['status'] ?? 403);
+                echo json_encode(['ok' => false, 'message' => $scopeRes['message']]);
+                exit;
+            }
             $result = getDatasetSummary($custPdo, $datasetKey, $_POST, [
-                'company_code' => !empty($_POST['company_code']) ? trim($_POST['company_code']) : null,
-                'period_id'    => !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null,
-                'user'         => $user
+                'customer_id'   => $custDbContext['customer_id'],
+                'company_code'  => $scopeRes['company_code'],
+                'division_code' => $scopeRes['division_code'],
+                'location_code' => $scopeRes['location_code'],
+                'period_id'     => !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null,
+                'user'          => $user
             ]);
             if (ob_get_length()) ob_clean();
             echo json_encode($result);
@@ -446,10 +475,20 @@ try {
                 echo json_encode(['ok' => false, 'message' => 'Dataset key is required.']);
                 exit;
             }
+            $scopeRes = resolveReportingAccessScope($userId, (int)$custDbContext['customer_id'], $_POST);
+            if (!$scopeRes['ok']) {
+                if (ob_get_length()) ob_clean();
+                http_response_code($scopeRes['status'] ?? 403);
+                echo json_encode(['ok' => false, 'message' => $scopeRes['message']]);
+                exit;
+            }
             $result = getDatasetDetails($custPdo, $datasetKey, $_POST, [
-                'company_code' => !empty($_POST['company_code']) ? trim($_POST['company_code']) : null,
-                'period_id'    => !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null,
-                'user'         => $user
+                'customer_id'   => $custDbContext['customer_id'],
+                'company_code'  => $scopeRes['company_code'],
+                'division_code' => $scopeRes['division_code'],
+                'location_code' => $scopeRes['location_code'],
+                'period_id'     => !empty($_POST['period_id']) ? (int)$_POST['period_id'] : null,
+                'user'          => $user
             ]);
             if (ob_get_length()) ob_clean();
             echo json_encode($result);
