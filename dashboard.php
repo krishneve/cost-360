@@ -44,6 +44,17 @@ if ($currentPage === 'users') {
     $activeMenuName = 'Financial Reconciliation';
 } elseif ($currentPage === 'uploaded-reports' || $currentPage === 'reports') {
     $activeMenuName = 'Uploaded Data Reports';
+} elseif ($currentPage === 'quantity-reco' || $currentPage === 'quantity_reco' || $currentPage === 'cost-reco' || $currentPage === 'cost_reco') {
+    $activeMenuName = 'Cost Reco';
+    if (!empty($authorizedMenus)) {
+        foreach ($authorizedMenus as $m) {
+            $mCode = strtoupper(trim($m['menu_code'] ?? ''));
+            if ($mCode === 'QUANTITY_RECO' || $mCode === 'COST_RECO' || strpos(strtolower($m['route'] ?? ''), 'reco') !== false) {
+                $activeMenuName = $m['menu_name'];
+                break;
+            }
+        }
+    }
 }
 
 /*
@@ -218,6 +229,13 @@ if (!function_exists('formatMenuRouteUrl')) {
             'data/reports'                           => 'uploaded-reports.php',
             'uploaded-reports'                       => 'uploaded-reports.php',
             'uploaded-reports.php'                   => 'uploaded-reports.php',
+            'quantity-reco'                          => 'quantity-reco.php',
+            'quantity-reco.php'                      => 'quantity-reco.php',
+            'quantity_reco'                          => 'quantity-reco.php',
+            'cost-reco'                              => 'quantity-reco.php',
+            'cost-reco.php'                          => 'quantity-reco.php',
+            'cost_reco'                              => 'quantity-reco.php',
+            'cost-reconciliation'                    => 'quantity-reco.php',
         ];
 
         if (isset($routeMap[$lower])) {
@@ -1342,6 +1360,8 @@ if (!function_exists('formatMenuRouteUrl')) {
                           $isActive = true;
                       } elseif (($currentPage === 'uploaded-reports' || $currentPage === 'reports') && ($menuCode === 'REPORTS' || strpos($nodeRoute, 'reports') !== false || strpos($nodeRoute, 'uploaded') !== false)) {
                           $isActive = true;
+                      } elseif (($currentPage === 'quantity-reco' || $currentPage === 'quantity_reco' || $currentPage === 'cost-reco' || $currentPage === 'cost_reco') && ($menuCode === 'QUANTITY_RECO' || $menuCode === 'COST_RECO' || strpos($nodeRoute, 'quantity-reco') !== false || strpos($nodeRoute, 'quantity_reco') !== false || strpos($nodeRoute, 'cost-reco') !== false || strpos($nodeRoute, 'cost_reco') !== false)) {
+                          $isActive = true;
                       } elseif ($currentPage === 'subscription-plans' && strpos($nodeRoute, 'subscriptions/plans') !== false) {
                           $isActive = true;
                       } elseif ($currentPage === 'customer-subscriptions' && strpos($nodeRoute, 'subscriptions/customers') !== false) {
@@ -1753,6 +1773,24 @@ if (!function_exists('formatMenuRouteUrl')) {
               <a href="reconciliation.php" class="btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.45rem; background: #F0FDF4; border: 1px solid #86EFAC; color: #166534;" title="Open CMA Financial Reconciliation">
                 <span style="font-size: 0.95rem;">⚖️</span>
                 <span>Financial Reconciliation</span>
+              </a>
+              <?php
+                $recoMenuName = 'Cost Reco';
+                $recoRoute = 'quantity-reco.php';
+                if (!empty($authorizedMenus)) {
+                    foreach ($authorizedMenus as $m) {
+                        $mCode = strtoupper(trim($m['menu_code'] ?? ''));
+                        if ($mCode === 'QUANTITY_RECO' || $mCode === 'COST_RECO' || strpos(strtolower($m['route'] ?? ''), 'reco') !== false) {
+                            $recoMenuName = $m['menu_name'];
+                            if (!empty($m['route'])) $recoRoute = formatMenuRouteUrl($m['route'], $baseUrlPrefix);
+                            break;
+                        }
+                    }
+                }
+              ?>
+              <a href="<?php echo htmlspecialchars($recoRoute); ?>" class="btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.45rem; background: #F0F9FF; border: 1px solid #7DD3FC; color: #0369A1;" title="Open Cost Reco">
+                <span style="font-size: 0.95rem;">🔢</span>
+                <span><?php echo htmlspecialchars($recoMenuName); ?></span>
               </a>
               <button class="btn-secondary" id="selectBtn">Select Files</button>
               <button class="btn-secondary" id="folderBtn">Select Folder</button>
@@ -3377,6 +3415,287 @@ if (!function_exists('formatMenuRouteUrl')) {
           <div style="padding: 4rem 1rem; text-align: center; color: var(--color-royal-blue);">
             <div class="c360-spinner" style="width: 42px; height: 42px; border: 4px solid rgba(8, 120, 209, 0.2); border-top-color: var(--color-royal-blue); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem auto;"></div>
             <p style="font-size: 0.95rem; font-weight: 600; color: var(--color-primary-text);">Connecting to database &amp; loading catalogue...</p>
+          </div>
+        </div>
+
+      <?php elseif ($currentPage === 'quantity-reco' || $currentPage === 'quantity_reco' || $currentPage === 'cost-reco' || $currentPage === 'cost_reco'): ?>
+        <!-- ============================================================
+             QUANTITY RECO PAGE MODULE (PHASE 2 FRONTEND)
+             ============================================================ -->
+        <?php
+          // Dynamically load accessible plants and periods
+          $qrAccessiblePlants = [];
+          try {
+              $qrAccessiblePlants = getUserAccessiblePlants($user['user_id'] ?? null, $activeCompanyId);
+              if (empty($qrAccessiblePlants)) {
+                  $qrPdo = getDbConnection();
+                  $qrAccessiblePlants = $qrPdo->query("SELECT plant_id, plant_code, plant_name, location, status FROM public.plants WHERE UPPER(status) = 'ACTIVE' ORDER BY plant_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+              }
+          } catch (Throwable $e) {
+              $qrAccessiblePlants = [];
+          }
+
+          $qrAccessiblePeriods = [];
+          try {
+              $qrAccessiblePeriods = getUserAccessiblePeriods($activeCompanyId, $user['user_id'] ?? null);
+              if (empty($qrAccessiblePeriods)) {
+                  $qrPdo = getDbConnection();
+                  $qrAccessiblePeriods = $qrPdo->query("SELECT period_id, period_name, start_date, end_date, status FROM public.periods WHERE UPPER(status) = 'ACTIVE' ORDER BY start_date DESC")->fetchAll(PDO::FETCH_ASSOC);
+              }
+          } catch (Throwable $e) {
+              $qrAccessiblePeriods = [];
+          }
+
+          $qrInitialPlantId = $activePlantId ?: (!empty($qrAccessiblePlants) ? $qrAccessiblePlants[0]['plant_id'] : null);
+          $qrInitialPeriodId = $activePeriodId ?: (!empty($qrAccessiblePeriods) ? $qrAccessiblePeriods[0]['period_id'] : null);
+        ?>
+
+        <!-- MODULE HEADER & CONTROL BAR -->
+        <section class="section-card" style="margin-bottom: 1.25rem; background: linear-gradient(135deg, #021E3B 0%, #032A52 100%); color: #fff; border: 1px solid rgba(0, 207, 239, 0.3); border-radius: var(--radius-card, 12px); box-shadow: 0 4px 20px rgba(2, 30, 59, 0.15); padding: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.35rem;">
+                <span style="font-size: 1.45rem;">🔢</span>
+                <h1 style="font-size: 1.5rem; font-weight: 800; color: #fff; margin: 0; line-height: 1.2; letter-spacing: -0.01em;">Quantity Reco</h1>
+                <span class="c360-badge" style="background: rgba(0, 207, 239, 0.2); color: #00CFEF; border: 1px solid rgba(0, 207, 239, 0.4); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em;">
+                  PLANT-DYNAMIC ALLOCATION
+                </span>
+              </div>
+              <p style="font-size: 0.88rem; color: rgba(255, 255, 255, 0.85); margin: 0; max-width: 680px; line-height: 1.45;">
+                Plant-wise Cost Centre Allocation &amp; Reconciliation. Columns are populated dynamically from the selected Plant's Cost Centre Master.
+              </p>
+            </div>
+
+            <!-- Global Action Buttons -->
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <button type="button" id="qrGenerateBtn" class="btn-primary" style="background: #00CFEF; color: #021E3B; font-weight: 700; border: none; box-shadow: 0 2px 8px rgba(0,207,239,0.35);" title="Generate Quantity Reco allocation for selected Plant &amp; Period">
+                ⚡ Generate
+              </button>
+              <button type="button" id="qrRefreshBtn" class="btn-secondary" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff;" title="Refresh dynamic matrix">
+                ⟳ Refresh
+              </button>
+              <button type="button" id="qrExceptionsBtn" class="btn-secondary" style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #FCD34D;" title="View unmapped exception records">
+                ⚠️ View Exceptions
+                <span id="qrExceptionsCountBadge" style="display:none;background:#DC2626;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.72rem;font-weight:800;margin-left:4px;">0</span>
+              </button>
+              <button type="button" id="qrReconcileBtn" class="btn-secondary" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #6EE7B7; font-weight: 700;" title="Run Authoritative 7-Level Reconciliation Audit against plant.xlsx">
+                📊 Excel Reconciliation
+              </button>
+              <button type="button" id="qrSyncTbBtn" class="btn-secondary" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff;" title="Sync source records from Trial Balance">
+                🔄 Sync TB
+              </button>
+              <button type="button" id="qrMappingsBtn" class="btn-secondary" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff;" title="Manage Plant Cost Basis Mappings">
+                ⚙️ Cost Basis Mappings
+              </button>
+              <button type="button" id="qrAllocRulesBtn" class="btn-secondary" style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.45); color: #DDD6FE; font-weight: 700;" title="Manage Department &amp; Multi-Cost Centre Allocation Rules">
+                📋 Allocation Rules
+              </button>
+            </div>
+          </div>
+
+          <!-- SCOPE SELECTORS ROW -->
+          <div style="margin-top: 1.15rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.15); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: 0.85rem;">
+              
+              <!-- Plant Selector Dropdown -->
+              <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                <label for="qrPlantSelect" style="opacity: 0.9; font-size: 0.82rem; font-weight: 700; color: #fff;">Plant:</label>
+                <select id="qrPlantSelect" class="c360-select" style="min-width: 220px; font-weight: 600; background: #FFFFFF; color: #0F172A;">
+                  <?php if (empty($qrAccessiblePlants)): ?>
+                    <option value="">No plants accessible</option>
+                  <?php else: ?>
+                    <?php foreach ($qrAccessiblePlants as $pl): ?>
+                      <option value="<?php echo (int)$pl['plant_id']; ?>" <?php echo ((int)$pl['plant_id'] === (int)$qrInitialPlantId) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($pl['plant_name'] . ' (' . $pl['plant_code'] . ')'); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                </select>
+              </div>
+
+              <!-- Period Selector Dropdown -->
+              <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                <label for="qrPeriodSelect" style="opacity: 0.9; font-size: 0.82rem; font-weight: 700; color: #fff;">Period:</label>
+                <select id="qrPeriodSelect" class="c360-select" style="min-width: 200px; font-weight: 600; background: #FFFFFF; color: #0F172A;">
+                  <?php if (empty($qrAccessiblePeriods)): ?>
+                    <option value="">No periods accessible</option>
+                  <?php else: ?>
+                    <?php foreach ($qrAccessiblePeriods as $pr): ?>
+                      <option value="<?php echo (int)$pr['period_id']; ?>" <?php echo ((int)$pr['period_id'] === (int)$qrInitialPeriodId) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($pr['period_name']); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                </select>
+              </div>
+
+            </div>
+
+            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.75); display: flex; align-items: center; gap: 0.4rem;">
+              <span>🔒 Authorized Plant &amp; Period Scopes</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- RUN INFORMATION STATS BAR -->
+        <section id="qrRunInfoBar" class="section-card" style="display: none; margin-bottom: 1.25rem; padding: 1rem 1.35rem; background: #FFFFFF; border: 1px solid var(--c360-border); border-radius: var(--c360-radius-md); box-shadow: var(--c360-shadow-xs);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; width: 100%;">
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+              <span class="qr-badge-pill" style="background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; font-weight: 800;">
+                ● <span id="qrInfoStatus">COMPLETED</span>
+              </span>
+              <div style="font-size: 0.86rem; color: var(--c360-text-primary);">
+                Plant: <strong id="qrInfoPlant" style="color: var(--c360-navy-deep);">—</strong> &bull; 
+                Period: <strong id="qrInfoPeriod" style="color: var(--c360-navy-deep);">—</strong>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap; font-size: 0.82rem;">
+              <div style="background: #F8FAFC; padding: 0.35rem 0.65rem; border-radius: 6px; border: 1px solid #E2E8F0;">
+                <span style="color: var(--c360-text-muted);">Source Records:</span>
+                <strong id="qrInfoTotalRecords" style="color: var(--c360-navy-deep); margin-left: 3px;">0</strong>
+              </div>
+              <div style="background: #F0FDF4; padding: 0.35rem 0.65rem; border-radius: 6px; border: 1px solid #BBF7D0;">
+                <span style="color: #166534;">Mapped:</span>
+                <strong id="qrInfoMappedRecords" style="color: #15803D; margin-left: 3px;">0</strong>
+                (<span id="qrInfoMappedAmount" style="font-weight: 700; color: #166534;">₹0</span>)
+              </div>
+              <div id="qrUnmappedStatPill" style="background: #FEF2F2; padding: 0.35rem 0.65rem; border-radius: 6px; border: 1px solid #FCA5A5; color: #B91C1C;">
+                <span>Unmapped:</span>
+                <strong id="qrInfoUnmappedRecords" style="margin-left: 3px;">0</strong>
+                (<span id="qrInfoUnmappedAmount" style="font-weight: 700;">₹0</span>)
+              </div>
+              <div style="color: var(--c360-text-muted); font-size: 0.78rem;">
+                Generated: <span id="qrInfoGeneratedAt">—</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- DISMISSIBLE ALERT / NOTIFICATION BANNER -->
+        <div id="qrAlertBanner" class="qr-alert-banner" style="display: none;">
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span id="qrAlertIcon">ℹ️</span>
+            <span id="qrAlertMessage" style="font-weight: 600;"></span>
+          </div>
+          <button type="button" onclick="document.getElementById('qrAlertBanner').style.display='none'" style="background: none; border: none; color: inherit; font-weight: bold; cursor: pointer; font-size: 1.15rem; line-height: 1;">&times;</button>
+        </div>
+
+        <!-- MAIN DYNAMIC CONTENT CONTAINER -->
+        <div id="qrMainContainer">
+          <div class="qr-loading-card">
+            <div class="c360-spinner" style="width: 44px; height: 44px; border: 4px solid rgba(8, 120, 209, 0.2); border-top-color: var(--c360-royal-blue); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1.25rem auto;"></div>
+            <p style="font-size: 0.95rem; font-weight: 600; color: var(--c360-navy-deep);">Connecting to database &amp; loading dynamic Cost Centres...</p>
+          </div>
+        </div>
+
+        <!-- MODAL 1: SOURCE TRACEABILITY (AUDIT DRILL-DOWN) -->
+        <div id="qrTraceModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(2, 30, 59, 0.65); backdrop-filter: blur(4px); z-index: 1200; justify-content: center; align-items: center; padding: 1.5rem;">
+          <div class="cost360-modal" style="background: #fff; width: 100%; max-width: 900px; max-height: 85vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
+            <div class="cost360-modal-header" style="background: #F8FAFC; padding: 1.15rem 1.5rem; border-bottom: 1px solid var(--c360-border); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 id="qrTraceModalTitle" class="cost360-modal-title" style="margin: 0; font-size: 1.15rem; color: var(--c360-navy-deep);">Source Traceability</h3>
+                <div id="qrTraceModalSubtitle" style="font-size: 0.8rem; color: var(--c360-text-secondary); margin-top: 2px;">Contributing source records</div>
+              </div>
+              <button type="button" class="cost360-modal-close qr-modal-close-trigger">&times;</button>
+            </div>
+            <div id="qrTraceModalBody" class="cost360-modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+              <!-- Dynamic Trace Content -->
+            </div>
+            <div class="cost360-modal-footer" style="background: #F8FAFC; padding: 0.85rem 1.5rem; border-top: 1px solid var(--c360-border); display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.78rem; color: var(--c360-text-muted);">Audit Trail Reference ID: <code id="qrAuditRefId">CMA-AUDIT-TRACE</code></span>
+              <button type="button" class="btn-secondary qr-modal-close-trigger">Close</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODAL 2: UNMAPPED EXCEPTIONS -->
+        <div id="qrExceptionsModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(2, 30, 59, 0.65); backdrop-filter: blur(4px); z-index: 1200; justify-content: center; align-items: center; padding: 1.5rem;">
+          <div class="cost360-modal" style="background: #fff; width: 100%; max-width: 950px; max-height: 85vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
+            <div class="cost360-modal-header" style="background: #FFFBEB; padding: 1.15rem 1.5rem; border-bottom: 1px solid #FCD34D; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 class="cost360-modal-title" style="margin: 0; font-size: 1.15rem; color: #92400E; display: flex; align-items: center; gap: 0.4rem;">
+                  <span>⚠️ Unmapped &amp; Exception Records</span>
+                </h3>
+                <div style="font-size: 0.8rem; color: #B45309; margin-top: 2px;">Transactions requiring Cost Basis mapping or Cost Centre resolution</div>
+              </div>
+              <button type="button" class="cost360-modal-close qr-modal-close-trigger" style="color: #92400E;">&times;</button>
+            </div>
+            <div id="qrExceptionsModalBody" class="cost360-modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+              <!-- Dynamic Exceptions Content -->
+            </div>
+            <div class="cost360-modal-footer" style="background: #F8FAFC; padding: 0.85rem 1.5rem; border-top: 1px solid var(--c360-border); display: flex; justify-content: flex-end;">
+              <button type="button" class="btn-secondary qr-modal-close-trigger">Close</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODAL 4: AUTHORITATIVE EXCEL RECONCILIATION AUDIT -->
+        <div id="qrReconcileModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(2, 30, 59, 0.65); backdrop-filter: blur(4px); z-index: 1200; justify-content: center; align-items: center; padding: 1.5rem;">
+          <div class="cost360-modal" style="background: #fff; width: 100%; max-width: 1050px; max-height: 88vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
+            <div class="cost360-modal-header" style="background: #F0FDF4; padding: 1.15rem 1.5rem; border-bottom: 1px solid #BBF7D0; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 class="cost360-modal-title" style="margin: 0; font-size: 1.15rem; color: #166534; display: flex; align-items: center; gap: 0.5rem;">
+                  <span>📊 Authoritative Excel Reconciliation Audit</span>
+                  <span id="qrAuditStatusBadge" class="qr-badge-pill" style="background: #15803D; color: #fff; font-size: 0.75rem; padding: 2px 8px;">AUDITING</span>
+                </h3>
+                <div style="font-size: 0.82rem; color: #15803D; margin-top: 2px;">
+                  Cell-by-cell 7-Level comparison between Cost360 generated matrix and authoritative <code>plant.xlsx</code>
+                </div>
+              </div>
+              <button type="button" class="cost360-modal-close qr-modal-close-trigger" style="color: #166534;">&times;</button>
+            </div>
+            <div id="qrReconcileModalBody" class="cost360-modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+              <!-- Dynamic Reconciliation Content -->
+            </div>
+            <div class="cost360-modal-footer" style="background: #F8FAFC; padding: 0.85rem 1.5rem; border-top: 1px solid var(--c360-border); display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.78rem; color: var(--c360-text-muted);">Reference: <code>plant.xlsx (Sheet: Plant)</code></span>
+              <button type="button" class="btn-secondary qr-modal-close-trigger">Close</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODAL 3: COST BASIS MAPPINGS MANAGEMENT -->
+        <div id="qrMappingsModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(2, 30, 59, 0.65); backdrop-filter: blur(4px); z-index: 1200; justify-content: center; align-items: center; padding: 1.5rem;">
+          <div class="cost360-modal" style="background: #fff; width: 100%; max-width: 900px; max-height: 85vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
+            <div class="cost360-modal-header" style="background: #F8FAFC; padding: 1.15rem 1.5rem; border-bottom: 1px solid var(--c360-border); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 class="cost360-modal-title" style="margin: 0; font-size: 1.15rem; color: var(--c360-navy-deep);">Cost Basis Mappings Configuration</h3>
+                <div style="font-size: 0.8rem; color: var(--c360-text-secondary); margin-top: 2px;">Map incoming source Cost Basis aliases to Plant Cost Centres</div>
+              </div>
+              <button type="button" class="cost360-modal-close qr-modal-close-trigger">&times;</button>
+            </div>
+            <div id="qrMappingsModalBody" class="cost360-modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+              <!-- Dynamic Mappings Content -->
+            </div>
+            <div class="cost360-modal-footer" style="background: #F8FAFC; padding: 0.85rem 1.5rem; border-top: 1px solid var(--c360-border); display: flex; justify-content: flex-end;">
+              <button type="button" class="btn-secondary qr-modal-close-trigger">Close</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODAL 5: DEPARTMENT ALLOCATION RULES MANAGEMENT -->
+        <div id="qrAllocRulesModal" class="cost360-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(2, 30, 59, 0.65); backdrop-filter: blur(4px); z-index: 1200; justify-content: center; align-items: center; padding: 1.5rem;">
+          <div class="cost360-modal" style="background: #fff; width: 100%; max-width: 1050px; max-height: 88vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.3);">
+            <div class="cost360-modal-header" style="background: #F5F3FF; padding: 1.15rem 1.5rem; border-bottom: 1px solid #DDD6FE; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 class="cost360-modal-title" style="margin: 0; font-size: 1.15rem; color: #5B21B6; display: flex; align-items: center; gap: 0.5rem;">
+                  <span>📋 Department &amp; Cost Centre Allocation Rules</span>
+                  <span id="qrAllocRulesCountBadge" class="qr-badge-pill" style="background: #7C3AED; color: #fff; font-size: 0.72rem; padding: 2px 7px;">0 RULES</span>
+                </h3>
+                <div style="font-size: 0.8rem; color: #6D28D9; margin-top: 2px;">
+                  Configure multi-Cost Centre ratio splits (QC, Repairs, POH, etc.) and driver-based allocations (Salary &rarr; PF)
+                </div>
+              </div>
+              <button type="button" class="cost360-modal-close qr-modal-close-trigger" style="color: #5B21B6;">&times;</button>
+            </div>
+            <div id="qrAllocRulesModalBody" class="cost360-modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+              <!-- Dynamic Allocation Rules Content -->
+            </div>
+            <div class="cost360-modal-footer" style="background: #F8FAFC; padding: 0.85rem 1.5rem; border-top: 1px solid var(--c360-border); display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.78rem; color: var(--c360-text-muted);">Configurable engine &bull; Zero hardcoded splits &bull; Audit trail tracked</span>
+              <button type="button" class="btn-secondary qr-modal-close-trigger">Close</button>
+            </div>
           </div>
         </div>
 
@@ -14473,5 +14792,6 @@ if (!function_exists('formatMenuRouteUrl')) {
   </script>
   <script src="<?php echo $baseUrlPrefix; ?>assets/js/upload_centre.js?v=<?php echo time(); ?>"></script>
   <script src="<?php echo $baseUrlPrefix; ?>assets/js/uploaded_data_reports.js?v=<?php echo time(); ?>"></script>
+  <script src="<?php echo $baseUrlPrefix; ?>assets/js/quantity_reco.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

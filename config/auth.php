@@ -1320,19 +1320,36 @@ if (!function_exists('getUserAccessiblePlants')) {
 
         try {
             $pdo = getDbConnection();
-            $hasDiv = ($divisionId !== null && $divisionId !== '' && (string)$divisionId !== 'ALL');
+            $hasDiv = ($divisionId !== null && $divisionId !== '' && (string)$divisionId !== 'ALL' && is_numeric($divisionId));
+            $isAllCompany = ((string)$companyId === 'ALL' || !is_numeric($companyId));
 
             if (isPlatformAdmin($userId)) {
+                if ($isAllCompany) {
+                    $sql = '
+                        SELECT p.plant_id, p.division_id, p.plant_code, p.plant_name, p.location, p.status
+                        FROM plants p
+                        WHERE UPPER(p.status) = \'ACTIVE\'
+                    ';
+                    $params = [];
+                    if ($hasDiv) {
+                        $sql .= ' AND p.division_id = :division_id';
+                        $params[':division_id'] = (int)$divisionId;
+                    }
+                    $sql .= ' ORDER BY p.plant_name ASC, p.plant_id ASC';
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute($params);
+                    return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                }
                 $sql = '
                     SELECT p.plant_id, p.division_id, p.plant_code, p.plant_name, p.location, p.status
                     FROM plants p
                     INNER JOIN divisions d ON d.division_id = p.division_id
                     WHERE d.company_id = :company_id AND UPPER(p.status) = \'ACTIVE\'
                 ';
-                $params = [':company_id' => $companyId];
+                $params = [':company_id' => (int)$companyId];
                 if ($hasDiv) {
                     $sql .= ' AND p.division_id = :division_id';
-                    $params[':division_id'] = $divisionId;
+                    $params[':division_id'] = (int)$divisionId;
                 }
                 $sql .= ' ORDER BY p.plant_name ASC, p.plant_id ASC';
                 $stmt = $pdo->prepare($sql);
@@ -2653,6 +2670,9 @@ if (!function_exists('userHasMenuAccess')) {
             'import_history' => ['import-history.php', 'upload_center', 'upload_centre', 'data_management', '/data'],
             'audit_logs' => ['audit-logs.php', 'audit', 'audit_trail', 'audit_desk', 'reconciliation', '/audit'],
             'master_groups' => ['master-groups.php', 'data_management', 'settings'],
+            'quantity_reco' => ['quantity-reco.php', 'quantity-reco', 'cost_reco', 'cost-reco', 'cost-reco.php', 'cost_reconciliation', 'reconciliation'],
+            'cost_reco' => ['cost-reco.php', 'cost-reco', 'quantity_reco', 'quantity-reco', 'quantity-reco.php', 'cost_reconciliation', 'reconciliation'],
+            'cost_reconciliation' => ['cost_reco', 'cost-reco', 'quantity_reco', 'quantity-reco', 'quantity-reco.php'],
         ];
 
         foreach ($menus as $m) {
